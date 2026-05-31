@@ -1,0 +1,8 @@
+node_modules/
+dist/
+assets/
+Localfiles/
+.superpowers/
+docs/superpowers/
+*.tc
+*.tc~

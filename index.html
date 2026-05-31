@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CINEMANAGER / TAKE YOUR FILMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@400;500;600;700&family=Anton&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="loader-grid">
+    <div class="loader-left">
+      <div class="issue">▰ MISSION 01 ▰ COLLECTION DATA</div>
+      <h1>CineManager</h1>
+      <p class="lede">Take your films back.<br>Carica il file di Tellico.</p>
+      <div class="stamp">★ ALL OUT ATTACK</div>
+    </div>
+    <div class="loader-right">
+      <label class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".tc,.zip">
+        <div class="step">▶ STEP 01 ▶ TARGET</div>
+        <p>Trascina il file<br>.tc qui</p>
+        <div class="or">— oppure —</div>
+        <span class="cta">▶ Scegli file</span>
+      </label>
+      <div class="img-config">
+        <label for="imgDir">▶ STEP 02 ▶ COPERTINE</label>
+        <input type="text" id="imgDir" value="" placeholder="es. miacollezione_files/">
+        <div class="hint">L'HTML deve stare nella cartella che contiene le copertine. Se sono dentro al .tc vengono usate quelle.</div>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header id="header">
+  <div class="masthead">
+    <h1><span class="accent">CineManager</span></h1>
+    <span class="tag" id="countLabel"></span>
+    <button class="reload" id="reloadBtn">↻ Reload</button>
+  </div>
+  <div class="toolbar">
+    <div class="search-box">
+      <input type="text" id="search" placeholder="search target...">
+    </div>
+    <div class="group-select" id="groupSelect"></div>
+  </div>
+</header>
+
+<main id="main"></main>
+<div class="modal-backdrop" id="modal"><div class="modal" id="modalContent"></div></div>
+
+</body>
+</html>
