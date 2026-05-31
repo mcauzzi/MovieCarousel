@@ -6,7 +6,12 @@ import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
 import { renderMain, attachHandlers } from './renderer';
 import { openModal } from './modal';
-
+import { LocalStorageAdapter } from './store';
+import type { StoreAdapter } from './store';
+import { THEMES, applyTheme, getSavedTheme } from './themes';
+import { initTransitions, withTransition } from './transitions';
+import { initToast } from './toast';
+import { computeStats, renderStats } from './stats';
 
 // Stato
 let movies: Movie[] = [];
@@ -16,6 +21,9 @@ let configuredImgDir = '';
 let groupers: Grouper[] = [];
 let currentGrouper = '';
 let searchTerm = '';
+let isIntelView = false;
+
+const store: StoreAdapter = new LocalStorageAdapter();
 
 // DOM refs
 const loaderEl = document.getElementById('loader') as HTMLElement;
@@ -33,8 +41,12 @@ function setStatus(msg: string, error = false): void {
 function render(): void {
   const grouper = groupers.find(g => g.name === currentGrouper);
   if (!grouper) return;
-  renderMain(grouper, searchTerm, embeddedImages, imgDir);
-  attachHandlers(movies, embeddedImages, imgDir, openModal);
+  isIntelView = false;
+  renderMain(grouper, searchTerm, embeddedImages, imgDir, store);
+  attachHandlers(
+    movies, embeddedImages, imgDir,
+    (id, mvs, embeds, dir) => { withTransition(() => openModal(id, mvs, embeds, dir, store)); }
+  );
 }
 
 function initUI(): void {
@@ -42,8 +54,10 @@ function initUI(): void {
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
   document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
+
   const groupSelect = document.getElementById('groupSelect')!;
   groupSelect.innerHTML = '';
+
   groupers.forEach(g => {
     const btn = document.createElement('button');
     btn.className = 'group-btn' + (g.name === currentGrouper ? ' active' : '');
@@ -51,15 +65,34 @@ function initUI(): void {
     btn.dataset.name = g.name;
     btn.onclick = () => {
       currentGrouper = g.name;
+      isIntelView = false;
       document.querySelectorAll<HTMLElement>('.group-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.name === g.name));
-      render();
+      document.getElementById('intelBtn')?.classList.remove('active');
+      withTransition(() => render());
     };
     groupSelect.appendChild(btn);
   });
-  loaderEl.style.display = 'none';
-  headerEl.classList.add('show');
-  render();
+
+  // INTEL tab
+  const intelBtn = document.createElement('button');
+  intelBtn.id = 'intelBtn';
+  intelBtn.className = 'group-btn';
+  intelBtn.textContent = 'INTEL';
+  intelBtn.onclick = () => {
+    isIntelView = true;
+    document.querySelectorAll<HTMLElement>('.group-btn').forEach(b => b.classList.remove('active'));
+    intelBtn.classList.add('active');
+    const stats = computeStats(movies, store);
+    withTransition(() => renderStats(document.getElementById('main')!, stats));
+  };
+  groupSelect.appendChild(intelBtn);
+
+  withTransition(() => {
+    loaderEl.style.display = 'none';
+    headerEl.classList.add('show');
+    render();
+  });
 }
 
 async function handleFile(file: File): Promise<void> {
@@ -134,7 +167,27 @@ async function tryAutoLoad(): Promise<void> {
   setStatus('▶ File .tc non trovato: trascina il file per caricarlo');
 }
 
-// Event listeners
+// --- Init ---
+initTransitions();
+initToast();
+applyTheme(getSavedTheme());
+
+// Theme selector nel masthead
+const masthead = document.querySelector<HTMLElement>('.masthead')!;
+const themeSelect = document.createElement('div');
+themeSelect.className = 'theme-select';
+THEMES.forEach(t => {
+  const btn = document.createElement('button');
+  btn.className = 'theme-btn' + (getSavedTheme() === t.id ? ' active' : '');
+  btn.textContent = t.label;
+  btn.dataset.theme = t.id;
+  btn.onclick = () => applyTheme(t.id);
+  themeSelect.appendChild(btn);
+});
+const reloadBtn = document.getElementById('reloadBtn')!;
+masthead.insertBefore(themeSelect, reloadBtn);
+
+// --- Event listeners ---
 fileInput.addEventListener('change', e => {
   const f = (e.target as HTMLInputElement).files?.[0];
   if (f) handleFile(f);
@@ -147,13 +200,14 @@ dropZone.addEventListener('drop', e => {
   const f = e.dataTransfer?.files[0];
   if (f) handleFile(f);
 });
-document.getElementById('reloadBtn')!.addEventListener('click', () => {
+reloadBtn.addEventListener('click', () => {
   movies = [];
   embeddedImages = new Map();
   imgDir = '';
   groupers = [];
   currentGrouper = '';
   searchTerm = '';
+  isIntelView = false;
   loaderEl.style.display = 'flex';
   headerEl.classList.remove('show');
   document.getElementById('main')!.innerHTML = '';
@@ -162,7 +216,7 @@ document.getElementById('reloadBtn')!.addEventListener('click', () => {
 });
 document.getElementById('search')!.addEventListener('input', e => {
   searchTerm = (e.target as HTMLInputElement).value.toLowerCase().trim();
-  render();
+  if (!isIntelView) render();
 });
 
 tryAutoLoad();

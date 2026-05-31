@@ -1,14 +1,31 @@
 import type { Movie } from './parser';
 import { escapeHtml, coverUrl } from './utils';
+import type { StoreAdapter, WatchStatus, Rating } from './store';
+import { showToast } from './toast';
 
 const modalEl = document.getElementById('modal')!;
 const modalContent = document.getElementById('modalContent')!;
+
+function updateCardBadge(id: number, status: WatchStatus): void {
+  const card = document.querySelector<HTMLElement>(`.card[data-id="${id}"]`);
+  if (!card) return;
+  const inner = card.querySelector<HTMLElement>('.card-inner')!;
+  const existing = inner.querySelector('.card-status-badge');
+  if (existing) existing.remove();
+  if (status) {
+    const badge = document.createElement('div');
+    badge.className = `card-status-badge ${status === 'seen' ? 'badge-seen' : 'badge-watchlist'}`;
+    badge.textContent = status === 'seen' ? 'SEEN' : '◎';
+    inner.appendChild(badge);
+  }
+}
 
 export function openModal(
   id: number,
   movies: Movie[],
   embeddedImages: Map<string, string>,
-  imgDir: string
+  imgDir: string,
+  store: StoreAdapter
 ): void {
   const m = movies.find(x => x.id === id);
   if (!m) return;
@@ -21,9 +38,7 @@ export function openModal(
   const meta: string[] = [];
   if (m.year) meta.push(String(m.year));
   if (m['running-time']) meta.push(m['running-time'] + ' min');
-  if (m.nationality?.length) {
-    meta.push(m.nationality.join(', '));
-  }
+  if (m.nationality?.length) meta.push(m.nationality.join(', '));
 
   const dl: string[] = [];
   function addField(label: string, val: unknown, asPills = false) {
@@ -61,10 +76,67 @@ export function openModal(
       <div class="m-eyebrow">▰ TARGET FILE ▰</div>
       <h2>${escapeHtml(m.title)}</h2>
       <div class="m-subtitle">${escapeHtml(meta.join(' · '))}</div>
+      <div class="watch-status" id="watchStatus"></div>
+      <div class="star-rank" id="starRank"></div>
       ${m.plot ? `<p class="m-plot">${escapeHtml(m.plot)}</p>` : ''}
       <dl class="modal-meta">${dl.join('')}</dl>
       ${castHTML}
     </div>`;
+
+  // Watch status buttons
+  const watchEl = modalContent.querySelector<HTMLElement>('#watchStatus')!;
+  const statusDefs: { label: string; value: WatchStatus; toast: string }[] = [
+    { label: 'SEEN',      value: 'seen',      toast: 'TARGET NEUTRALIZED' },
+    { label: 'WATCHLIST', value: 'watchlist', toast: 'ADDED TO WATCHLIST' },
+    { label: '—',         value: null,        toast: 'TARGET CLEARED' },
+  ];
+  let currentStatus = store.getStatus(id);
+
+  function renderWatchBtns(): void {
+    watchEl.innerHTML = '';
+    statusDefs.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'watch-btn' + (currentStatus === s.value ? ' active' : '');
+      btn.textContent = s.label;
+      btn.onclick = () => {
+        currentStatus = s.value;
+        store.setStatus(id, s.value);
+        updateCardBadge(id, s.value);
+        showToast(s.toast);
+        renderWatchBtns();
+      };
+      watchEl.appendChild(btn);
+    });
+  }
+  renderWatchBtns();
+
+  // Star rating
+  const starEl = modalContent.querySelector<HTMLElement>('#starRank')!;
+  let currentRating = store.getRating(id);
+
+  const rankLabel = document.createElement('span');
+  rankLabel.className = 'star-rank-label';
+  rankLabel.textContent = 'RANK';
+  starEl.appendChild(rankLabel);
+
+  function renderStars(): void {
+    starEl.querySelectorAll('.star-btn').forEach(s => s.remove());
+    for (let i = 1; i <= 5; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'star-btn' + (currentRating !== null && i <= currentRating ? ' filled' : '');
+      btn.textContent = '★';
+      const starIdx = i;
+      btn.onclick = () => {
+        const newRating = (currentRating === starIdx ? null : starIdx) as Rating;
+        currentRating = newRating;
+        store.setRating(id, newRating);
+        showToast('INTEL UPDATED');
+        renderStars();
+      };
+      starEl.appendChild(btn);
+    }
+  }
+  renderStars();
 
   modalContent.querySelector('.modal-close')!.addEventListener('click', closeModal);
   modalEl.classList.add('show');

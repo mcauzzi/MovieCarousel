@@ -2,19 +2,25 @@ import type { Movie } from './parser';
 import type { Grouper, Group } from './groupers';
 import { matchesSearch } from './groupers';
 import { escapeHtml, coverUrl } from './utils';
+import type { StoreAdapter } from './store';
 
 type OpenModalFn = (id: number, movies: Movie[], embeddedImages: Map<string, string>, imgDir: string) => void;
 
-function cardHTML(m: Movie, embeddedImages: Map<string, string>, imgDir: string): string {
+function cardHTML(m: Movie, embeddedImages: Map<string, string>, imgDir: string, store: StoreAdapter): string {
   const url = coverUrl(m, embeddedImages, imgDir);
   const yr = m.year ? String(m.year) : '';
   const safeTitle = escapeHtml(m.title);
   const placeholder = `<div class="placeholder"><div class="pl-title">${safeTitle}</div>${yr ? `<div class="pl-year">${yr}</div>` : ''}</div>`;
   const cover = url ? `<img src="${escapeHtml(url)}" alt="${safeTitle}" loading="lazy">` : placeholder;
   const director = Array.isArray(m.director) ? m.director[0] : (m.director ?? '');
+  const status = store.getStatus(m.id);
+  const badge = status
+    ? `<div class="card-status-badge ${status === 'seen' ? 'badge-seen' : 'badge-watchlist'}">${status === 'seen' ? 'SEEN' : '◎'}</div>`
+    : '';
   return `<div class="card" data-id="${m.id}">
     <div class="card-inner">
       ${yr ? `<div class="card-tag">${yr}</div>` : ''}
+      ${badge}
       <div class="img-wrap">${cover}</div>
       <div class="card-overlay">
         <div class="co-title">${safeTitle}</div>
@@ -30,7 +36,8 @@ function rowHTML(
   idx: number,
   searchTerm: string,
   embeddedImages: Map<string, string>,
-  imgDir: string
+  imgDir: string,
+  store: StoreAdapter
 ): string {
   const filtered = g.movies.filter(m => matchesSearch(m, searchTerm));
   if (!filtered.length) return '';
@@ -49,7 +56,7 @@ function rowHTML(
     </div>
     <div class="carousel-wrap">
       <button class="carousel-btn prev" aria-label="Indietro">◀</button>
-      <div class="carousel">${filtered.map(m => cardHTML(m, embeddedImages, imgDir)).join('')}</div>
+      <div class="carousel">${filtered.map(m => cardHTML(m, embeddedImages, imgDir, store)).join('')}</div>
       <button class="carousel-btn next" aria-label="Avanti">▶</button>
     </div>
   </section>`;
@@ -59,11 +66,12 @@ export function renderMain(
   grouper: Grouper,
   searchTerm: string,
   embeddedImages: Map<string, string>,
-  imgDir: string
+  imgDir: string,
+  store: StoreAdapter
 ): void {
   const main = document.getElementById('main')!;
   const html = grouper.groups
-    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir))
+    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir, store))
     .filter(Boolean)
     .join('');
   main.innerHTML = html || '<div class="empty">No targets found</div>';
