@@ -7,9 +7,6 @@ import type { Grouper } from './groupers';
 import { renderMain, attachHandlers } from './renderer';
 import { openModal } from './modal';
 
-// Nome del file .tc da caricare automaticamente dal server.
-// Imposta a null per derivarlo dal nome della pagina HTML.
-const TC_FILE: string | null = null;
 
 // Stato
 let movies: Movie[] = [];
@@ -100,8 +97,18 @@ async function handleFile(file: File): Promise<void> {
 async function tryAutoLoad(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const paramFile = params.get('file');
+
+  let configuredFile: string | null = null;
+  try {
+    const res = await fetch('config.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const cfg = await res.json() as { tcFile?: string };
+      configuredFile = cfg.tcFile ?? null;
+    }
+  } catch (_) { /* config.json assente o non raggiungibile */ }
+
   const htmlBase = location.pathname.split('/').pop()!.replace(/-p\d+\.html$|\.html$/i, '');
-  const autoName = TC_FILE ?? (htmlBase || 'collection') + '.tc';
+  const autoName = configuredFile ?? (htmlBase || 'collection') + '.tc';
   const candidates = paramFile ? [paramFile] : [autoName];
 
   for (const name of candidates) {

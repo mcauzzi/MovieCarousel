@@ -2,6 +2,7 @@ node_modules/
 dist/
 assets/
 Localfiles/
+config.json
 .superpowers/
 docs/superpowers/
 *.tc
