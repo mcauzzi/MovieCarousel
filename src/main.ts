@@ -12,6 +12,7 @@ import { openModal } from './modal';
 let movies: Movie[] = [];
 let embeddedImages = new Map<string, string>();
 let imgDir = '';
+let configuredImgDir = '';
 let groupers: Grouper[] = [];
 let currentGrouper = '';
 let searchTerm = '';
@@ -83,7 +84,7 @@ async function handleFile(file: File): Promise<void> {
     if (!result.movies.length) throw new Error('Nessun film trovato');
     movies = result.movies;
     embeddedImages = result.embeddedImages;
-    imgDir = imgDirInput.value || '';
+    imgDir = imgDirInput.value || configuredImgDir;
     if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
     movies.forEach((m, i) => { if (m.id == null) (m as Record<string, unknown>)['id'] = i; });
     setStatus(`✓ ${movies.length} TARGETS ACQUIRED`);
@@ -102,8 +103,16 @@ async function tryAutoLoad(): Promise<void> {
   try {
     const res = await fetch('config.json', { cache: 'no-cache' });
     if (res.ok) {
-      const cfg = await res.json() as { tcFile?: string };
+      const cfg = await res.json() as { tcFile?: string; imgDir?: string; title?: string };
       configuredFile = cfg.tcFile ?? null;
+      configuredImgDir = cfg.imgDir ?? '';
+      if (cfg.title) {
+        document.title = cfg.title;
+        const loaderH1 = document.querySelector<HTMLElement>('#loader h1');
+        if (loaderH1) loaderH1.textContent = cfg.title;
+        const accentEl = document.querySelector<HTMLElement>('.masthead .accent');
+        if (accentEl) accentEl.textContent = cfg.title;
+      }
     }
   } catch (_) { /* config.json assente o non raggiungibile */ }
 

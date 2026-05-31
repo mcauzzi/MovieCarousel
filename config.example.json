@@ -1,3 +1,5 @@
 {
-  "tcFile": "collection.tc"
+  "tcFile": "./assets/films.tc",
+  "imgDir": "./assets/covers/",
+  "title": "La mia Cineteca"
 }
