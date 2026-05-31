@@ -64,11 +64,12 @@ export function renderStats(container: HTMLElement, stats: Stats): void {
 
   container.innerHTML = `
     <div class="stats-panel">
-      <div class="stats-header">
-        <div class="row-num-block">★</div>
-        <div class="row-text">
-          <div class="row-eyebrow">Phantom Intel</div>
-          <h2 class="row-title">THIEVES&apos; DEN</h2>
+      <div class="intel-header">
+        <div class="intel-header-stripe"></div>
+        <div class="intel-header-content">
+          <div class="intel-eyebrow">▰ PHANTOM INTEL ▰</div>
+          <h2 class="intel-title">THIEVES&apos; DEN</h2>
+          <div class="intel-subtitle">ARCHIVE REPORT</div>
         </div>
       </div>
       <div class="stats-grid">
