@@ -22,6 +22,7 @@ let groupers: Grouper[] = [];
 let currentGrouper = '';
 let searchTerm = '';
 let isIntelView = false;
+let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
 const store: StoreAdapter = new LocalStorageAdapter();
 
@@ -74,7 +75,8 @@ function initUI(): void {
     groupSelect.appendChild(btn);
   });
 
-  // INTEL tab
+  // INTEL tab — nel masthead, separato dai bottoni di raggruppamento
+  document.getElementById('intelBtn')?.remove();
   const intelBtn = document.createElement('button');
   intelBtn.id = 'intelBtn';
   intelBtn.className = 'group-btn';
@@ -86,7 +88,7 @@ function initUI(): void {
     const stats = computeStats(movies, store);
     withTransition(() => renderStats(document.getElementById('main')!, stats));
   };
-  groupSelect.appendChild(intelBtn);
+  masthead.insertBefore(intelBtn, reloadBtn);
 
   withTransition(() => {
     loaderEl.style.display = 'none';
@@ -216,7 +218,10 @@ reloadBtn.addEventListener('click', () => {
 });
 document.getElementById('search')!.addEventListener('input', e => {
   searchTerm = (e.target as HTMLInputElement).value.toLowerCase().trim();
-  if (!isIntelView) render();
+  if (!isIntelView) {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => render(), 300);
+  }
 });
 
 tryAutoLoad();
