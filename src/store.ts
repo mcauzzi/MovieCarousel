@@ -6,11 +6,27 @@ export interface StoreAdapter {
   setStatus(id: number, status: WatchStatus): void;
   getRating(id: number): Rating;
   setRating(id: number, stars: Rating): void;
+  /** Stato di base proveniente dal file .tc (campo "Visto"). Sovrascritto da scelte manuali. */
+  setSeed(seed: Record<number, WatchStatus>): void;
+  /** Voto di base proveniente dal file .tc (campo "Valutazione personale"). Sovrascritto da scelte manuali. */
+  setSeedRating(seed: Record<number, Rating>): void;
 }
 
 export class LocalStorageAdapter implements StoreAdapter {
   private readonly statusKey = 'cm_status';
   private readonly ratingKey = 'cm_rating';
+  private seed: Record<string, WatchStatus> = {};
+  private seedRating: Record<string, Rating> = {};
+
+  setSeed(seed: Record<number, WatchStatus>): void {
+    this.seed = {};
+    for (const [id, status] of Object.entries(seed)) this.seed[id] = status;
+  }
+
+  setSeedRating(seed: Record<number, Rating>): void {
+    this.seedRating = {};
+    for (const [id, stars] of Object.entries(seed)) this.seedRating[id] = stars;
+  }
 
   private readStatus(): Record<string, WatchStatus> {
     try { return JSON.parse(localStorage.getItem(this.statusKey) ?? '{}'); }
@@ -23,24 +39,34 @@ export class LocalStorageAdapter implements StoreAdapter {
   }
 
   getStatus(id: number): WatchStatus {
-    return this.readStatus()[String(id)] ?? null;
+    const overrides = this.readStatus();
+    const key = String(id);
+    // Un override manuale (anche "nessuno") ha la precedenza sul seed del .tc.
+    if (key in overrides) return overrides[key];
+    return this.seed[key] ?? null;
   }
 
   setStatus(id: number, status: WatchStatus): void {
+    // Salviamo sempre l'override esplicito (null incluso) così da poter
+    // sovrascrivere lo stato di base "Visto" letto dal file .tc.
     const data = this.readStatus();
-    if (status === null) delete data[String(id)];
-    else data[String(id)] = status;
+    data[String(id)] = status;
     localStorage.setItem(this.statusKey, JSON.stringify(data));
   }
 
   getRating(id: number): Rating {
-    return this.readRating()[String(id)] ?? null;
+    const overrides = this.readRating();
+    const key = String(id);
+    // Un voto manuale (anche "nessuno") ha la precedenza sul seed del .tc.
+    if (key in overrides) return overrides[key];
+    return this.seedRating[key] ?? null;
   }
 
   setRating(id: number, stars: Rating): void {
+    // Salviamo sempre l'override esplicito (null incluso) così da poter
+    // sovrascrivere il voto di base letto dal file .tc.
     const data = this.readRating();
-    if (stars === null) delete data[String(id)];
-    else data[String(id)] = stars;
+    data[String(id)] = stars;
     localStorage.setItem(this.ratingKey, JSON.stringify(data));
   }
 }

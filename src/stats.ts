@@ -10,16 +10,18 @@ export interface Stats {
   topGenres: [string, number][];
   topDirectors: [string, number][];
   byDecade: [string, number][];
+  byRating: [number, number][];
 }
 
 export function computeStats(movies: Movie[], store: StoreAdapter): Stats {
   let seen = 0, watchlist = 0, ratingSum = 0, ratingCount = 0;
+  const ratingCounts = new Map<number, number>();
   for (const m of movies) {
     const s = store.getStatus(m.id);
     if (s === 'seen') seen++;
     else if (s === 'watchlist') watchlist++;
     const r = store.getRating(m.id);
-    if (r !== null) { ratingSum += r; ratingCount++; }
+    if (r !== null) { ratingSum += r; ratingCount++; ratingCounts.set(r, (ratingCounts.get(r) ?? 0) + 1); }
   }
 
   const genreMap = new Map<string, number>();
@@ -44,6 +46,7 @@ export function computeStats(movies: Movie[], store: StoreAdapter): Stats {
     topGenres: [...genreMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
     topDirectors: [...dirMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
     byDecade: [...decadeMap.entries()].sort((a, b) => parseInt(b[0]) - parseInt(a[0])),
+    byRating: [...ratingCounts.entries()].sort((a, b) => b[0] - a[0]),
   };
 }
 
@@ -61,6 +64,7 @@ export function renderStats(container: HTMLElement, stats: Stats): void {
   const genreMax = stats.topGenres[0]?.[1] ?? 1;
   const dirMax = stats.topDirectors[0]?.[1] ?? 1;
   const decadeMax = Math.max(...stats.byDecade.map(([, n]) => n), 1);
+  const ratingMax = Math.max(...stats.byRating.map(([, n]) => n), 1);
 
   container.innerHTML = `
     <div class="stats-panel">
@@ -85,5 +89,6 @@ export function renderStats(container: HTMLElement, stats: Stats): void {
       ${stats.topGenres.length ? `<div class="stats-section"><h3 class="stats-section-title">TOP GENRES</h3>${stats.topGenres.map(([g, n]) => barHTML(g, n, genreMax)).join('')}</div>` : ''}
       ${stats.topDirectors.length ? `<div class="stats-section"><h3 class="stats-section-title">TOP DIRECTORS</h3>${stats.topDirectors.map(([d, n]) => barHTML(d, n, dirMax)).join('')}</div>` : ''}
       ${stats.byDecade.length ? `<div class="stats-section"><h3 class="stats-section-title">BY DECADE</h3>${stats.byDecade.map(([d, n]) => barHTML('ANNI ' + d.replace('s', ''), n, decadeMax)).join('')}</div>` : ''}
+      ${stats.byRating.length ? `<div class="stats-section"><h3 class="stats-section-title">BY RANK</h3>${stats.byRating.map(([r, n]) => barHTML('★'.repeat(r), n, ratingMax)).join('')}</div>` : ''}
     </div>`;
 }

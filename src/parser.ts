@@ -14,6 +14,8 @@ export interface Movie {
   producer?: string[];
   cast?: { actor: string; role: string }[];
   'running-time'?: number;
+  rating?: number;
+  visto?: string;
   cdate?: string;
   mdate?: string;
   [key: string]: unknown;

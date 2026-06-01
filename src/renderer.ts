@@ -6,6 +6,9 @@ import type { StoreAdapter } from './store';
 
 type OpenModalFn = (id: number, movies: Movie[], embeddedImages: Map<string, string>, imgDir: string) => void;
 
+/** Filtro per stato di visione applicato alla vista a gruppi. */
+export type WatchFilter = 'all' | 'seen' | 'unseen';
+
 function cardHTML(m: Movie, embeddedImages: Map<string, string>, imgDir: string, store: StoreAdapter): string {
   const url = coverUrl(m, embeddedImages, imgDir);
   const yr = m.year ? String(m.year) : '';
@@ -37,9 +40,15 @@ function rowHTML(
   searchTerm: string,
   embeddedImages: Map<string, string>,
   imgDir: string,
-  store: StoreAdapter
+  store: StoreAdapter,
+  watchFilter: WatchFilter
 ): string {
-  const filtered = g.movies.filter(m => matchesSearch(m, searchTerm));
+  const filtered = g.movies.filter(m => {
+    if (!matchesSearch(m, searchTerm)) return false;
+    if (watchFilter === 'seen') return store.getStatus(m.id) === 'seen';
+    if (watchFilter === 'unseen') return store.getStatus(m.id) !== 'seen';
+    return true;
+  });
   if (!filtered.length) return '';
   const num = String(idx + 1).padStart(2, '0');
   return `<section class="row" style="animation-delay:${Math.min(idx * 0.05, 0.4)}s">
@@ -67,14 +76,18 @@ export function renderMain(
   searchTerm: string,
   embeddedImages: Map<string, string>,
   imgDir: string,
-  store: StoreAdapter
+  store: StoreAdapter,
+  watchFilter: WatchFilter = 'all'
 ): void {
   const main = document.getElementById('main')!;
   const html = grouper.groups
-    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir, store))
+    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir, store, watchFilter))
     .filter(Boolean)
     .join('');
-  main.innerHTML = html || '<div class="empty">No targets found</div>';
+  const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
+    : watchFilter === 'unseen' ? 'Nessun film da vedere'
+    : 'No targets found';
+  main.innerHTML = html || `<div class="empty">${emptyMsg}</div>`;
 }
 
 export function attachHandlers(

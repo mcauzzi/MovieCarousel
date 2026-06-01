@@ -416,6 +416,17 @@ header::after{
   box-shadow:4px 4px 0 var(--ink);
 }
 
+/* Filtri di visione: toggle indipendenti, look invertito quando attivi */
+.filter-box{display:flex;gap:0.4rem;flex-wrap:wrap}
+.filter-btn{font-size:0.78rem}
+.filter-btn.active{
+  background:var(--ink);
+  color:var(--bg);
+  border-color:var(--ink);
+  box-shadow:4px 4px 0 var(--hot);
+}
+.filter-btn.active:hover{background:var(--ink)}
+
 /* =========================
    MAIN
    ========================= */

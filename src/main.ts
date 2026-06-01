@@ -5,9 +5,10 @@ import type { Movie } from './parser';
 import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
 import { renderMain, attachHandlers } from './renderer';
+import type { WatchFilter } from './renderer';
 import { openModal } from './modal';
 import { LocalStorageAdapter } from './store';
-import type { StoreAdapter } from './store';
+import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
@@ -22,6 +23,7 @@ let groupers: Grouper[] = [];
 let currentGrouper = '';
 let searchTerm = '';
 let isIntelView = false;
+let watchFilter: WatchFilter = 'all';
 let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
 const store: StoreAdapter = new LocalStorageAdapter();
@@ -43,7 +45,7 @@ function render(): void {
   const grouper = groupers.find(g => g.name === currentGrouper);
   if (!grouper) return;
   isIntelView = false;
-  renderMain(grouper, searchTerm, embeddedImages, imgDir, store);
+  renderMain(grouper, searchTerm, embeddedImages, imgDir, store, watchFilter);
   attachHandlers(
     movies, embeddedImages, imgDir,
     (id, mvs, embeds, dir) => { withTransition(() => openModal(id, mvs, embeds, dir, store)); }
@@ -51,7 +53,7 @@ function render(): void {
 }
 
 function initUI(): void {
-  groupers = buildGroupers(movies);
+  groupers = buildGroupers(movies, store);
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
   document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
@@ -90,6 +92,31 @@ function initUI(): void {
   };
   masthead.insertBefore(intelBtn, reloadBtn);
 
+  // Filtri di visione — due toggle mutuamente esclusivi nella toolbar
+  document.getElementById('watchFilterBox')?.remove();
+  const filterBox = document.createElement('div');
+  filterBox.id = 'watchFilterBox';
+  filterBox.className = 'filter-box';
+  const filterDefs: { label: string; value: Exclude<WatchFilter, 'all'> }[] = [
+    { label: '● VISTI',     value: 'seen' },
+    { label: '○ NON VISTI', value: 'unseen' },
+  ];
+  const filterBtns = filterDefs.map(def => {
+    const btn = document.createElement('button');
+    btn.className = 'group-btn filter-btn' + (watchFilter === def.value ? ' active' : '');
+    btn.textContent = def.label;
+    btn.onclick = () => {
+      // Clic sul filtro attivo lo disattiva; altrimenti diventa l'unico attivo.
+      watchFilter = watchFilter === def.value ? 'all' : def.value;
+      filterBtns.forEach((b, i) => b.classList.toggle('active', watchFilter === filterDefs[i].value));
+      if (!isIntelView) withTransition(() => render());
+    };
+    filterBox.appendChild(btn);
+    return btn;
+  });
+  const toolbar = document.querySelector('.toolbar')!;
+  toolbar.insertBefore(filterBox, groupSelect);
+
   withTransition(() => {
     loaderEl.style.display = 'none';
     headerEl.classList.add('show');
@@ -122,6 +149,17 @@ async function handleFile(file: File): Promise<void> {
     imgDir = imgDirInput.value || configuredImgDir;
     if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
     movies.forEach((m, i) => { if (m.id == null) (m as Record<string, unknown>)['id'] = i; });
+    // Stato di base "visto" dal file .tc: i film con <visto>true</visto> partono come SEEN.
+    const seed: Record<number, WatchStatus> = {};
+    movies.forEach(m => { if (m.visto === 'true' && typeof m.id === 'number') seed[m.id] = 'seen'; });
+    store.setSeed(seed);
+    // Voto di base dal file .tc (campo "Valutazione personale", 1-5).
+    const ratingSeed: Record<number, Rating> = {};
+    movies.forEach(m => {
+      if (typeof m.id === 'number' && typeof m.rating === 'number' && m.rating >= 1 && m.rating <= 5)
+        ratingSeed[m.id] = m.rating as Rating;
+    });
+    store.setSeedRating(ratingSeed);
     setStatus(`✓ ${movies.length} TARGETS ACQUIRED`);
     setTimeout(() => initUI(), 400);
   } catch (err) {
@@ -210,6 +248,7 @@ reloadBtn.addEventListener('click', () => {
   currentGrouper = '';
   searchTerm = '';
   isIntelView = false;
+  watchFilter = 'all';
   loaderEl.style.display = 'flex';
   headerEl.classList.remove('show');
   document.getElementById('main')!.innerHTML = '';

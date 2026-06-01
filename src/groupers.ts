@@ -1,4 +1,5 @@
 import type { Movie } from './parser';
+import type { StoreAdapter } from './store';
 
 export interface Group {
   key: string;
@@ -24,7 +25,7 @@ export function matchesSearch(m: Movie, searchTerm: string): boolean {
   return haystack.includes(searchTerm.toLowerCase());
 }
 
-export function buildGroupers(movies: Movie[]): Grouper[] {
+export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
   const groupers: Grouper[] = [];
 
   function add(name: string, label: string, fn: () => Group[]) {
@@ -55,6 +56,19 @@ export function buildGroupers(movies: Movie[]): Grouper[] {
   add('nationality', 'Paese',   () => groupByField('nationality', 4));
   add('language',    'Lingua',  () => groupByField('language', 5));
   add('studio',      'Studio',  () => groupByField('studio', 5));
+
+  add('rating', 'Voto', () => {
+    const map = new Map<number, Movie[]>();
+    for (const m of movies) {
+      const r = store.getRating(m.id);
+      if (r === null) continue;
+      if (!map.has(r)) map.set(r, []);
+      map.get(r)!.push(m);
+    }
+    return Array.from(map.entries())
+      .map(([r, v]) => ({ key: String(r), label: '★'.repeat(r) + ' (' + r + ')', movies: v, sortKey: r }))
+      .sort((a, b) => (b.sortKey ?? 0) - (a.sortKey ?? 0));
+  });
 
   add('decade', 'Decennio', () => {
     const map = new Map<string, Movie[]>();
