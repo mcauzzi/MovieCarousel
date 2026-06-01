@@ -19,15 +19,15 @@ function cardHTML(m: Movie, embeddedImages: Map<string, string>, imgDir: string,
     : '';
   return `<div class="card" data-id="${m.id}">
     <div class="card-inner">
-      ${yr ? `<div class="card-tag">${yr}</div>` : ''}
-      ${badge}
       <div class="img-wrap">${cover}</div>
       <div class="card-overlay">
         <div class="co-title">${safeTitle}</div>
         ${director ? `<div class="co-meta">${escapeHtml(director)}</div>` : ''}
       </div>
-      <div class="card-bar">${escapeHtml(m.title)}</div>
     </div>
+    <div class="card-bar">${escapeHtml(m.title)}</div>
+    ${yr ? `<div class="card-tag">${yr}</div>` : ''}
+    ${badge}
   </div>`;
 }
 
@@ -55,9 +55,9 @@ function rowHTML(
       </div>
     </div>
     <div class="carousel-wrap">
-      <button class="carousel-btn prev" aria-label="Indietro">◀</button>
+      <button class="carousel-btn prev" aria-label="Indietro"><span>◀</span></button>
       <div class="carousel">${filtered.map(m => cardHTML(m, embeddedImages, imgDir, store)).join('')}</div>
-      <button class="carousel-btn next" aria-label="Avanti">▶</button>
+      <button class="carousel-btn next" aria-label="Avanti"><span>▶</span></button>
     </div>
   </section>`;
 }

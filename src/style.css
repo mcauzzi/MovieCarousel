@@ -282,7 +282,6 @@ header{
   background:var(--bg);
   border-bottom:3px solid var(--hot);
   display:none;
-  position:sticky;
 }
 header.show{display:block}
 header::after{
@@ -406,7 +405,6 @@ header::after{
   text-transform:uppercase;
   cursor:pointer;
   transition:all 0.1s;
-  clip-path:polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
   position:relative;
 }
 .group-btn:hover{background:var(--hot-deep);transform:translate(-2px,-2px)}
@@ -536,26 +534,29 @@ main{
 .carousel-btn{
   position:absolute;
   top:50%;
-  transform:translateY(-50%);
+  transform:translateY(-50%) skewX(-10deg);
   width:48px;
   height:48px;
   background:var(--hot);
   border:3px solid var(--ink);
   color:var(--ink);
   font-family:'Anton',sans-serif;
-  font-size:1.4rem;
+  font-size:1.25rem;
   cursor:pointer;
   z-index:5;
   opacity:0;
-  transition:opacity 0.2s, transform 0.12s;
+  transition:opacity 0.2s, transform 0.12s, background 0.12s;
   display:flex;
   align-items:center;
   justify-content:center;
   line-height:1;
-  clip-path:polygon(15% 0, 100% 0, 85% 100%, 0 100%);
+  box-shadow:0 3px 8px rgba(0,0,0,0.6);
 }
+/* contro-skew per tenere la freccia dritta e centrata nel pulsante inclinato */
+.carousel-btn span{display:block;transform:skewX(10deg)}
 .carousel-wrap:hover .carousel-btn{opacity:1}
-.carousel-btn:hover{transform:translateY(-50%) scale(1.1)}
+.carousel-btn:hover{transform:translateY(-50%) skewX(-10deg) scale(1.08)}
+.carousel-btn:active{transform:translateY(-50%) skewX(-10deg) scale(0.96);box-shadow:0 1px 4px rgba(0,0,0,0.6)}
 .carousel-btn.prev{left:1rem}
 .carousel-btn.next{right:1rem}
 
@@ -574,7 +575,6 @@ main{
   position:relative;
   border:3px solid var(--ink);
   background:var(--surface);
-  clip-path:polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
   overflow:hidden;
 }
 .card::before{
@@ -583,7 +583,6 @@ main{
   position:absolute;
   inset:0;
   background:var(--hot);
-  clip-path:polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
   transform:translate(6px,6px);
   z-index:-1;
   transition:transform 0.2s;
@@ -626,26 +625,40 @@ main{
   font-size:0.9rem;letter-spacing:0.2em;color:var(--hot);
 }
 
-/* Tag anno fisso sull'angolo */
+/* Tag anno — angolo in alto a sinistra. Lato esterno (sx) dritto a filo del poster,
+   lato interno (dx) inclinato. Bordo bianco su tutti i lati (anche la diagonale) ottenuto
+   con due strati: ::before bianco = bordo, ::after rosso rientrato di 2px = riempimento. */
 .card-tag{
   position:absolute;
   top:0.6rem;
-  left:-0.3rem;
-  background:var(--hot);
+  left:0;
   color:var(--ink);
-  padding:0.2rem 0.7rem 0.15rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0.34rem 1.05rem 0.34rem 0.6rem;
   font-family:'Anton',sans-serif;
   font-size:0.8rem;
+  line-height:1;
   letter-spacing:0.15em;
-  border:2px solid var(--ink);
-  transform:skewX(-10deg);
   z-index:3;
   pointer-events:none;
 }
+.card-tag::before,
+.card-tag::after{
+  content:'';
+  position:absolute;
+  inset:0;
+  clip-path:polygon(0 0, 100% 0, 88% 100%, 0 100%);
+}
+.card-tag::before{background:var(--ink);z-index:-2}
+.card-tag::after{inset:2px;background:var(--hot);z-index:-1}
 
 .card-bar{
   padding:0.55rem 0.7rem;
+  border:3px solid var(--ink);
   border-top:2px solid var(--ink);
+  margin-top:-3px;
   background:var(--bg);
   font-family:'Anton',sans-serif;
   font-size:0.78rem;
@@ -1008,7 +1021,6 @@ main{
   text-transform:uppercase;
   cursor:pointer;
   transition:all 0.1s;
-  clip-path:polygon(0 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%);
 }
 .theme-btn:hover{border-color:var(--ink);color:var(--ink)}
 .theme-btn.active{background:var(--hot);color:var(--ink);border-color:var(--ink)}
@@ -1111,12 +1123,6 @@ main{
 }
 .stat-progress-row{margin-bottom:2.5rem;padding:0 2.5rem}
 .stats-section{margin-bottom:2.5rem;padding:0 2.5rem}
-.stats-grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:1rem;
-  margin-bottom:2rem;
-}
 .stat-card{
   background:var(--surface);
   border:3px solid var(--ink);
@@ -1179,18 +1185,39 @@ main{
 /* =========================
    CARD STATUS BADGE
    ========================= */
+/* Badge stato — angolo in alto a destra, identico al tag anno */
+/* Badge stato — speculare al tag anno: lato esterno (dx) dritto, interno (sx) inclinato
+   nel verso opposto (i due tagli NON sono paralleli). Stessa tecnica a due strati. */
 .card-status-badge{
   position:absolute;
-  bottom:2.2rem;left:0;
-  padding:0.15rem 0.6rem 0.1rem;
+  top:0.6rem;
+  right:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0.34rem 0.6rem 0.34rem 1.05rem;
   font-family:'Anton',sans-serif;
-  font-size:0.7rem;letter-spacing:0.15em;
-  border:2px solid var(--ink);
-  transform:skewX(-10deg);
-  z-index:3;pointer-events:none;
+  font-size:0.8rem;
+  line-height:1;
+  letter-spacing:0.15em;
+  z-index:3;
+  pointer-events:none;
 }
-.card-status-badge.badge-seen{background:var(--ink);color:var(--bg)}
-.card-status-badge.badge-watchlist{background:transparent;color:var(--hot);border-color:var(--hot)}
+.card-status-badge::before,
+.card-status-badge::after{
+  content:'';
+  position:absolute;
+  inset:0;
+  clip-path:polygon(0 0, 100% 0, 100% 100%, 12% 100%);
+}
+.card-status-badge::before{z-index:-2}
+.card-status-badge::after{inset:2px;z-index:-1}
+.card-status-badge.badge-seen{color:var(--ink)}
+.card-status-badge.badge-seen::before{background:var(--ink)}
+.card-status-badge.badge-seen::after{background:var(--hot)}
+.card-status-badge.badge-watchlist{color:var(--hot)}
+.card-status-badge.badge-watchlist::before{background:var(--hot)}
+.card-status-badge.badge-watchlist::after{background:var(--bg)}
 
 /* =========================
    MODAL — WATCH STATUS & STAR RATING
