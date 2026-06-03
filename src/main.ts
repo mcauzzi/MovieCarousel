@@ -12,6 +12,7 @@ import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
+import { openRandomPicker, resetRandomPicker } from './random';
 import { computeStats, renderStats } from './stats';
 
 // Stato
@@ -91,6 +92,21 @@ function initUI(): void {
     withTransition(() => renderStats(document.getElementById('main')!, stats));
   };
   masthead.insertBefore(intelBtn, reloadBtn);
+
+  // Bottone RANDOM nel masthead
+  document.getElementById('randomBtn')?.remove();
+  const randomBtn = document.createElement('button');
+  randomBtn.id = 'randomBtn';
+  randomBtn.className = 'group-btn';
+  randomBtn.textContent = '◈ RANDOM';
+  randomBtn.onclick = () => openRandomPicker({
+    movies,
+    groupers,
+    store,
+    initialWatchFilter: watchFilter,
+    onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store)),
+  });
+  masthead.insertBefore(randomBtn, reloadBtn);
 
   // Filtri di visione — due toggle mutuamente esclusivi nella toolbar
   document.getElementById('watchFilterBox')?.remove();
@@ -249,6 +265,7 @@ reloadBtn.addEventListener('click', () => {
   searchTerm = '';
   isIntelView = false;
   watchFilter = 'all';
+  resetRandomPicker();
   loaderEl.style.display = 'flex';
   headerEl.classList.remove('show');
   document.getElementById('main')!.innerHTML = '';
