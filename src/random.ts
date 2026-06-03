@@ -193,6 +193,120 @@ function buildGrouperPanel(
   return panel;
 }
 
-function buildPicker(_params: PickerParams): HTMLElement {
-  return document.createElement('div'); // stub — Task 3
+function buildPicker(params: PickerParams): HTMLElement {
+  const { movies, groupers, store, initialWatchFilter, onPick } = params;
+
+  const selections = new Map<string, Set<string>>();
+  let currentWatchFilter: WatchFilter = initialWatchFilter;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'random-backdrop';
+
+  const panel = document.createElement('div');
+  panel.className = 'random-panel';
+  backdrop.appendChild(panel);
+
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'random-header';
+
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'random-eyebrow';
+  eyebrow.textContent = '▰ SELEZIONE CASUALE';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'random-title';
+  titleEl.innerHTML = 'RANDOM <span class="random-title-accent">TARGET</span>';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'random-close';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => close();
+
+  headerEl.appendChild(eyebrow);
+  headerEl.appendChild(titleEl);
+  headerEl.appendChild(closeBtn);
+  panel.appendChild(headerEl);
+
+  // Groups grid
+  const grid = document.createElement('div');
+  grid.className = 'random-groups-grid';
+  panel.appendChild(grid);
+
+  let poolCountEl!: HTMLElement;
+  let extractBtn!: HTMLButtonElement;
+
+  function updatePool(): void {
+    const pool = buildPool(movies, groupers, selections, store, currentWatchFilter);
+    poolCountEl.textContent = 'Pool: ' + pool.length + ' film';
+    extractBtn.disabled = pool.length === 0;
+  }
+
+  for (const grouper of groupers) {
+    selections.set(grouper.name, new Set());
+    grid.appendChild(buildGrouperPanel(grouper, selections.get(grouper.name)!, updatePool));
+  }
+
+  // Watch filter row
+  const watchRow = document.createElement('div');
+  watchRow.className = 'random-watch-row';
+
+  const watchLabel = document.createElement('span');
+  watchLabel.className = 'random-watch-label';
+  watchLabel.textContent = 'VISIONE';
+  watchRow.appendChild(watchLabel);
+
+  const watchOpts: { label: string; value: WatchFilter }[] = [
+    { label: 'TUTTI', value: 'all' },
+    { label: 'VISTI', value: 'seen' },
+    { label: 'NON VISTI', value: 'unseen' },
+  ];
+  const watchBtns: HTMLButtonElement[] = [];
+  for (const opt of watchOpts) {
+    const btn = document.createElement('button');
+    btn.className = 'group-btn' + (currentWatchFilter === opt.value ? ' active' : '');
+    btn.textContent = opt.label;
+    btn.onclick = () => {
+      currentWatchFilter = opt.value;
+      watchBtns.forEach((b, i) => b.classList.toggle('active', watchOpts[i].value === opt.value));
+      updatePool();
+    };
+    watchBtns.push(btn);
+    watchRow.appendChild(btn);
+  }
+  panel.appendChild(watchRow);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.className = 'random-footer';
+
+  poolCountEl = document.createElement('div');
+  poolCountEl.className = 'random-pool-count';
+
+  extractBtn = document.createElement('button');
+  extractBtn.className = 'random-extract-btn';
+  extractBtn.textContent = '◈ ESTRAI';
+  extractBtn.onclick = () => {
+    const pool = buildPool(movies, groupers, selections, store, currentWatchFilter);
+    if (!pool.length) return;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    close();
+    onPick(picked.id);
+  };
+
+  footer.appendChild(poolCountEl);
+  footer.appendChild(extractBtn);
+  panel.appendChild(footer);
+
+  function close(): void {
+    backdrop.classList.remove('show');
+  }
+
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && backdrop.classList.contains('show')) close();
+  });
+
+  updatePool();
+  return backdrop;
 }
