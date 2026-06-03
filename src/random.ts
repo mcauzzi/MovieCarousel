@@ -44,6 +44,7 @@ export function buildPool(
 
 let backdropEl: HTMLElement | null = null;
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let setPickerWatchFilter: ((f: WatchFilter) => void) | null = null;
 
 export function resetRandomPicker(): void {
   if (keydownHandler) {
@@ -52,12 +53,17 @@ export function resetRandomPicker(): void {
   }
   backdropEl?.remove();
   backdropEl = null;
+  setPickerWatchFilter = null;
 }
 
 export function openRandomPicker(params: PickerParams): void {
   if (!backdropEl) {
-    backdropEl = buildPicker(params);
+    const { backdrop, setWatchFilter } = buildPicker(params);
+    backdropEl = backdrop;
+    setPickerWatchFilter = setWatchFilter;
     document.body.appendChild(backdropEl);
+  } else {
+    setPickerWatchFilter?.(params.initialWatchFilter);
   }
   backdropEl.classList.add('show');
 }
@@ -198,7 +204,7 @@ function buildGrouperPanel(
   return panel;
 }
 
-function buildPicker(params: PickerParams): HTMLElement {
+function buildPicker(params: PickerParams): { backdrop: HTMLElement; setWatchFilter: (f: WatchFilter) => void } {
   const { movies, groupers, store, initialWatchFilter, onPick } = params;
 
   const selections = new Map<string, Set<string>>();
@@ -314,5 +320,12 @@ function buildPicker(params: PickerParams): HTMLElement {
   document.addEventListener('keydown', keydownHandler);
 
   updatePool();
-  return backdrop;
+
+  function setWatchFilter(f: WatchFilter): void {
+    currentWatchFilter = f;
+    watchBtns.forEach((b, i) => b.classList.toggle('active', watchOpts[i].value === f));
+    updatePool();
+  }
+
+  return { backdrop, setWatchFilter };
 }
