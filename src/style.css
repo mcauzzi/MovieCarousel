@@ -1405,7 +1405,7 @@ main{
 .random-chip-remove:hover{opacity:1}
 
 .random-grouper-body{
-  flex-wrap:wrap;gap:0.35rem;
+  display:flex;flex-wrap:wrap;gap:0.35rem;
   padding:0.7rem;flex-direction:row;
   align-content:flex-start;
 }
