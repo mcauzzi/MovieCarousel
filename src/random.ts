@@ -43,8 +43,13 @@ export function buildPool(
 }
 
 let backdropEl: HTMLElement | null = null;
+let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
 export function resetRandomPicker(): void {
+  if (keydownHandler) {
+    document.removeEventListener('keydown', keydownHandler);
+    keydownHandler = null;
+  }
   backdropEl?.remove();
   backdropEl = null;
 }
@@ -303,9 +308,10 @@ function buildPicker(params: PickerParams): HTMLElement {
   }
 
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
-  document.addEventListener('keydown', (e: KeyboardEvent) => {
+  keydownHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && backdrop.classList.contains('show')) close();
-  });
+  };
+  document.addEventListener('keydown', keydownHandler);
 
   updatePool();
   return backdrop;
