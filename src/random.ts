@@ -302,10 +302,6 @@ function buildPicker(params: PickerParams): { backdrop: HTMLElement; setWatchFil
   const headerEl = document.createElement('div');
   headerEl.className = 'random-header';
 
-  const eyebrow = document.createElement('div');
-  eyebrow.className = 'random-eyebrow';
-  eyebrow.textContent = '▰ SELEZIONE CASUALE';
-
   const titleEl = document.createElement('div');
   titleEl.className = 'random-title';
   titleEl.innerHTML = 'RANDOM <span class="random-title-accent">TARGET</span>';
@@ -315,7 +311,6 @@ function buildPicker(params: PickerParams): { backdrop: HTMLElement; setWatchFil
   closeBtn.textContent = '✕';
   closeBtn.onclick = () => close();
 
-  headerEl.appendChild(eyebrow);
   headerEl.appendChild(titleEl);
   headerEl.appendChild(closeBtn);
   panel.appendChild(headerEl);

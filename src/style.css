@@ -1284,24 +1284,23 @@ main{
   max-width:860px;width:100%;
   border:4px solid var(--ink);
   position:relative;
+  /* Ombra offset P5 come box-shadow esterna: non copre l'interno del
+     pannello (lo faceva un ::before z-index:-1, che trapelava rosso nei
+     gap di grid/watch-row privi di background). */
+  box-shadow:14px 14px 0 var(--hot);
   transform:translate(20px,20px) skewX(-2deg);
   transition:transform 0.3s cubic-bezier(0.2,0.8,0.2,1);
-}
-.random-panel::before{
-  content:'';
-  position:absolute;
-  inset:-4px;
-  background:var(--hot);
-  z-index:-1;
-  transform:translate(10px,10px);
 }
 .random-backdrop.show .random-panel{transform:translate(0,0) skewX(0)}
 
 .random-header{
-  padding:1.5rem 2rem 1.2rem;
+  padding:1.2rem 2rem;
   border-bottom:3px solid var(--hot);
   position:relative;
   background:var(--bg);
+  display:flex;
+  align-items:center;
+  min-height:64px;
 }
 .random-header::before{
   content:'';
@@ -1313,13 +1312,6 @@ main{
   z-index:0;
   opacity:0.15;
 }
-.random-eyebrow{
-  font-family:'JetBrains Mono',monospace;
-  font-size:0.7rem;letter-spacing:0.3em;
-  color:var(--hot);text-transform:uppercase;
-  font-weight:700;margin-bottom:0.4rem;
-  position:relative;z-index:1;
-}
 .random-title{
   font-family:'Oswald',sans-serif;
   font-weight:700;font-style:italic;
@@ -1330,7 +1322,11 @@ main{
 }
 .random-title-accent{
   background:var(--hot);color:var(--ink);
-  padding:0 0.3em;
+  /* inline-block + line-height controllata: lo sfondo rosso ha un'altezza
+     definita attorno al testo; il padding verticale ne regola l'altezza. */
+  display:inline-block;
+  line-height:1;
+  padding:0.14em 0.3em;
 }
 .random-close{
   position:absolute;top:0.6rem;right:0.6rem;
