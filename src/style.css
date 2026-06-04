@@ -1427,6 +1427,10 @@ main{
 .random-quick-row .group-btn:hover{
   border-color:var(--ink);color:var(--ink);background:var(--hot-deep);
 }
+.none-value-btn{
+  border-style:dashed;opacity:0.75;font-size:0.75rem;
+}
+.none-value-btn.active{opacity:1}
 
 .random-watch-row{
   display:flex;align-items:center;gap:0.5rem;

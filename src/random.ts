@@ -30,6 +30,11 @@ export function buildPool(
         for (const m of group.movies) allowed.add(m.id);
       }
     }
+    if (selectedKeys.has('__none__')) {
+      const coveredIds = new Set<number>();
+      for (const g of grouper.groups) for (const m of g.movies) coveredIds.add(m.id);
+      for (const m of movies) if (!coveredIds.has(m.id)) allowed.add(m.id);
+    }
     pool = pool.filter(m => allowed.has(m.id));
   }
 
@@ -71,8 +76,13 @@ export function openRandomPicker(params: PickerParams): void {
 function buildGrouperPanel(
   grouper: Grouper,
   selectedKeys: Set<string>,
-  onSelectionChange: () => void
+  onSelectionChange: () => void,
+  allMovies: Movie[]
 ): HTMLElement {
+  const coveredIds = new Set<number>();
+  for (const g of grouper.groups) for (const m of g.movies) coveredIds.add(m.id);
+  const noneCount = allMovies.filter(m => !coveredIds.has(m.id)).length;
+
   let isOpen = false;
 
   const panel = document.createElement('div');
@@ -120,6 +130,25 @@ function buildGrouperPanel(
     body.appendChild(btn);
   }
 
+  let noneValueBtn: HTMLButtonElement | null = null;
+  if (noneCount > 0) {
+    noneValueBtn = document.createElement('button');
+    noneValueBtn.className = 'group-btn none-value-btn' + (selectedKeys.has('__none__') ? ' active' : '');
+    noneValueBtn.textContent = 'Nessun ' + grouper.label + ' ×' + noneCount;
+    noneValueBtn.onclick = () => {
+      if (selectedKeys.has('__none__')) {
+        selectedKeys.delete('__none__');
+        noneValueBtn!.classList.remove('active');
+      } else {
+        selectedKeys.add('__none__');
+        noneValueBtn!.classList.add('active');
+      }
+      renderChips();
+      onSelectionChange();
+    };
+    body.appendChild(noneValueBtn);
+  }
+
   const quickRow = document.createElement('div');
   quickRow.className = 'random-quick-row';
 
@@ -131,6 +160,10 @@ function buildGrouperPanel(
       selectedKeys.add(group.key);
       groupBtns.get(group.key)?.classList.add('active');
     }
+    if (noneCount > 0) {
+      selectedKeys.add('__none__');
+      noneValueBtn?.classList.add('active');
+    }
     renderChips();
     onSelectionChange();
   };
@@ -141,6 +174,7 @@ function buildGrouperPanel(
   noneBtn.onclick = () => {
     selectedKeys.clear();
     groupBtns.forEach(b => b.classList.remove('active'));
+    noneValueBtn?.classList.remove('active');
     renderChips();
     onSelectionChange();
   };
@@ -169,13 +203,14 @@ function buildGrouperPanel(
       return;
     }
     for (const key of selectedKeys) {
-      const group = grouper.groups.find(g => g.key === key);
-      if (!group) continue;
+      const label = key === '__none__'
+        ? 'Nessun ' + grouper.label
+        : (grouper.groups.find(g => g.key === key)?.label ?? key);
       const chip = document.createElement('span');
       chip.className = 'random-chip';
 
       const chipLabel = document.createElement('span');
-      chipLabel.textContent = group.label;
+      chipLabel.textContent = label;
 
       const chipRemove = document.createElement('button');
       chipRemove.className = 'random-chip-remove';
@@ -183,7 +218,8 @@ function buildGrouperPanel(
       chipRemove.onclick = (e) => {
         e.stopPropagation();
         selectedKeys.delete(key);
-        groupBtns.get(key)?.classList.remove('active');
+        if (key === '__none__') noneValueBtn?.classList.remove('active');
+        else groupBtns.get(key)?.classList.remove('active');
         renderChips();
         onSelectionChange();
       };
@@ -255,7 +291,7 @@ function buildPicker(params: PickerParams): { backdrop: HTMLElement; setWatchFil
 
   for (const grouper of groupers) {
     selections.set(grouper.name, new Set());
-    grid.appendChild(buildGrouperPanel(grouper, selections.get(grouper.name)!, updatePool));
+    grid.appendChild(buildGrouperPanel(grouper, selections.get(grouper.name)!, updatePool, movies));
   }
 
   // Watch filter row
