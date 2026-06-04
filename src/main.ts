@@ -164,7 +164,15 @@ async function handleFile(file: File): Promise<void> {
     embeddedImages = result.embeddedImages;
     imgDir = imgDirInput.value || configuredImgDir;
     if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
-    movies.forEach((m, i) => { if (m.id == null) (m as Record<string, unknown>)['id'] = i; });
+    // Assegna un id sintetico ai film privi di id valido (mancante o NaN da parseInt).
+    // Partiamo da max(id esistenti)+1 per non collidere con gli id reali del .tc.
+    let maxId = 0;
+    for (const m of movies)
+      if (typeof m.id === 'number' && Number.isFinite(m.id)) maxId = Math.max(maxId, m.id);
+    let nextId = maxId + 1;
+    for (const m of movies)
+      if (typeof m.id !== 'number' || !Number.isFinite(m.id))
+        (m as Record<string, unknown>)['id'] = nextId++;
     // Stato di base "visto" dal file .tc: i film con <visto>true</visto> partono come SEEN.
     const seed: Record<number, WatchStatus> = {};
     movies.forEach(m => { if (m.visto === 'true' && typeof m.id === 'number') seed[m.id] = 'seen'; });
@@ -276,7 +284,9 @@ document.getElementById('search')!.addEventListener('input', e => {
   searchTerm = (e.target as HTMLInputElement).value.toLowerCase().trim();
   if (!isIntelView) {
     clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => render(), 300);
+    // Ricontrolla isIntelView al fire: l'utente potrebbe passare a INTEL/RANDOM
+    // entro i 300 ms, e un render() tardivo sovrascriverebbe la vista statistiche.
+    searchDebounce = setTimeout(() => { if (!isIntelView) render(); }, 300);
   }
 });
 

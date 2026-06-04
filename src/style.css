@@ -441,6 +441,10 @@ main{
   position:relative;
   opacity:0;
   animation:slashIn 0.45s cubic-bezier(0.2,0.8,0.2,1) forwards;
+  /* Salta render/layout delle righe fuori schermo; il browser memorizza
+     l'altezza reale dopo il primo render (keyword auto) per evitare salti. */
+  content-visibility:auto;
+  contain-intrinsic-size:auto 520px;
 }
 @keyframes slashIn{
   from{opacity:0;transform:translateX(-30px) skewX(-3deg)}

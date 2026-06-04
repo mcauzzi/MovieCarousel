@@ -9,14 +9,14 @@ const modalContent = document.getElementById('modalContent')!;
 function updateCardBadge(id: number, status: WatchStatus): void {
   const card = document.querySelector<HTMLElement>(`.card[data-id="${id}"]`);
   if (!card) return;
-  const inner = card.querySelector<HTMLElement>('.card-inner')!;
-  const existing = inner.querySelector('.card-status-badge');
-  if (existing) existing.remove();
+  // Il badge è figlio diretto di .card (vedi cardHTML in renderer.ts): rimuoviamo
+  // tutti gli eventuali badge presenti per evitare duplicati e riallineiamo lì.
+  card.querySelectorAll('.card-status-badge').forEach(b => b.remove());
   if (status) {
     const badge = document.createElement('div');
     badge.className = `card-status-badge ${status === 'seen' ? 'badge-seen' : 'badge-watchlist'}`;
     badge.textContent = status === 'seen' ? 'SEEN' : '◎';
-    inner.appendChild(badge);
+    card.appendChild(badge);
   }
 }
 

@@ -17,6 +17,11 @@ export class LocalStorageAdapter implements StoreAdapter {
   private readonly ratingKey = 'cm_rating';
   private seed: Record<string, WatchStatus> = {};
   private seedRating: Record<string, Rating> = {};
+  // Cache in memoria degli override: gli accessori sono chiamati una volta per film
+  // a ogni render, quindi evitiamo di rifare JSON.parse di localStorage ogni volta.
+  // Popolata al primo accesso, tenuta aggiornata dalle scritture.
+  private statusCache: Record<string, WatchStatus> | null = null;
+  private ratingCache: Record<string, Rating> | null = null;
 
   setSeed(seed: Record<number, WatchStatus>): void {
     this.seed = {};
@@ -29,13 +34,21 @@ export class LocalStorageAdapter implements StoreAdapter {
   }
 
   private readStatus(): Record<string, WatchStatus> {
-    try { return JSON.parse(localStorage.getItem(this.statusKey) ?? '{}'); }
-    catch { return {}; }
+    if (this.statusCache) return this.statusCache;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(this.statusKey) ?? '{}');
+      this.statusCache = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { this.statusCache = {}; }
+    return this.statusCache!;
   }
 
   private readRating(): Record<string, Rating> {
-    try { return JSON.parse(localStorage.getItem(this.ratingKey) ?? '{}'); }
-    catch { return {}; }
+    if (this.ratingCache) return this.ratingCache;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(this.ratingKey) ?? '{}');
+      this.ratingCache = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { this.ratingCache = {}; }
+    return this.ratingCache!;
   }
 
   getStatus(id: number): WatchStatus {
@@ -51,6 +64,7 @@ export class LocalStorageAdapter implements StoreAdapter {
     // sovrascrivere lo stato di base "Visto" letto dal file .tc.
     const data = this.readStatus();
     data[String(id)] = status;
+    this.statusCache = data;
     localStorage.setItem(this.statusKey, JSON.stringify(data));
   }
 
@@ -67,6 +81,7 @@ export class LocalStorageAdapter implements StoreAdapter {
     // sovrascrivere il voto di base letto dal file .tc.
     const data = this.readRating();
     data[String(id)] = stars;
+    this.ratingCache = data;
     localStorage.setItem(this.ratingKey, JSON.stringify(data));
   }
 }
