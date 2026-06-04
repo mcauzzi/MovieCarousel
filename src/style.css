@@ -1405,13 +1405,36 @@ main{
 .random-chip-remove:hover{opacity:1}
 
 .random-grouper-body{
-  display:flex;flex-wrap:wrap;gap:0.35rem;
-  padding:0.7rem;flex-direction:row;
-  align-content:flex-start;
+  display:flex;flex-direction:column;gap:0.35rem;
+  padding:0.7rem;
 }
-.random-grouper-body .group-btn{
-  font-size:0.75rem;padding:0.35rem 0.7rem;letter-spacing:0.12em;
+.random-search{
+  background:transparent;border:none;
+  border-bottom:1px solid var(--hot);
+  color:var(--ink);font-family:'Oswald',sans-serif;
+  font-size:0.8rem;letter-spacing:0.05em;
+  padding:0.25rem 0;outline:none;width:100%;
 }
+.random-search::placeholder{color:var(--ink-faint);font-size:0.7rem;letter-spacing:0.15em}
+.random-list{
+  max-height:180px;overflow-y:auto;
+  display:flex;flex-direction:column;
+  border:1px solid var(--line);
+  scrollbar-width:thin;scrollbar-color:var(--hot) transparent;
+}
+.random-list-item{
+  display:flex;align-items:center;gap:0.4rem;
+  padding:0.28rem 0.6rem;cursor:pointer;
+  font-family:'Oswald',sans-serif;font-size:0.78rem;letter-spacing:0.05em;
+  border-left:2px solid transparent;transition:all 0.08s;user-select:none;
+}
+.random-list-item:hover{background:var(--hot-deep)}
+.random-list-item.active{background:var(--hot);border-left-color:var(--ink)}
+.random-list-item.li-none{
+  border-bottom:1px solid var(--line);font-style:italic;opacity:0.85;
+}
+.random-list-item.li-none.active{opacity:1}
+.li-count{margin-left:auto;font-size:0.65rem;opacity:0.6;font-family:'JetBrains Mono',monospace}
 
 .random-quick-row{
   display:flex;gap:0.3rem;
@@ -1420,17 +1443,15 @@ main{
   margin-top:0.2rem;
   width:100%;
 }
-.random-quick-row .group-btn{
-  font-size:0.65rem;padding:0.2rem 0.5rem;
-  border-color:var(--ink-faint);color:var(--ink-faint);
+.random-reset-btn{
+  font-size:0.65rem;padding:0.2rem 0.6rem;
+  border-color:var(--ink-faint)!important;color:var(--ink-faint)!important;
+  background:transparent!important;
 }
-.random-quick-row .group-btn:hover{
-  border-color:var(--ink);color:var(--ink);background:var(--hot-deep);
+.random-reset-btn:hover{
+  border-color:var(--hot)!important;color:var(--hot)!important;
+  transform:none!important;box-shadow:none!important;
 }
-.none-value-btn{
-  border-style:dashed;opacity:0.75;font-size:0.75rem;
-}
-.none-value-btn.active{opacity:1}
 
 .random-watch-row{
   display:flex;align-items:center;gap:0.5rem;

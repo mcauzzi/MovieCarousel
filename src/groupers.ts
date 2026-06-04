@@ -12,6 +12,8 @@ export interface Grouper {
   name: string;
   label: string;
   groups: Group[];
+  /** Nome del campo Movie da cui deriva il grouper. Usato per "Nessun X" nel picker. */
+  field?: string;
 }
 
 export function matchesSearch(m: Movie, searchTerm: string): boolean {
@@ -28,9 +30,9 @@ export function matchesSearch(m: Movie, searchTerm: string): boolean {
 export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
   const groupers: Grouper[] = [];
 
-  function add(name: string, label: string, fn: () => Group[]) {
+  function add(name: string, label: string, fn: () => Group[], field?: string) {
     const groups = fn();
-    if (groups.length >= 2) groupers.push({ name, label, groups });
+    if (groups.length >= 2) groupers.push({ name, label, groups, field });
   }
 
   function groupByField(field: string, minSize: number): Group[] {
@@ -51,11 +53,11 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
       .sort((a, b) => b.movies.length - a.movies.length);
   }
 
-  add('genre',       'Genere',  () => groupByField('genre', 3));
-  add('director',    'Regista', () => groupByField('director', 3));
-  add('nationality', 'Paese',   () => groupByField('nationality', 4));
-  add('language',    'Lingua',  () => groupByField('language', 5));
-  add('studio',      'Studio',  () => groupByField('studio', 5));
+  add('genre',       'Genere',  () => groupByField('genre', 3),       'genre');
+  add('director',    'Regista', () => groupByField('director', 3),    'director');
+  add('nationality', 'Paese',   () => groupByField('nationality', 4), 'nationality');
+  add('language',    'Lingua',  () => groupByField('language', 5),    'language');
+  add('studio',      'Studio',  () => groupByField('studio', 5),      'studio');
 
   add('rating', 'Voto', () => {
     const map = new Map<number, Movie[]>();

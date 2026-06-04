@@ -25,15 +25,31 @@ export function buildPool(
     const grouper = groupers.find(g => g.name === grouperName);
     if (!grouper) continue;
     const allowed = new Set<number>();
-    for (const group of grouper.groups) {
-      if (selectedKeys.has(group.key)) {
-        for (const m of group.movies) allowed.add(m.id);
+    if (grouper.field) {
+      // Matching diretto sul valore del campo: funziona per tutti i valori,
+      // anche quelli sotto minSize che non compaiono nei gruppi del grouper principale.
+      const f = grouper.field;
+      const selectedValues = new Set([...selectedKeys].filter(k => k !== '__none__'));
+      for (const m of movies) {
+        const v = m[f];
+        const vals = Array.isArray(v) ? v as string[] : (v ? [String(v)] : []);
+        if (vals.length === 0) {
+          if (selectedKeys.has('__none__')) allowed.add(m.id);
+        } else {
+          for (const val of vals) { if (selectedValues.has(val)) { allowed.add(m.id); break; } }
+        }
       }
-    }
-    if (selectedKeys.has('__none__')) {
-      const coveredIds = new Set<number>();
-      for (const g of grouper.groups) for (const m of g.movies) coveredIds.add(m.id);
-      for (const m of movies) if (!coveredIds.has(m.id)) allowed.add(m.id);
+    } else {
+      for (const group of grouper.groups) {
+        if (selectedKeys.has(group.key)) {
+          for (const m of group.movies) allowed.add(m.id);
+        }
+      }
+      if (selectedKeys.has('__none__')) {
+        const coveredByGrouper = new Set<number>();
+        for (const g of grouper.groups) for (const m of g.movies) coveredByGrouper.add(m.id);
+        for (const m of movies) if (!coveredByGrouper.has(m.id)) allowed.add(m.id);
+      }
     }
     pool = pool.filter(m => allowed.has(m.id));
   }
@@ -79,9 +95,29 @@ function buildGrouperPanel(
   onSelectionChange: () => void,
   allMovies: Movie[]
 ): HTMLElement {
-  const coveredIds = new Set<number>();
-  for (const g of grouper.groups) for (const m of g.movies) coveredIds.add(m.id);
-  const noneCount = allMovies.filter(m => !coveredIds.has(m.id)).length;
+  // Per i grouper field-based costruiamo la lista da tutti i valori reali (no minSize):
+  // ogni valore compare, TUTTI seleziona davvero tutti i film.
+  interface PickerItem { key: string; label: string; count: number }
+  const pickerItems: PickerItem[] = [];
+  let noneCount = 0;
+
+  if (grouper.field) {
+    const f = grouper.field;
+    const valueMap = new Map<string, number>();
+    for (const m of allMovies) {
+      const v = m[f];
+      const vals = Array.isArray(v) ? v as string[] : (v ? [String(v)] : []);
+      if (vals.length === 0) { noneCount++; continue; }
+      for (const val of vals) if (val) valueMap.set(val, (valueMap.get(val) ?? 0) + 1);
+    }
+    for (const [k, cnt] of [...valueMap.entries()].sort((a, b) => b[1] - a[1]))
+      pickerItems.push({ key: k, label: k, count: cnt });
+  } else {
+    const coveredIds = new Set<number>();
+    for (const g of grouper.groups) for (const m of g.movies) coveredIds.add(m.id);
+    noneCount = allMovies.filter(m => !coveredIds.has(m.id)).length;
+    for (const g of grouper.groups) pickerItems.push({ key: g.key, label: g.label, count: g.movies.length });
+  }
 
   let isOpen = false;
 
@@ -109,79 +145,87 @@ function buildGrouperPanel(
   body.className = 'random-grouper-body';
   body.style.display = 'none';
 
-  const groupBtns = new Map<string, HTMLButtonElement>();
-  for (const group of grouper.groups) {
-    const btn = document.createElement('button');
-    btn.className = 'group-btn';
-    btn.textContent = group.label + ' ×' + group.movies.length;
-    btn.dataset.key = group.key;
-    btn.onclick = () => {
-      if (selectedKeys.has(group.key)) {
-        selectedKeys.delete(group.key);
-        btn.classList.remove('active');
-      } else {
-        selectedKeys.add(group.key);
-        btn.classList.add('active');
-      }
+  // Barra di ricerca
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'random-search';
+  searchInput.placeholder = 'Cerca ' + grouper.label.toLowerCase() + '...';
+  body.appendChild(searchInput);
+
+  // Lista scrollabile
+  const listEl = document.createElement('div');
+  listEl.className = 'random-list';
+  body.appendChild(listEl);
+
+  // Mappa key → elemento lista (per sincronizzare selezione e chip)
+  const itemEls = new Map<string, HTMLElement>();
+
+  function makeListItem(key: string, label: string, count: number, isNone = false): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'random-list-item' + (isNone ? ' li-none' : '') + (selectedKeys.has(key) ? ' active' : '');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'li-label';
+    labelSpan.textContent = label;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'li-count';
+    countSpan.textContent = '×' + count;
+
+    el.appendChild(labelSpan);
+    el.appendChild(countSpan);
+    el.onclick = () => {
+      if (selectedKeys.has(key)) { selectedKeys.delete(key); el.classList.remove('active'); }
+      else { selectedKeys.add(key); el.classList.add('active'); }
+      renderList(searchInput.value.toLowerCase().trim());
       renderChips();
       onSelectionChange();
     };
-    groupBtns.set(group.key, btn);
-    body.appendChild(btn);
+    return el;
   }
 
-  let noneValueBtn: HTMLButtonElement | null = null;
-  if (noneCount > 0) {
-    noneValueBtn = document.createElement('button');
-    noneValueBtn.className = 'group-btn none-value-btn' + (selectedKeys.has('__none__') ? ' active' : '');
-    noneValueBtn.textContent = 'Nessun ' + grouper.label + ' ×' + noneCount;
-    noneValueBtn.onclick = () => {
-      if (selectedKeys.has('__none__')) {
-        selectedKeys.delete('__none__');
-        noneValueBtn!.classList.remove('active');
-      } else {
-        selectedKeys.add('__none__');
-        noneValueBtn!.classList.add('active');
-      }
-      renderChips();
-      onSelectionChange();
-    };
-    body.appendChild(noneValueBtn);
+  // Crea tutti gli elementi (il DOM viene gestito da renderList)
+  if (noneCount > 0) itemEls.set('__none__', makeListItem('__none__', '— Nessun ' + grouper.label, noneCount, true));
+  for (const item of pickerItems) itemEls.set(item.key, makeListItem(item.key, item.label, item.count));
+
+  function renderList(query = ''): void {
+    listEl.innerHTML = '';
+    // __none__ sempre in cima
+    const noneEl = itemEls.get('__none__');
+    if (noneEl) listEl.appendChild(noneEl);
+    // Selezionati per primi
+    for (const item of pickerItems) {
+      if (!selectedKeys.has(item.key)) continue;
+      if (query && !item.label.toLowerCase().includes(query)) continue;
+      listEl.appendChild(itemEls.get(item.key)!);
+    }
+    // Poi non selezionati
+    for (const item of pickerItems) {
+      if (selectedKeys.has(item.key)) continue;
+      if (query && !item.label.toLowerCase().includes(query)) continue;
+      listEl.appendChild(itemEls.get(item.key)!);
+    }
   }
 
-  const quickRow = document.createElement('div');
-  quickRow.className = 'random-quick-row';
+  searchInput.addEventListener('input', () => renderList(searchInput.value.toLowerCase().trim()));
 
-  const allBtn = document.createElement('button');
-  allBtn.className = 'group-btn';
-  allBtn.textContent = 'TUTTI';
-  allBtn.onclick = () => {
-    for (const group of grouper.groups) {
-      selectedKeys.add(group.key);
-      groupBtns.get(group.key)?.classList.add('active');
-    }
-    if (noneCount > 0) {
-      selectedKeys.add('__none__');
-      noneValueBtn?.classList.add('active');
-    }
-    renderChips();
-    onSelectionChange();
-  };
+  // Pulsante "Rimuovi selezione" — visibile solo quando c'è qualcosa di selezionato
+  const resetRow = document.createElement('div');
+  resetRow.className = 'random-quick-row';
 
-  const noneBtn = document.createElement('button');
-  noneBtn.className = 'group-btn';
-  noneBtn.textContent = 'NESSUNO';
-  noneBtn.onclick = () => {
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'group-btn random-reset-btn';
+  resetBtn.textContent = '✕ Rimuovi selezione';
+  resetBtn.style.display = selectedKeys.size > 0 ? '' : 'none';
+  resetBtn.onclick = () => {
     selectedKeys.clear();
-    groupBtns.forEach(b => b.classList.remove('active'));
-    noneValueBtn?.classList.remove('active');
+    itemEls.forEach(el => el.classList.remove('active'));
     renderChips();
     onSelectionChange();
   };
 
-  quickRow.appendChild(allBtn);
-  quickRow.appendChild(noneBtn);
-  body.appendChild(quickRow);
+  resetRow.appendChild(resetBtn);
+  body.appendChild(resetRow);
 
   function setOpen(open: boolean): void {
     isOpen = open;
@@ -189,11 +233,13 @@ function buildGrouperPanel(
     headerEl.classList.toggle('open', open);
     body.style.display = open ? 'flex' : 'none';
     chipsArea.style.display = open ? 'none' : 'flex';
+    if (open) { searchInput.value = ''; renderList(); }
   }
 
   headerEl.onclick = () => setOpen(!isOpen);
 
   function renderChips(): void {
+    resetBtn.style.display = selectedKeys.size > 0 ? '' : 'none';
     chipsArea.innerHTML = '';
     if (selectedKeys.size === 0) {
       const none = document.createElement('span');
@@ -203,9 +249,8 @@ function buildGrouperPanel(
       return;
     }
     for (const key of selectedKeys) {
-      const label = key === '__none__'
-        ? 'Nessun ' + grouper.label
-        : (grouper.groups.find(g => g.key === key)?.label ?? key);
+      const label = key === '__none__' ? 'Nessun ' + grouper.label
+        : (pickerItems.find(i => i.key === key)?.label ?? key);
       const chip = document.createElement('span');
       chip.className = 'random-chip';
 
@@ -218,8 +263,7 @@ function buildGrouperPanel(
       chipRemove.onclick = (e) => {
         e.stopPropagation();
         selectedKeys.delete(key);
-        if (key === '__none__') noneValueBtn?.classList.remove('active');
-        else groupBtns.get(key)?.classList.remove('active');
+        itemEls.get(key)?.classList.remove('active');
         renderChips();
         onSelectionChange();
       };
@@ -235,6 +279,7 @@ function buildGrouperPanel(
   panel.appendChild(body);
 
   setOpen(false);
+  renderList();
   renderChips();
 
   return panel;
