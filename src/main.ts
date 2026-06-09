@@ -16,6 +16,7 @@ import { openRandomPicker, resetRandomPicker } from './random';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
 import { computeStats, renderStats } from './stats';
+import { checkForNewVersion } from './version-check';
 
 // Stato
 let movies: Movie[] = [];
@@ -320,4 +321,5 @@ document.getElementById('search')!.addEventListener('input', e => {
   }
 });
 
+checkForNewVersion();
 tryAutoLoad();

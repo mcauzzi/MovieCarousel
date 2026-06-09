@@ -29,7 +29,7 @@ main.ts  →  parser.ts       (leaf)
          →  random.ts       →  filters.ts (+ shared types)
          →  filter-popup.ts →  filters.ts (+ shared types)
          →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only)
-         →  store.ts, themes.ts, toast.ts, transitions.ts   (leaves)
+         →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts   (leaves)
          →  style.css
 
 utils.ts (leaf — no imports)
@@ -58,6 +58,7 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/store.ts` | `LocalStorageAdapter` for watch status and ratings (with seed from the `.tc` file) |
 | `src/themes.ts` | Theme list + `applyTheme`/`getSavedTheme` (persisted in localStorage, `data-theme` on `<html>`) |
 | `src/toast.ts` | Toast notifications (`showToast`) |
+| `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
 | `src/transitions.ts` | Page-swipe transition overlay (`withTransition`) |
 | `src/utils.ts` | `escapeHtml` and `coverUrl` — pure, imported by renderer, modal and stats |
 | `src/style.css` | All CSS (CSS custom properties for theming via `:root` + `[data-theme]`) |
