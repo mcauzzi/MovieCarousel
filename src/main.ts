@@ -12,8 +12,9 @@ import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
-import { openRandomPicker, resetRandomPicker, buildPool } from './random';
+import { openRandomPicker, resetRandomPicker } from './random';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
+import { buildPool } from './filters';
 import { computeStats, renderStats } from './stats';
 
 // Stato
