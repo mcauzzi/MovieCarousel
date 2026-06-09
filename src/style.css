@@ -333,7 +333,6 @@ header::after{
   font-weight:700;
 }
 .masthead .reload{
-  margin-left:auto;
   background:var(--hot);
   border:2px solid var(--ink);
   color:var(--ink);
@@ -1025,37 +1024,39 @@ main{
   position:relative;
   display:inline-flex;
   align-items:center;
+  margin-left:auto;   /* spinge theme+reload a destra nel flex del masthead */
 }
 .theme-dropdown-wrap::after{
   content:'▾';
   position:absolute;
-  right:0.55rem;
+  right:0.6rem;
   top:50%;
   transform:translateY(-50%);
   color:var(--hot);
-  font-size:0.75rem;
+  font-size:0.8rem;
   pointer-events:none;
   font-family:'Anton',sans-serif;
+  font-weight:700;
 }
 .theme-dropdown{
   appearance:none;
   -webkit-appearance:none;
   background:var(--bg);
-  border:2px solid var(--ink-faint);
+  border:2px solid var(--ink);
   color:var(--ink);
-  padding:0.45rem 1.8rem 0.45rem 0.7rem;
+  padding:0.45rem 2rem 0.45rem 0.8rem;
   font-family:'Anton',sans-serif;
-  font-size:0.7rem;
-  letter-spacing:0.15em;
+  font-size:0.8rem;
+  letter-spacing:0.2em;
   text-transform:uppercase;
   cursor:pointer;
-  transition:border-color 0.1s,color 0.1s;
+  transition:border-color 0.1s,background 0.1s;
   outline:none;
 }
-.theme-dropdown:hover,.theme-dropdown:focus{border-color:var(--hot);color:var(--ink)}
+.theme-dropdown:hover,.theme-dropdown:focus{border-color:var(--hot)}
 .theme-dropdown option{background:var(--bg);color:var(--ink)}
 @media(max-width:780px){
-  .theme-dropdown{font-size:0.6rem;padding:0.35rem 1.6rem 0.35rem 0.5rem}
+  .theme-dropdown{font-size:0.65rem;padding:0.35rem 1.7rem 0.35rem 0.55rem}
 }
 
 /* Badge contatore filtri attivi */
