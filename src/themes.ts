@@ -18,9 +18,8 @@ export function applyTheme(id: string): void {
     document.documentElement.dataset.theme = id;
   }
   localStorage.setItem(THEME_KEY, id);
-  document.querySelectorAll<HTMLElement>('.theme-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.theme === id);
-  });
+  const sel = document.querySelector<HTMLSelectElement>('.theme-dropdown');
+  if (sel && sel.value !== id) sel.value = id;
 }
 
 export function getSavedTheme(): string {

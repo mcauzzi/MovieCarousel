@@ -12,7 +12,8 @@ import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
-import { openRandomPicker, resetRandomPicker } from './random';
+import { openRandomPicker, resetRandomPicker, buildPool } from './random';
+import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { computeStats, renderStats } from './stats';
 
 // Stato
@@ -25,6 +26,7 @@ let currentGrouper = '';
 let searchTerm = '';
 let isIntelView = false;
 let watchFilter: WatchFilter = 'all';
+let filterSelections: Map<string, Set<string>> = new Map();
 let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
 const store: StoreAdapter = new LocalStorageAdapter();
@@ -42,11 +44,27 @@ function setStatus(msg: string, error = false): void {
   statusEl.className = 'status' + (error ? ' error' : '');
 }
 
+function updateFilterBadge(): void {
+  const filterBtn = document.getElementById('filterBtn');
+  if (!filterBtn) return;
+  const count = [...filterSelections.values()].reduce((sum, s) => sum + s.size, 0)
+    + (watchFilter !== 'all' ? 1 : 0);
+  const badge = filterBtn.querySelector<HTMLElement>('.filter-badge');
+  if (badge) {
+    badge.textContent = String(count);
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+}
+
 function render(): void {
   const grouper = groupers.find(g => g.name === currentGrouper);
   if (!grouper) return;
   isIntelView = false;
-  renderMain(grouper, searchTerm, embeddedImages, imgDir, store, watchFilter);
+  const hasFilter = [...filterSelections.values()].some(s => s.size > 0);
+  const allowedIds = hasFilter
+    ? new Set(buildPool(movies, groupers, filterSelections, store, 'all').map(m => m.id))
+    : undefined;
+  renderMain(grouper, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds);
   attachHandlers(
     movies, embeddedImages, imgDir,
     (id, mvs, embeds, dir) => { withTransition(() => openModal(id, mvs, embeds, dir, store)); }
@@ -57,6 +75,9 @@ function initUI(): void {
   groupers = buildGroupers(movies, store);
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
+  watchFilter = 'all';
+  filterSelections = new Map(groupers.map(g => [g.name, new Set<string>()]));
+  resetFilterPopup();
   document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
 
   const groupSelect = document.getElementById('groupSelect')!;
@@ -108,30 +129,30 @@ function initUI(): void {
   });
   masthead.insertBefore(randomBtn, reloadBtn);
 
-  // Filtri di visione — due toggle mutuamente esclusivi nella toolbar
-  document.getElementById('watchFilterBox')?.remove();
-  const filterBox = document.createElement('div');
-  filterBox.id = 'watchFilterBox';
-  filterBox.className = 'filter-box';
-  const filterDefs: { label: string; value: Exclude<WatchFilter, 'all'> }[] = [
-    { label: '● VISTI',     value: 'seen' },
-    { label: '○ NON VISTI', value: 'unseen' },
-  ];
-  const filterBtns = filterDefs.map(def => {
-    const btn = document.createElement('button');
-    btn.className = 'group-btn filter-btn' + (watchFilter === def.value ? ' active' : '');
-    btn.textContent = def.label;
-    btn.onclick = () => {
-      // Clic sul filtro attivo lo disattiva; altrimenti diventa l'unico attivo.
-      watchFilter = watchFilter === def.value ? 'all' : def.value;
-      filterBtns.forEach((b, i) => b.classList.toggle('active', watchFilter === filterDefs[i].value));
-      if (!isIntelView) withTransition(() => render());
-    };
-    filterBox.appendChild(btn);
-    return btn;
+  // Bottone FILTRI — apre il popup filtri avanzati
+  document.getElementById('filterBtn')?.remove();
+  const filterBtn = document.createElement('button');
+  filterBtn.id = 'filterBtn';
+  filterBtn.className = 'group-btn';
+  filterBtn.innerHTML = '⊞ FILTRI <span class="filter-badge" style="display:none">0</span>';
+  filterBtn.onclick = () => openFilterPopup({
+    movies,
+    groupers,
+    store,
+    filterSelections,
+    watchFilter,
+    onFilterChange: () => {
+      updateFilterBadge();
+      if (!isIntelView) render();
+    },
+    onWatchFilterChange: (f) => {
+      watchFilter = f;
+      updateFilterBadge();
+      if (!isIntelView) render();
+    },
   });
   const toolbar = document.querySelector('.toolbar')!;
-  toolbar.insertBefore(filterBox, groupSelect);
+  toolbar.insertBefore(filterBtn, groupSelect);
 
   withTransition(() => {
     loaderEl.style.display = 'none';
@@ -236,20 +257,23 @@ initTransitions();
 initToast();
 applyTheme(getSavedTheme());
 
-// Theme selector nel masthead
+// Theme dropdown nel masthead
 const masthead = document.querySelector<HTMLElement>('.masthead')!;
-const themeSelect = document.createElement('div');
-themeSelect.className = 'theme-select';
+const themeWrap = document.createElement('div');
+themeWrap.className = 'theme-dropdown-wrap';
+const themeDropdown = document.createElement('select');
+themeDropdown.className = 'theme-dropdown';
 THEMES.forEach(t => {
-  const btn = document.createElement('button');
-  btn.className = 'theme-btn' + (getSavedTheme() === t.id ? ' active' : '');
-  btn.textContent = t.label;
-  btn.dataset.theme = t.id;
-  btn.onclick = () => applyTheme(t.id);
-  themeSelect.appendChild(btn);
+  const opt = document.createElement('option');
+  opt.value = t.id;
+  opt.textContent = t.label;
+  if (getSavedTheme() === t.id) opt.selected = true;
+  themeDropdown.appendChild(opt);
 });
+themeDropdown.onchange = () => applyTheme(themeDropdown.value);
+themeWrap.appendChild(themeDropdown);
 const reloadBtn = document.getElementById('reloadBtn')!;
-masthead.insertBefore(themeSelect, reloadBtn);
+masthead.insertBefore(themeWrap, reloadBtn);
 
 // --- Event listeners ---
 fileInput.addEventListener('change', e => {
@@ -273,7 +297,9 @@ reloadBtn.addEventListener('click', () => {
   searchTerm = '';
   isIntelView = false;
   watchFilter = 'all';
+  filterSelections = new Map();
   resetRandomPicker();
+  resetFilterPopup();
   loaderEl.style.display = 'flex';
   headerEl.classList.remove('show');
   document.getElementById('main')!.innerHTML = '';

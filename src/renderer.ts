@@ -41,9 +41,11 @@ function rowHTML(
   embeddedImages: Map<string, string>,
   imgDir: string,
   store: StoreAdapter,
-  watchFilter: WatchFilter
+  watchFilter: WatchFilter,
+  allowedIds?: Set<number>
 ): string {
   const filtered = g.movies.filter(m => {
+    if (allowedIds && !allowedIds.has(m.id)) return false;
     if (!matchesSearch(m, searchTerm)) return false;
     if (watchFilter === 'seen') return store.getStatus(m.id) === 'seen';
     if (watchFilter === 'unseen') return store.getStatus(m.id) !== 'seen';
@@ -77,11 +79,12 @@ export function renderMain(
   embeddedImages: Map<string, string>,
   imgDir: string,
   store: StoreAdapter,
-  watchFilter: WatchFilter = 'all'
+  watchFilter: WatchFilter = 'all',
+  allowedIds?: Set<number>
 ): void {
   const main = document.getElementById('main')!;
   const html = grouper.groups
-    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir, store, watchFilter))
+    .map((g, i) => rowHTML(g, i, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds))
     .filter(Boolean)
     .join('');
   const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
