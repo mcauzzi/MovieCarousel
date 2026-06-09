@@ -129,6 +129,9 @@ function initUI(): void {
     onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store)),
   });
   masthead.insertBefore(randomBtn, reloadBtn);
+  // Riposiziona il dropdown tema a destra di RANDOM, subito prima di reload.
+  // Va rifatto a ogni initUI perché i bottoni INTEL/RANDOM vengono ricreati.
+  masthead.insertBefore(themeWrap, reloadBtn);
 
   // Bottone FILTRI — apre il popup filtri avanzati
   document.getElementById('filterBtn')?.remove();
