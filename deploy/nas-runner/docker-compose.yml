@@ -1,0 +1,23 @@
+# Runner GitHub Actions self-hosted per il deploy di CineManager.
+# Questo file è un TEMPLATE: copialo sul NAS e sostituisci i due
+# placeholder. NON committare mai la versione compilata (contiene
+# il PAT e il percorso reale della cartella web).
+#
+# Vedi README.md in questa cartella per le istruzioni complete.
+services:
+  runner:
+    image: myoung34/github-runner:latest
+    container_name: cinemanager-runner
+    restart: unless-stopped
+    environment:
+      RUNNER_NAME: nas-cinemanager
+      REPO_URL: https://github.com/mcauzzi/MovieCarousel
+      ACCESS_TOKEN: "<PAT_GITHUB>"            # PAT classic con scope "repo"
+      RUNNER_SCOPE: repo
+      LABELS: nas
+      EPHEMERAL: "false"
+      DISABLE_AUTO_UPDATE: "true"
+    volumes:
+      # Il percorso reale della cartella web resta solo qui sul NAS:
+      # il workflow su GitHub vede soltanto /deploy.
+      - "<PERCORSO_CARTELLA_WEB>:/deploy"

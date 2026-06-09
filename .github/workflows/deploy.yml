@@ -1,0 +1,52 @@
+name: Deploy NAS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Un deploy alla volta; quelli successivi si accodano senza interrompere quello in corso
+concurrency:
+  group: deploy-nas
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, nas]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      # /deploy è il mount point della cartella web del NAS, definito solo
+      # nel docker-compose del runner. config.json, collezione.tc e covers/
+      # vivono sul NAS e non vengono mai toccati dal deploy.
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          [ -d /deploy ] || { echo "::error::volume /deploy non montato nel container del runner"; exit 1; }
+          [ -f dist/index.html ] || { echo "::error::build incompleta: dist/index.html mancante"; exit 1; }
+
+          mkdir -p /deploy/assets
+          cp dist/assets/index-*.js dist/assets/index-*.css /deploy/assets/
+          cp dist/index.html /deploy/index.html
+
+          # rimuove i vecchi bundle hashati non più referenziati
+          for f in /deploy/assets/index-*.js /deploy/assets/index-*.css; do
+            [ -e "$f" ] || continue
+            [ -e "dist/assets/$(basename "$f")" ] || rm -- "$f"
+          done
+
+          echo "Deploy completato"

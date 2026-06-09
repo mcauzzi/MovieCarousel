@@ -127,6 +127,10 @@ Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 
 ## Deploy
 
+**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia `dist/index.html` + `dist/assets/index-*.js|css` nella cartella web montata come `/deploy`. `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
+
+**Manuale** (fallback):
+
 ```bash
 npm run build
 ```
