@@ -41,7 +41,7 @@ export function watchButtonsTemplate(current: WatchStatus, onPick: (v: WatchStat
     { label: '—', value: null },
   ];
   return html`${defs.map(d =>
-    html`<button class="watch-btn ${current === d.value ? 'active' : ''}" @click=${() => onPick(d.value)}>${d.label}</button>`
+    html`<button class="watch-btn ${d.value === null ? 'clear' : ''} ${current === d.value ? 'active' : ''}" @click=${() => onPick(d.value)}>${d.label}</button>`
   )}`;
 }
 

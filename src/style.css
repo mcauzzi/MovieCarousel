@@ -747,21 +747,17 @@ main{
   position:relative;
   display:grid;
   grid-template-columns:340px 1fr;
+  /* Ombra offset P5 come box-shadow esterna: con un ::before z-index:-1
+     il transform del modal crea uno stacking context e il rosso finiva
+     sopra bordo e background (stesso fix di .random-panel). */
+  box-shadow:14px 14px 0 var(--hot);
   transform:translate(20px,20px) skewX(-2deg);
   transition:transform 0.3s cubic-bezier(0.2,0.8,0.2,1);
-}
-.modal::before{
-  content:'';
-  position:absolute;
-  inset:-4px;
-  background:var(--hot);
-  z-index:-1;
-  transform:translate(10px,10px);
 }
 .modal-backdrop.show .modal{transform:translate(0,0) skewX(0)}
 
 .modal-cover{
-  background:var(--bg);
+  background:repeating-linear-gradient(45deg, var(--bg), var(--bg) 10px, var(--bg-2) 10px, var(--bg-2) 20px);
   border-right:4px solid var(--ink);
   display:flex;
   align-items:flex-start;
@@ -800,9 +796,11 @@ main{
   clip-path:polygon(20% 0, 100% 0, 100% 100%, 0 100%);
   z-index:0;
 }
+/* Sticker skewX (non clip-path: il clip tagliava il bordo sui lati
+   obliqui). Sta sopra la banda rossa: hover a inversione, non --hot. */
 .modal-close{
-  position:absolute;top:0.6rem;right:0.6rem;
-  width:42px;height:42px;
+  position:absolute;top:0.8rem;right:1rem;
+  width:44px;height:40px;
   background:var(--ink);color:var(--bg);
   border:2px solid var(--bg);
   font-family:'Anton',sans-serif;
@@ -810,11 +808,15 @@ main{
   display:flex;align-items:center;justify-content:center;
   transition:all 0.12s;
   z-index:5;
-  clip-path:polygon(20% 0, 100% 0, 80% 100%, 0 100%);
+  transform:skewX(-12deg);
+  box-shadow:4px 4px 0 var(--hot-deep);
 }
-.modal-close:hover{background:var(--hot);color:var(--ink);transform:scale(1.1)}
+.modal-close:hover{background:var(--bg);color:var(--ink);border-color:var(--ink);transform:skewX(-12deg) scale(1.08)}
 
-.modal-body > *{position:relative;z-index:1}
+/* :not(.modal-close): questa regola viene dopo .modal-close e a pari
+   specificità ne clobberava position:absolute/z-index, lasciando la ✕
+   nel flusso in alto a sinistra. */
+.modal-body > :not(.modal-close){position:relative;z-index:1}
 .modal .m-eyebrow{
   font-family:'JetBrains Mono',monospace;
   font-size:0.7rem;letter-spacing:0.3em;
@@ -830,7 +832,7 @@ main{
   margin-bottom:0.5rem;
   padding-right:3rem;
   text-transform:uppercase;
-  text-shadow:3px 3px 0 var(--hot-deep);
+  text-shadow:2px 2px 0 var(--hot-deep);
 }
 .modal .m-subtitle{
   font-family:'Anton',sans-serif;
@@ -938,8 +940,7 @@ main{
   .carousel{padding:0.6rem 1.2rem;gap:0.9rem}
   .card{flex:0 0 150px}
   .card .img-wrap{height:215px}
-  .modal{grid-template-columns:1fr;max-width:95vw;transform:none}
-  .modal::before{transform:translate(6px,6px)}
+  .modal{grid-template-columns:1fr;max-width:95vw;transform:none;box-shadow:10px 10px 0 var(--hot)}
   .modal-backdrop.show .modal{transform:translate(0,0)}
   .modal-cover{border-right:0;border-bottom:4px solid var(--ink);padding:0.8rem;min-height:0}
   .modal-cover img{max-height:60vh}
@@ -1278,6 +1279,9 @@ main{
 }
 .watch-btn:hover{background:var(--hot-deep)}
 .watch-btn.active{background:var(--hot);border-color:var(--ink)}
+/* "—" = nessuno stato: da attivo resta neutro, il rosso indica solo stati marcati */
+.watch-btn.clear:hover{background:var(--bg-2)}
+.watch-btn.clear.active{background:var(--bg-2);border-color:var(--ink-faint);color:var(--ink-faint)}
 
 .star-rank{
   display:flex;align-items:center;gap:0.3rem;margin-bottom:1.5rem;
@@ -1289,11 +1293,11 @@ main{
 }
 .star-btn{
   background:transparent;border:none;cursor:pointer;
-  font-size:1.4rem;line-height:1;
+  font-size:1.7rem;line-height:1;
   color:var(--ink-faint);transition:color 0.1s,transform 0.1s;padding:0;
 }
 .star-btn.filled{color:var(--hot)}
-.star-btn:hover{transform:scale(1.2)}
+.star-btn:hover{transform:scale(1.2);color:var(--hot)}
 
 /* =========================
    RANDOM PICKER
@@ -1359,18 +1363,20 @@ main{
   line-height:1;
   padding:0.14em 0.3em;
 }
+/* Sticker skewX, stesso stile di .modal-close */
 .random-close{
-  position:absolute;top:0.6rem;right:0.6rem;
-  width:42px;height:42px;
+  position:absolute;top:0.8rem;right:1rem;
+  width:44px;height:40px;
   background:var(--ink);color:var(--bg);
   border:2px solid var(--bg);
   font-family:'Anton',sans-serif;
   font-size:1.3rem;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:all 0.12s;z-index:5;
-  clip-path:polygon(20% 0,100% 0,80% 100%,0 100%);
+  transform:skewX(-12deg);
+  box-shadow:4px 4px 0 var(--hot-deep);
 }
-.random-close:hover{background:var(--hot);color:var(--ink);transform:scale(1.1)}
+.random-close:hover{background:var(--bg);color:var(--ink);border-color:var(--ink);transform:skewX(-12deg) scale(1.08)}
 
 .random-groups-grid{
   display:grid;
