@@ -31,17 +31,31 @@ interface RenderArgs {
 let lastArgs: RenderArgs | null = null;
 let rafPending = false;
 
-function onImgError(id: number): void {
-  failedIds.add(id);
+function scheduleRerender(): void {
   // Coalesce: più errori immagine in caricamento producono un solo re-render.
   if (rafPending) return;
   rafPending = true;
   requestAnimationFrame(() => { rafPending = false; doRender(); });
 }
 
+// Handler stabili condivisi da tutte le card: l'id si ricava dal data-id sul
+// .card, così l'identità delle funzioni non cambia tra i render e lit non
+// ri-aggancia i listener (nemmeno sui re-render del badge dal modal).
+function cardClick(e: Event): void {
+  const id = parseInt((e.currentTarget as HTMLElement).dataset.id!, 10);
+  lastArgs?.onOpenModal(id);
+}
+
+function imgError(e: Event): void {
+  const card = (e.currentTarget as HTMLElement).closest('.card') as HTMLElement | null;
+  if (!card) return;
+  failedIds.add(parseInt(card.dataset.id!, 10));
+  scheduleRerender();
+}
+
 function doRender(): void {
   if (!lastArgs) return;
-  const { grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter, allowedIds } = lastArgs;
+  const { grouper, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds } = lastArgs;
   const rows: RowData[] = [];
   grouper.groups.forEach((g, i) => {
     const filtered = g.movies.filter(m => {
@@ -53,6 +67,7 @@ function doRender(): void {
     });
     if (!filtered.length) return;
     rows.push({
+      key: g.key,
       label: g.label,
       idx: i,
       totalCount: g.movies.length,
@@ -67,7 +82,7 @@ function doRender(): void {
   const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
     : watchFilter === 'unseen' ? 'Nessun film da vedere'
     : 'No targets found';
-  render(mainTemplate(rows, emptyMsg, onOpenModal, onImgError), document.getElementById('main')!);
+  render(mainTemplate(rows, emptyMsg, cardClick, imgError), document.getElementById('main')!);
 }
 
 export function renderMain(

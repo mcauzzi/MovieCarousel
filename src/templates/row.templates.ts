@@ -1,10 +1,13 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { cardTemplate } from './card.templates';
 import type { CardData } from './card.templates';
 
 /** Dati di una riga/carosello pronti per il rendering. */
 export interface RowData {
+  /** Chiave stabile del gruppo (per il keying di lit). */
+  key: string;
   label: string;
   /** Indice della riga nei gruppi (per numero "Mission" e ritardo animazione). */
   idx: number;
@@ -18,10 +21,14 @@ function scrollCarousel(e: Event, dir: number): void {
   if (car) car.scrollBy({ left: dir * car.clientWidth * 0.7, behavior: 'smooth' });
 }
 
+// Handler stabili: identità costante tra i render → lit non ri-aggancia i listener.
+function scrollPrev(e: Event): void { scrollCarousel(e, -1); }
+function scrollNext(e: Event): void { scrollCarousel(e, 1); }
+
 export function rowTemplate(
   row: RowData,
-  onCardClick: (id: number) => void,
-  onImgError: (id: number) => void
+  onCardClick: (e: Event) => void,
+  onImgError: (e: Event) => void
 ): TemplateResult {
   const num = String(row.idx + 1).padStart(2, '0');
   const delay = Math.min(row.idx * 0.05, 0.4);
@@ -38,9 +45,9 @@ export function rowTemplate(
       </div>
     </div>
     <div class="carousel-wrap">
-      <button class="carousel-btn prev" aria-label="Indietro" @click=${(e: Event) => scrollCarousel(e, -1)}><span>◀</span></button>
-      <div class="carousel">${row.filtered.map(c => cardTemplate(c, onCardClick, onImgError))}</div>
-      <button class="carousel-btn next" aria-label="Avanti" @click=${(e: Event) => scrollCarousel(e, 1)}><span>▶</span></button>
+      <button class="carousel-btn prev" aria-label="Indietro" @click=${scrollPrev}><span>◀</span></button>
+      <div class="carousel">${repeat(row.filtered, c => c.movie.id, c => cardTemplate(c, onCardClick, onImgError))}</div>
+      <button class="carousel-btn next" aria-label="Avanti" @click=${scrollNext}><span>▶</span></button>
     </div>
   </section>`;
 }
@@ -48,10 +55,10 @@ export function rowTemplate(
 export function mainTemplate(
   rows: RowData[],
   emptyMsg: string,
-  onCardClick: (id: number) => void,
-  onImgError: (id: number) => void
+  onCardClick: (e: Event) => void,
+  onImgError: (e: Event) => void
 ): TemplateResult {
   return rows.length
-    ? html`${rows.map(r => rowTemplate(r, onCardClick, onImgError))}`
+    ? html`${repeat(rows, r => r.key, r => rowTemplate(r, onCardClick, onImgError))}`
     : html`<div class="empty">${emptyMsg}</div>`;
 }

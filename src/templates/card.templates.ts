@@ -20,16 +20,18 @@ export function placeholderTemplate(title: string | undefined, year: string): Te
 
 export function cardTemplate(
   data: CardData,
-  onCardClick: (id: number) => void,
-  onImgError: (id: number) => void
+  onCardClick: (e: Event) => void,
+  onImgError: (e: Event) => void
 ): TemplateResult {
   const { movie: m, url, status, failed } = data;
   const yr = m.year ? String(m.year) : '';
   const director = Array.isArray(m.director) ? m.director[0] : (m.director ?? '');
+  // Handler stabili (id ricavato dal data-id sul .card): identità costante tra i
+  // render, così lit non ri-aggancia i listener a ogni re-render.
   const cover = url && !failed
-    ? html`<img src=${url} alt=${m.title ?? ''} loading="lazy" @error=${() => onImgError(m.id)}>`
+    ? html`<img src=${url} alt=${m.title ?? ''} loading="lazy" @error=${onImgError}>`
     : placeholderTemplate(m.title, yr);
-  return html`<div class="card" data-id=${m.id} @click=${() => onCardClick(m.id)}>
+  return html`<div class="card" data-id=${m.id} @click=${onCardClick}>
     <div class="card-inner">
       <div class="img-wrap">${cover}</div>
       <div class="card-overlay">
