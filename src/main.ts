@@ -1,11 +1,13 @@
 import './style.css';
 import JSZip from 'jszip';
+import { render as litRender } from 'lit';
 import { parseTellicoXml } from './parser';
 import type { Movie } from './parser';
 import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
-import { renderMain, attachHandlers } from './renderer';
+import { renderMain, resetRenderer } from './renderer';
 import type { WatchFilter } from './renderer';
+import { filterButtonTemplate } from './templates/toolbar.templates';
 import { openModal } from './modal';
 import { LocalStorageAdapter } from './store';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
@@ -51,11 +53,7 @@ function updateFilterBadge(): void {
   if (!filterBtn) return;
   const count = [...filterSelections.values()].reduce((sum, s) => sum + s.size, 0)
     + (watchFilter !== 'all' ? 1 : 0);
-  const badge = filterBtn.querySelector<HTMLElement>('.filter-badge');
-  if (badge) {
-    badge.textContent = String(count);
-    badge.style.display = count > 0 ? '' : 'none';
-  }
+  litRender(filterButtonTemplate(count), filterBtn);
 }
 
 function render(): void {
@@ -66,14 +64,13 @@ function render(): void {
   const allowedIds = hasFilter
     ? new Set(buildPool(movies, groupers, filterSelections, store, 'all').map(m => m.id))
     : undefined;
-  renderMain(grouper, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds);
-  attachHandlers(
-    movies, embeddedImages, imgDir,
-    (id, mvs, embeds, dir) => { withTransition(() => openModal(id, mvs, embeds, dir, store)); }
-  );
+  const onOpenModal = (id: number) =>
+    withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, render));
+  renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter, allowedIds);
 }
 
 function initUI(): void {
+  resetRenderer();
   groupers = buildGroupers(movies, store);
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
@@ -139,7 +136,7 @@ function initUI(): void {
   const filterBtn = document.createElement('button');
   filterBtn.id = 'filterBtn';
   filterBtn.className = 'group-btn';
-  filterBtn.innerHTML = '⊞ FILTRI <span class="filter-badge" style="display:none">0</span>';
+  litRender(filterButtonTemplate(0), filterBtn);
   filterBtn.onclick = () => openFilterPopup({
     movies,
     groupers,
@@ -305,9 +302,9 @@ reloadBtn.addEventListener('click', () => {
   filterSelections = new Map();
   resetRandomPicker();
   resetFilterPopup();
+  resetRenderer();
   loaderEl.style.display = 'flex';
   headerEl.classList.remove('show');
-  document.getElementById('main')!.innerHTML = '';
   setStatus('');
   fileInput.value = '';
 });

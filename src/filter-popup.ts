@@ -1,9 +1,11 @@
+import { render } from 'lit';
 import type { Movie } from './parser';
 import type { Grouper } from './groupers';
 import type { StoreAdapter } from './store';
 import type { WatchFilter } from './renderer';
 import { buildPool, buildGrouperPanel, buildPanelShell, buildWatchRow } from './filters';
 import type { PanelShell, GrouperPanel } from './filters';
+import { filterPopupBodyTemplate } from './templates/popup.templates';
 
 export interface FilterPopupParams {
   movies: Movie[];
@@ -36,24 +38,18 @@ export function openFilterPopup(params: FilterPopupParams): void {
 function buildFilterPanel(params: FilterPopupParams): { shell: PanelShell; setWatchFilter: (f: WatchFilter) => void } {
   const { movies, groupers, store, filterSelections, watchFilter, onFilterChange, onWatchFilterChange } = params;
   let currentWatchFilter: WatchFilter = watchFilter;
+  let count = 0;
 
   const shell = buildPanelShell('FILTRI', 'AVANZATI');
   const { panel } = shell;
 
-  let countEl!: HTMLElement;
+  const body = document.createElement('div');
+  panel.appendChild(body);
 
-  function updateCount(): void {
-    const n = buildPool(movies, groupers, filterSelections, store, currentWatchFilter).length;
-    countEl.textContent = n + ' / ' + movies.length + ' film';
-  }
-
-  // Groups grid — stessi pannelli del random picker, ma le selezioni
-  // persistono in main.ts e filtrano la vista principale in tempo reale.
-  const grid = document.createElement('div');
-  grid.className = 'random-groups-grid';
-  panel.appendChild(grid);
-
+  // Stessi pannelli del random picker, ma le selezioni persistono in main.ts
+  // e filtrano la vista principale in tempo reale.
   const panels: GrouperPanel[] = [];
+  const panelEls: HTMLElement[] = [];
   for (const grouper of groupers) {
     const sel = filterSelections.get(grouper.name)!;
     const gp = buildGrouperPanel(grouper, sel, () => {
@@ -61,39 +57,32 @@ function buildFilterPanel(params: FilterPopupParams): { shell: PanelShell; setWa
       onFilterChange();
     }, movies);
     panels.push(gp);
-    grid.appendChild(gp.el);
+    panelEls.push(gp.el);
   }
 
-  // Watch filter row
   const watchRow = buildWatchRow(currentWatchFilter, f => {
     currentWatchFilter = f;
     updateCount();
     onWatchFilterChange(f);
   });
-  panel.appendChild(watchRow.row);
 
-  // Footer: conteggio film corrispondenti + reset globale
-  const footer = document.createElement('div');
-  footer.className = 'random-footer';
-
-  countEl = document.createElement('div');
-  countEl.className = 'random-pool-count';
-
-  const resetAllBtn = document.createElement('button');
-  resetAllBtn.className = 'group-btn random-reset-btn';
-  resetAllBtn.textContent = '✕ Rimuovi tutti i filtri';
-  resetAllBtn.onclick = () => {
+  function onResetAll(): void {
     panels.forEach(p => p.clearSelection());
     currentWatchFilter = 'all';
     watchRow.setValue('all');
     updateCount();
     // Un solo callback basta: main aggiorna stato visione, badge e vista.
     onWatchFilterChange('all');
-  };
+  }
 
-  footer.appendChild(countEl);
-  footer.appendChild(resetAllBtn);
-  panel.appendChild(footer);
+  function rerenderBody(): void {
+    render(filterPopupBodyTemplate(panelEls, watchRow.row, count, movies.length, onResetAll), body);
+  }
+
+  function updateCount(): void {
+    count = buildPool(movies, groupers, filterSelections, store, currentWatchFilter).length;
+    rerenderBody();
+  }
 
   updateCount();
 

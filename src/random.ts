@@ -1,9 +1,11 @@
+import { render } from 'lit';
 import type { Movie } from './parser';
 import type { Grouper } from './groupers';
 import type { StoreAdapter } from './store';
 import type { WatchFilter } from './renderer';
 import { buildPool, buildGrouperPanel, buildPanelShell, buildWatchRow } from './filters';
 import type { PanelShell } from './filters';
+import { randomPickerBodyTemplate } from './templates/popup.templates';
 
 interface PickerParams {
   movies: Movie[];
@@ -35,57 +37,46 @@ function buildPicker(params: PickerParams): { shell: PanelShell; setWatchFilter:
 
   const selections = new Map<string, Set<string>>();
   let currentWatchFilter: WatchFilter = initialWatchFilter;
+  let poolCount = 0;
+  let extractDisabled = true;
 
   const shell = buildPanelShell('RANDOM', 'TARGET');
   const { panel, close } = shell;
 
-  // Groups grid
-  const grid = document.createElement('div');
-  grid.className = 'random-groups-grid';
-  panel.appendChild(grid);
+  const body = document.createElement('div');
+  panel.appendChild(body);
 
-  let poolCountEl!: HTMLElement;
-  let extractBtn!: HTMLButtonElement;
-
-  function updatePool(): void {
-    const pool = buildPool(movies, groupers, selections, store, currentWatchFilter);
-    poolCountEl.textContent = 'Pool: ' + pool.length + ' film';
-    extractBtn.disabled = pool.length === 0;
-  }
-
+  // Pannelli grouper: elementi vivi creati una volta, interpolati nel template.
+  const panelEls: HTMLElement[] = [];
   for (const grouper of groupers) {
-    selections.set(grouper.name, new Set());
-    grid.appendChild(buildGrouperPanel(grouper, selections.get(grouper.name)!, updatePool, movies).el);
+    const sel = new Set<string>();
+    selections.set(grouper.name, sel);
+    panelEls.push(buildGrouperPanel(grouper, sel, updatePool, movies).el);
   }
 
-  // Watch filter row
   const watchRow = buildWatchRow(currentWatchFilter, f => {
     currentWatchFilter = f;
     updatePool();
   });
-  panel.appendChild(watchRow.row);
 
-  // Footer
-  const footer = document.createElement('div');
-  footer.className = 'random-footer';
-
-  poolCountEl = document.createElement('div');
-  poolCountEl.className = 'random-pool-count';
-
-  extractBtn = document.createElement('button');
-  extractBtn.className = 'random-extract-btn';
-  extractBtn.textContent = '◈ ESTRAI';
-  extractBtn.onclick = () => {
+  function onExtract(): void {
     const pool = buildPool(movies, groupers, selections, store, currentWatchFilter);
     if (!pool.length) return;
     const picked = pool[Math.floor(Math.random() * pool.length)];
     close();
     onPick(picked.id);
-  };
+  }
 
-  footer.appendChild(poolCountEl);
-  footer.appendChild(extractBtn);
-  panel.appendChild(footer);
+  function rerenderBody(): void {
+    render(randomPickerBodyTemplate(panelEls, watchRow.row, poolCount, extractDisabled, onExtract), body);
+  }
+
+  function updatePool(): void {
+    const pool = buildPool(movies, groupers, selections, store, currentWatchFilter);
+    poolCount = pool.length;
+    extractDisabled = pool.length === 0;
+    rerenderBody();
+  }
 
   updatePool();
 

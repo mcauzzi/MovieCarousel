@@ -1,13 +1,18 @@
+import { render } from 'lit';
 import type { Movie } from './parser';
 import type { Grouper } from './groupers';
 import type { StoreAdapter } from './store';
 import type { WatchFilter } from './renderer';
+import { grouperPanelTemplate, watchRowTemplate } from './templates/filters.templates';
+import type { PickerItem, GrouperPanelHandlers } from './templates/filters.templates';
 
 /* Building block condivisi tra random picker e popup filtri:
    - buildPool: applica selezioni per grouper + filtro visione a una lista di film
    - buildGrouperPanel: pannello espandibile con ricerca, lista e chip per un grouper
    - buildPanelShell: backdrop + pannello + header con titolo accentato, chiusura (✕, click fuori, Escape)
-   - buildWatchRow: riga VISIONE con i toggle TUTTI / VISTI / NON VISTI */
+   - buildWatchRow: riga VISIONE con i toggle TUTTI / VISTI / NON VISTI
+   I tre builder costruiscono un elemento radice una volta e vi renderizzano un
+   template lit, ri-renderizzandolo allo stato aggiornato a ogni interazione. */
 
 export function buildPool(
   movies: Movie[],
@@ -75,7 +80,6 @@ export function buildGrouperPanel(
 ): GrouperPanel {
   // Per i grouper field-based costruiamo la lista da tutti i valori reali (no minSize):
   // ogni valore compare, TUTTI seleziona davvero tutti i film.
-  interface PickerItem { key: string; label: string; count: number }
   const pickerItems: PickerItem[] = [];
   let noneCount = 0;
 
@@ -97,175 +101,37 @@ export function buildGrouperPanel(
     for (const g of grouper.groups) pickerItems.push({ key: g.key, label: g.label, count: g.movies.length });
   }
 
-  let isOpen = false;
+  const ui = { isOpen: false, query: '' };
 
-  const panel = document.createElement('div');
-  panel.className = 'random-grouper-panel';
+  const el = document.createElement('div');
+  el.className = 'random-grouper-panel';
 
-  const headerEl = document.createElement('div');
-  headerEl.className = 'random-grouper-header';
+  const rerender = (): void => {
+    render(
+      grouperPanelTemplate({ grouper, pickerItems, noneCount, selectedKeys, isOpen: ui.isOpen, query: ui.query }, handlers),
+      el
+    );
+  };
 
-  const labelEl = document.createElement('span');
-  labelEl.className = 'random-grouper-label';
-  labelEl.textContent = grouper.label.toUpperCase();
-
-  const arrowEl = document.createElement('span');
-  arrowEl.className = 'random-grouper-arrow';
-  arrowEl.textContent = '▸';
-
-  headerEl.appendChild(labelEl);
-  headerEl.appendChild(arrowEl);
-
-  const chipsArea = document.createElement('div');
-  chipsArea.className = 'random-chips-area';
-
-  const body = document.createElement('div');
-  body.className = 'random-grouper-body';
-  body.style.display = 'none';
-
-  // Barra di ricerca
-  const searchInput = document.createElement('input');
-  searchInput.type = 'text';
-  searchInput.className = 'random-search';
-  searchInput.placeholder = 'Cerca ' + grouper.label.toLowerCase() + '...';
-  body.appendChild(searchInput);
-
-  // Lista scrollabile
-  const listEl = document.createElement('div');
-  listEl.className = 'random-list';
-  body.appendChild(listEl);
-
-  // Mappa key → elemento lista (per sincronizzare selezione e chip)
-  const itemEls = new Map<string, HTMLElement>();
-
-  function makeListItem(key: string, label: string, count: number, isNone = false): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'random-list-item' + (isNone ? ' li-none' : '') + (selectedKeys.has(key) ? ' active' : '');
-
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'li-label';
-    labelSpan.textContent = label;
-
-    const countSpan = document.createElement('span');
-    countSpan.className = 'li-count';
-    countSpan.textContent = '×' + count;
-
-    el.appendChild(labelSpan);
-    el.appendChild(countSpan);
-    el.onclick = () => {
-      if (selectedKeys.has(key)) { selectedKeys.delete(key); el.classList.remove('active'); }
-      else { selectedKeys.add(key); el.classList.add('active'); }
-      renderList(searchInput.value.toLowerCase().trim());
-      renderChips();
+  const handlers: GrouperPanelHandlers = {
+    onToggleItem: (key) => {
+      if (selectedKeys.has(key)) selectedKeys.delete(key); else selectedKeys.add(key);
+      rerender();
       onSelectionChange();
-    };
-    return el;
-  }
-
-  // Crea tutti gli elementi (il DOM viene gestito da renderList)
-  if (noneCount > 0) itemEls.set('__none__', makeListItem('__none__', '— Nessun ' + grouper.label, noneCount, true));
-  for (const item of pickerItems) itemEls.set(item.key, makeListItem(item.key, item.label, item.count));
-
-  function renderList(query = ''): void {
-    listEl.innerHTML = '';
-    // __none__ sempre in cima
-    const noneEl = itemEls.get('__none__');
-    if (noneEl) listEl.appendChild(noneEl);
-    // Selezionati per primi
-    for (const item of pickerItems) {
-      if (!selectedKeys.has(item.key)) continue;
-      if (query && !item.label.toLowerCase().includes(query)) continue;
-      listEl.appendChild(itemEls.get(item.key)!);
-    }
-    // Poi non selezionati
-    for (const item of pickerItems) {
-      if (selectedKeys.has(item.key)) continue;
-      if (query && !item.label.toLowerCase().includes(query)) continue;
-      listEl.appendChild(itemEls.get(item.key)!);
-    }
-  }
-
-  searchInput.addEventListener('input', () => renderList(searchInput.value.toLowerCase().trim()));
-
-  // Pulsante "Rimuovi selezione" — visibile solo quando c'è qualcosa di selezionato
-  const resetRow = document.createElement('div');
-  resetRow.className = 'random-quick-row';
-
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'group-btn random-reset-btn';
-  resetBtn.textContent = '✕ Rimuovi selezione';
-  resetBtn.style.display = selectedKeys.size > 0 ? '' : 'none';
+    },
+    onInput: (raw) => { ui.query = raw; rerender(); },
+    onToggleOpen: () => { ui.isOpen = !ui.isOpen; if (ui.isOpen) ui.query = ''; rerender(); },
+    onChipRemove: (key) => { selectedKeys.delete(key); rerender(); onSelectionChange(); },
+    onReset: () => { selectedKeys.clear(); rerender(); onSelectionChange(); },
+  };
 
   function clearSelection(): void {
     selectedKeys.clear();
-    itemEls.forEach(el => el.classList.remove('active'));
-    renderChips();
+    rerender();
   }
 
-  resetBtn.onclick = () => {
-    clearSelection();
-    onSelectionChange();
-  };
-
-  resetRow.appendChild(resetBtn);
-  body.appendChild(resetRow);
-
-  function setOpen(open: boolean): void {
-    isOpen = open;
-    arrowEl.textContent = open ? '▾' : '▸';
-    headerEl.classList.toggle('open', open);
-    body.style.display = open ? 'flex' : 'none';
-    chipsArea.style.display = open ? 'none' : 'flex';
-    if (open) { searchInput.value = ''; renderList(); }
-  }
-
-  headerEl.onclick = () => setOpen(!isOpen);
-
-  function renderChips(): void {
-    resetBtn.style.display = selectedKeys.size > 0 ? '' : 'none';
-    chipsArea.innerHTML = '';
-    if (selectedKeys.size === 0) {
-      const none = document.createElement('span');
-      none.className = 'random-no-filter';
-      none.textContent = '(nessun filtro)';
-      chipsArea.appendChild(none);
-      return;
-    }
-    for (const key of selectedKeys) {
-      const label = key === '__none__' ? 'Nessun ' + grouper.label
-        : (pickerItems.find(i => i.key === key)?.label ?? key);
-      const chip = document.createElement('span');
-      chip.className = 'random-chip';
-
-      const chipLabel = document.createElement('span');
-      chipLabel.textContent = label;
-
-      const chipRemove = document.createElement('button');
-      chipRemove.className = 'random-chip-remove';
-      chipRemove.textContent = '×';
-      chipRemove.onclick = (e) => {
-        e.stopPropagation();
-        selectedKeys.delete(key);
-        itemEls.get(key)?.classList.remove('active');
-        renderChips();
-        onSelectionChange();
-      };
-
-      chip.appendChild(chipLabel);
-      chip.appendChild(chipRemove);
-      chipsArea.appendChild(chip);
-    }
-  }
-
-  panel.appendChild(headerEl);
-  panel.appendChild(chipsArea);
-  panel.appendChild(body);
-
-  setOpen(false);
-  renderList();
-  renderChips();
-
-  return { el: panel, clearSelection };
+  rerender();
+  return { el, clearSelection };
 }
 
 export interface PanelShell {
@@ -329,35 +195,24 @@ export interface WatchRow {
 }
 
 export function buildWatchRow(initial: WatchFilter, onChange: (f: WatchFilter) => void): WatchRow {
+  let current = initial;
+
   const row = document.createElement('div');
   row.className = 'random-watch-row';
 
-  const label = document.createElement('span');
-  label.className = 'random-watch-label';
-  label.textContent = 'VISIONE';
-  row.appendChild(label);
+  const rerender = (): void => { render(watchRowTemplate(current, onPick), row); };
 
-  const opts: { label: string; value: WatchFilter }[] = [
-    { label: 'TUTTI', value: 'all' },
-    { label: 'VISTI', value: 'seen' },
-    { label: 'NON VISTI', value: 'unseen' },
-  ];
-  const btns: HTMLButtonElement[] = [];
-  for (const opt of opts) {
-    const btn = document.createElement('button');
-    btn.className = 'group-btn' + (initial === opt.value ? ' active' : '');
-    btn.textContent = opt.label;
-    btn.onclick = () => {
-      setValue(opt.value);
-      onChange(opt.value);
-    };
-    btns.push(btn);
-    row.appendChild(btn);
+  function onPick(f: WatchFilter): void {
+    current = f;
+    rerender();
+    onChange(f);
   }
 
   function setValue(f: WatchFilter): void {
-    btns.forEach((b, i) => b.classList.toggle('active', opts[i].value === f));
+    current = f;
+    rerender();
   }
 
+  rerender();
   return { row, setValue };
 }

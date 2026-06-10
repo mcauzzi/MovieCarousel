@@ -16,20 +16,23 @@ npx tsc --noEmit     # type-check without emitting (no test suite exists)
 
 ## Architecture
 
-Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Single npm runtime dependency: `jszip`.
+Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`.
+
+All UI is built with **lit-html functional templates** (`` html`...` `` rendered via `render()`), not LitElement/web components — no Shadow DOM, so the global `style.css` applies everywhere. Templates are pure functions returning `TemplateResult`, kept in dedicated files under `src/templates/` (they import only `lit` + types, so they stay leaves and don't break the decoupling points). Each view module computes data + handlers and calls `render(template(...), container)`; stateful UI (popups, modal) keeps its state in a closure and re-renders on change — lit diffs efficiently. Event handlers are bound in the templates (`@click`/`@input`/`@error`).
 
 ### Module graph (acyclic)
 
 ```
 main.ts  →  parser.ts       (leaf)
          →  groupers.ts     →  parser.ts, store.ts (types)
-         →  renderer.ts     →  parser.ts, groupers.ts, utils.ts, store.ts (types)
-         →  modal.ts        →  parser.ts, utils.ts, store.ts (types), toast.ts
-         →  stats.ts        →  parser.ts, store.ts (types), utils.ts
-         →  random.ts       →  filters.ts (+ shared types)
-         →  filter-popup.ts →  filters.ts (+ shared types)
-         →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only)
+         →  renderer.ts     →  parser.ts, groupers.ts, utils.ts, store.ts (types), templates/row, lit
+         →  modal.ts        →  parser.ts, utils.ts, store.ts (types), toast.ts, templates/modal, lit
+         →  stats.ts        →  parser.ts, store.ts (types), templates/stats, lit
+         →  random.ts       →  filters.ts, templates/popup, lit (+ shared types)
+         →  filter-popup.ts →  filters.ts, templates/popup, lit (+ shared types)
+         →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only), templates/filters, lit
          →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts   (leaves)
+         →  templates/*.templates.ts   (leaves — import only lit + types)
          →  style.css
 
 utils.ts (leaf — no imports)
@@ -37,8 +40,8 @@ utils.ts (leaf — no imports)
 
 Two deliberate decoupling points — preserve them:
 
-- `renderer.ts` does **not** import `modal.ts`. `main.ts` passes `openModal` as a callback (`OpenModalFn`) to `attachHandlers` — this breaks the only potential circular dependency.
-- `filters.ts` holds the building blocks shared by the random picker and the filter popup (`buildPool`, `buildGrouperPanel`, `buildPanelShell`, `buildWatchRow`). Neither `random.ts` nor `filter-popup.ts` imports the other.
+- `renderer.ts` does **not** import `modal.ts`. `main.ts` builds an `onOpenModal` callback and passes it to `renderMain` (which wires it into the card template's `@click`) — this breaks the only potential circular dependency.
+- `filters.ts` holds the building blocks shared by the random picker and the filter popup (`buildPool`, `buildGrouperPanel`, `buildPanelShell`, `buildWatchRow`). Neither `random.ts` nor `filter-popup.ts` imports the other. The shared lit templates live in `templates/filters.templates.ts` and `templates/popup.templates.ts`.
 
 All mutable application state lives exclusively in `main.ts` (movies, embeddedImages, imgDir, configuredImgDir, groupers, currentGrouper, searchTerm, isIntelView, watchFilter, filterSelections). `random.ts` and `filter-popup.ts` cache only their built popup DOM at module level (released via `resetRandomPicker` / `resetFilterPopup`); the filter popup mutates `filterSelections` (owned by main) in place.
 
@@ -49,9 +52,10 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/main.ts` | Entry point — state, DOM event wiring, `handleFile`, `initUI`, `tryAutoLoad`, theme dropdown |
 | `src/parser.ts` | Parses Tellico `.tc` XML → `Movie[]` + embedded images map |
 | `src/groupers.ts` | Builds `Grouper[]` from movies; `matchesSearch` for filtering |
-| `src/renderer.ts` | Generates row/card HTML (search + watch filter + optional `allowedIds`), attaches carousel and card click handlers |
-| `src/modal.ts` | Opens/closes the film detail overlay; watch status & star rating controls |
-| `src/filters.ts` | Shared filter logic & UI blocks: `buildPool`, `buildGrouperPanel`, `buildPanelShell`, `buildWatchRow` |
+| `src/renderer.ts` | Renders the carousel into `#main` via lit (search + watch filter + optional `allowedIds`); owns the failed-image set; events bound in templates, carousel scroll via `e.currentTarget`. `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter?, allowedIds?)`, `resetRenderer()` |
+| `src/modal.ts` | Opens/closes the film detail overlay; watch status & star rating controls (lit re-render on change). `openModal(id, movies, embeddedImages, imgDir, store, onStatusChange?)` |
+| `src/filters.ts` | Shared filter logic & UI block builders: `buildPool` (pure) plus `buildGrouperPanel`/`buildPanelShell`/`buildWatchRow` (each owns a root element + lit re-render) |
+| `src/templates/` | Pure lit-html template functions: `card`, `row`, `modal`, `stats`, `filters`, `popup`, `toolbar` |
 | `src/random.ts` | RANDOM picker popup — private per-grouper selections + watch filter → extract a random film |
 | `src/filter-popup.ts` | FILTRI popup — same panels, but selections persist in main and filter the carousel view live |
 | `src/stats.ts` | INTEL view — computes and renders collection statistics |
@@ -60,7 +64,7 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
 | `src/transitions.ts` | Page-swipe transition overlay (`withTransition`) |
-| `src/utils.ts` | `escapeHtml` and `coverUrl` — pure, imported by renderer, modal and stats |
+| `src/utils.ts` | `coverUrl` — pure URL builder, imported by renderer and modal |
 | `src/style.css` | All CSS (CSS custom properties for theming via `:root` + `[data-theme]`) |
 
 ### Data flow
@@ -69,8 +73,8 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 2. `handleFile` → JSZip extracts `tellico.xml` (falls back to raw XML if not zipped); seeds the store from the `.tc` "Visto" and rating fields; assigns synthetic ids to movies without a valid one
 3. `parseTellicoXml` → `{ movies: Movie[], embeddedImages: Map<string, string> }`
 4. `initUI` → `buildGroupers(movies, store)` → populates group selector buttons, masthead buttons (INTEL, RANDOM), FILTRI button → `render()`
-5. `render()` → computes `allowedIds` from `filterSelections` via `buildPool` → `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds)` then `attachHandlers(..., openModal)`
-6. Card click → `openModal(id, movies, embeddedImages, imgDir, store)`
+5. `render()` → computes `allowedIds` from `filterSelections` via `buildPool` → builds `onOpenModal` (card click → `openModal`) → `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter, allowedIds)` which lit-renders the carousel
+6. Card click → `openModal(id, movies, embeddedImages, imgDir, store, render)` — the `onStatusChange` callback re-renders `#main` so the card badge stays in sync (no manual DOM mutation across render roots)
 
 ### Filtering semantics
 
@@ -84,7 +88,7 @@ Rows left empty by filtering are dropped entirely. The INTEL view ignores search
 
 ### Popups (RANDOM e FILTRI)
 
-Both popups are built from the `filters.ts` building blocks and share the `random-*` CSS classes. The shell (`buildPanelShell`) provides backdrop, accented title, ✕ button, click-outside and Escape closing, and a `destroy()` that detaches DOM + key listener.
+Both popups are built from the `filters.ts` building blocks and share the `random-*` CSS classes. The shell (`buildPanelShell`, kept imperative) provides backdrop, accented title, ✕ button, click-outside and Escape closing, and a `destroy()` that detaches DOM + key listener. Each popup appends a `body` container to the shell `panel` and lit-renders its grid/watch-row/footer there (`templates/popup.templates.ts`); the live grouper-panel and watch-row elements are interpolated into that template as DOM nodes (lit keeps them in place across re-renders, preserving their internal state).
 
 - Built lazily on first open, then cached at module level and re-shown; `resetRandomPicker()` / `resetFilterPopup()` destroy them (called on Reload, and `resetFilterPopup` also in `initUI` so a newly loaded file gets fresh panels).
 - **RANDOM** keeps its selections private and ends with ESTRAI → `onPick(id)` → film modal.
@@ -114,7 +118,7 @@ Created at runtime: `.theme-dropdown` + `#intelBtn` + `#randomBtn` (masthead), `
 
 ### XSS safety
 
-All user-sourced string data is passed through `escapeHtml` before any `innerHTML` assignment (renderer, modal, stats use HTML template strings). Numeric fields (`id`, `year`, `running-time`) are interpolated directly without escaping. `filters.ts`, `random.ts` and `filter-popup.ts` build DOM via `createElement`/`textContent`, which is inherently safe — keep it that way when extending them.
+All user-sourced strings are interpolated into lit-html `` html`...` `` templates; lit auto-escapes text and attribute bindings, so no manual escaping is needed (the old `escapeHtml` has been removed; `coverUrl` — pure URL construction — remains). Numeric fields (`id`, `year`, `running-time`) interpolate directly. **Never** use the `unsafeHTML` directive for user data — lit does not escape inside it; no current code uses it, keep it that way.
 
 ### .tc file format
 
