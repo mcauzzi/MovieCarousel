@@ -1,5 +1,6 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import type { Grouper } from '../groupers';
 import type { WatchFilter } from '../renderer';
 
@@ -50,6 +51,16 @@ export function grouperPanelTemplate(s: GrouperPanelState, h: GrouperPanelHandle
   const selectedItems = s.pickerItems.filter(i => s.selectedKeys.has(i.key) && visible(i));
   const unselectedItems = s.pickerItems.filter(i => !s.selectedKeys.has(i.key) && visible(i));
 
+  // Lista ordinata (— Nessun — sempre in cima, poi selezionati, poi resto) con
+  // chiave stabile per il keying di lit: i nodi vengono riusati invece che
+  // ricreati a ogni ricerca/selezione.
+  interface ListEntry { key: string; label: string; count: number; isNone: boolean; selected: boolean }
+  const entries: ListEntry[] = [];
+  if (s.noneCount > 0)
+    entries.push({ key: '__none__', label: '— Nessun ' + s.grouper.label, count: s.noneCount, isNone: true, selected: s.selectedKeys.has('__none__') });
+  for (const i of selectedItems) entries.push({ key: i.key, label: i.label, count: i.count, isNone: false, selected: true });
+  for (const i of unselectedItems) entries.push({ key: i.key, label: i.label, count: i.count, isNone: false, selected: false });
+
   const chips = s.selectedKeys.size === 0
     ? html`<span class="random-no-filter">(nessun filtro)</span>`
     : [...s.selectedKeys].map(key => {
@@ -75,11 +86,7 @@ export function grouperPanelTemplate(s: GrouperPanelState, h: GrouperPanelHandle
         .value=${s.query}
         @input=${(e: Event) => h.onInput((e.target as HTMLInputElement).value)}>
       <div class="random-list">
-        ${s.noneCount > 0
-          ? listItemTemplate('__none__', '— Nessun ' + s.grouper.label, s.noneCount, true, s.selectedKeys.has('__none__'), h.onToggleItem)
-          : ''}
-        ${selectedItems.map(i => listItemTemplate(i.key, i.label, i.count, false, true, h.onToggleItem))}
-        ${unselectedItems.map(i => listItemTemplate(i.key, i.label, i.count, false, false, h.onToggleItem))}
+        ${repeat(entries, e => e.key, e => listItemTemplate(e.key, e.label, e.count, e.isNone, e.selected, h.onToggleItem))}
       </div>
       <div class="random-quick-row">
         ${s.selectedKeys.size > 0

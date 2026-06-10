@@ -56,6 +56,11 @@ function updateFilterBadge(): void {
   litRender(filterButtonTemplate(count), filterBtn);
 }
 
+// Riferimento stabile (non ricreato a ogni render): il renderer lo invoca
+// tramite un handler stabile, evitando il ri-aggancio dei listener sulle card.
+const onOpenModal = (id: number) =>
+  withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, render));
+
 function render(): void {
   const grouper = groupers.find(g => g.name === currentGrouper);
   if (!grouper) return;
@@ -64,8 +69,6 @@ function render(): void {
   const allowedIds = hasFilter
     ? new Set(buildPool(movies, groupers, filterSelections, store, 'all').map(m => m.id))
     : undefined;
-  const onOpenModal = (id: number) =>
-    withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, render));
   renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter, allowedIds);
 }
 
