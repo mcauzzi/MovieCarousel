@@ -9,14 +9,18 @@ npm install          # install dependencies (first time)
 npm run dev          # dev server at http://localhost:5173 with HMR
 npm run build        # production bundle → dist/
 npm run preview      # serve dist/ at http://localhost:4173
-npx tsc --noEmit     # type-check without emitting (no test suite exists)
+npm run typecheck    # tsc --noEmit (no test suite exists)
+npm run lint         # ESLint (flat config, typescript-eslint)
+npm run format       # Prettier --write su src/**/*.ts (opt-in)
 ```
 
-`npx tsc --noEmit` requires `node_modules` (run `npm install` first) or it fails on the `jszip` import.
+`npm run typecheck`/`lint` require `node_modules` (run `npm install` first) or fail on the `jszip` import. Prettier è disponibile come strumento ma **non** è imposto in CI: il codebase ha allineamenti manuali deliberati, quindi non fare mass-reformat (`format:check` non gira in `ci.yml`).
+
+CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner GitHub-hosted ed esegue install + typecheck + lint + build. `deploy.yml` resta separato (solo push su `master`, runner NAS self-hosted).
 
 ## Architecture
 
-Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`.
+Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build). Dev tooling: `eslint` + `typescript-eslint` + `prettier`.
 
 All UI is built with **lit-html functional templates** (`` html`...` `` rendered via `render()`), not LitElement/web components — no Shadow DOM, so the global `style.css` applies everywhere. Templates are pure functions returning `TemplateResult`, kept in dedicated files under `src/templates/` (they import only `lit` + types, so they stay leaves and don't break the decoupling points). Each view module computes data + handlers and calls `render(template(...), container)`; stateful UI (popups, modal) keeps its state in a closure and re-renders on change — lit diffs efficiently. Event handlers are bound in the templates (`@click`/`@input`/`@error`).
 
@@ -59,7 +63,7 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/random.ts` | RANDOM picker popup — private per-grouper selections + watch filter → extract a random film |
 | `src/filter-popup.ts` | FILTRI popup — same panels, but selections persist in main and filter the carousel view live |
 | `src/stats.ts` | INTEL view — computes and renders collection statistics |
-| `src/store.ts` | `LocalStorageAdapter` for watch status and ratings (with seed from the `.tc` file) |
+| `src/store.ts` | `LocalStorageAdapter` for watch status and ratings (with seed from the `.tc` file); `setItem` wrapped in try/catch; `setOnExternalChange` ri-renderizza su evento `storage` (sync multi-scheda) |
 | `src/themes.ts` | Theme list + `applyTheme`/`getSavedTheme` (persisted in localStorage, `data-theme` on `<html>`) |
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
@@ -104,6 +108,8 @@ Both popups are built from the `filters.ts` building blocks and share the `rando
 
 Seed semantics: at load, `<visto>true</visto>` and the personal rating field of the `.tc` seed the store **in memory**. A manual override stored in localStorage — including an explicit `null` — always wins over the seed. The Reload button resets only in-memory state; it does **not** clear localStorage. Ids are the `.tc` ids, so overrides survive reloading the same collection but may mismatch if the collection is re-exported with different ids.
 
+`setItem` è avvolto in try/catch: in modalità privata o con quota piena la persistenza fallisce silenziosamente (console.warn) ma la cache in memoria resta valida, quindi la sessione continua. Sync multi-scheda: l'evento `storage` (emesso solo nelle altre tab) invalida la cache e, via `setOnExternalChange` cablato in `main.ts`, ri-renderizza la vista corrente.
+
 ### Themes
 
 Defined in `themes.ts` (`THEMES`): `p5` PHANTOM (default, red), `p3` MEMENTO (blue), `p4` MAYONAKA (gold). Selected via the `<select class="theme-dropdown">` in the masthead. `p5` removes the `data-theme` attribute from `<html>`; the others set it, activating the `[data-theme="..."]` CSS custom-property overrides.
@@ -132,7 +138,7 @@ Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 
 ## Deploy
 
-**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia `dist/index.html` + `dist/assets/index-*.js|css` nella cartella web montata come `/deploy`. `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
+**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia `dist/index.html` + **tutti** gli asset hashati in `dist/assets/` (bundle JS/CSS **e** i font self-hostati `.woff/.woff2`) nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css|woff|woff2`), quindi `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
 
 **Manuale** (fallback):
 

@@ -1,5 +1,4 @@
 import { render, nothing } from 'lit';
-import type { Movie } from './parser';
 import type { Grouper } from './groupers';
 import { matchesSearch } from './groupers';
 import { coverUrl } from './utils';

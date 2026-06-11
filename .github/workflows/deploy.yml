@@ -40,11 +40,15 @@ jobs:
           [ -f dist/index.html ] || { echo "::error::build incompleta: dist/index.html mancante"; exit 1; }
 
           mkdir -p /deploy/assets
-          cp dist/assets/index-*.js dist/assets/index-*.css /deploy/assets/
+          # Copia tutti gli asset hashati prodotti dal build: bundle JS/CSS e i
+          # font self-hostati (.woff/.woff2). collezione.tc, covers/ e config.json
+          # vivono in /deploy(/assets) sul NAS e non sono in dist/, quindi restano.
+          cp dist/assets/* /deploy/assets/
           cp dist/index.html /deploy/index.html
 
-          # rimuove i vecchi bundle hashati non più referenziati
-          for f in /deploy/assets/index-*.js /deploy/assets/index-*.css; do
+          # Rimuove i soli asset hashati non più referenziati. Limitato alle
+          # estensioni di build: non tocca mai collezione.tc, covers/ o config.json.
+          for f in /deploy/assets/*.js /deploy/assets/*.css /deploy/assets/*.woff /deploy/assets/*.woff2; do
             [ -e "$f" ] || continue
             [ -e "dist/assets/$(basename "$f")" ] || rm -- "$f"
           done
