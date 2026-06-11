@@ -71,6 +71,9 @@ export function openModal(
   };
 
   rerender();
+  // Riparti dall'inizio: senza questo il nuovo modal eredita lo scroll del
+  // precedente (plot lungo + cast) e si apre già a metà pagina.
+  modalContent.scrollTop = 0;
   modalEl.classList.add('show');
   document.body.style.overflow = 'hidden';
 }
@@ -81,4 +84,10 @@ export function closeModal(): void {
 }
 
 modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !modalEl.classList.contains('show')) return;
+  // Se un popup (FILTRI/RANDOM) è aperto sopra al modal, lascia che gestisca lui
+  // l'Escape: chiude solo l'overlay in cima, non entrambi insieme.
+  if (document.querySelector('.random-backdrop.show')) return;
+  closeModal();
+});

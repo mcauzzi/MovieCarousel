@@ -19,16 +19,26 @@ export function initTransitions(): void {
   document.body.classList.add('transitions-enabled');
 }
 
-export async function withTransition(callback: () => void): Promise<void> {
+// Catena di transizioni: ogni chiamata attende il completamento della
+// precedente, così due click ravvicinati non si sovrappongono sullo stesso
+// overlay (niente classi t-enter/t-exit stompate a metà animazione) e l'ultimo
+// callback vince sempre. Un .catch resetta la catena se un callback lancia.
+let chain: Promise<void> = Promise.resolve();
+
+export function withTransition(callback: () => void): Promise<void> {
   if (!document.body.classList.contains('transitions-enabled')) {
     callback();
-    return;
+    return Promise.resolve();
   }
-  overlay.classList.add('t-enter');
-  await waitForAnimation(overlay);
-  overlay.classList.remove('t-enter');
-  callback();
-  overlay.classList.add('t-exit');
-  await waitForAnimation(overlay);
-  overlay.classList.remove('t-exit');
+  const run = chain.catch(() => {}).then(async () => {
+    overlay.classList.add('t-enter');
+    await waitForAnimation(overlay);
+    overlay.classList.remove('t-enter');
+    callback();
+    overlay.classList.add('t-exit');
+    await waitForAnimation(overlay);
+    overlay.classList.remove('t-exit');
+  });
+  chain = run;
+  return run;
 }
