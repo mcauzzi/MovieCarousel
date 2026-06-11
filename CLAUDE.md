@@ -142,7 +142,7 @@ Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 
 ## Deploy
 
-**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia `dist/index.html` + **tutti** gli asset hashati in `dist/assets/` (bundle JS/CSS **e** i font self-hostati `.woff/.woff2`) nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css|woff|woff2`), quindi `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
+**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia (`cp -r`) `dist/index.html` + **tutti** gli asset hashati: bundle JS/CSS in `dist/assets/` e i font self-hostati `.woff/.woff2` in `dist/assets/fonts/` (la sottocartella è impostata via `assetFileNames` in `vite.config.ts`), nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css` in `assets/`, `*.woff|woff2` in `assets/fonts/`), quindi `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
 
 **Manuale** (fallback):
 
@@ -158,6 +158,7 @@ web-root/
 ├── assets/
 │   ├── index-xxx.js    ← da dist/assets/
 │   ├── index-xxx.css   ← da dist/assets/
+│   ├── fonts/          ← font self-hostati .woff/.woff2 (da dist/assets/fonts/)
 │   ├── collezione.tc
 │   └── covers/   ← cartella copertine
 └── config.json         ← modifica qui i path se riorganizzi i file
