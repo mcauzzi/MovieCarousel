@@ -3,6 +3,7 @@ import type { Movie } from './parser';
 import type { Grouper } from './groupers';
 import type { StoreAdapter } from './store';
 import type { WatchFilter } from './renderer';
+import { fieldValues } from './utils';
 import { grouperPanelTemplate, watchRowTemplate } from './templates/filters.templates';
 import type { PickerItem, GrouperPanelHandlers } from './templates/filters.templates';
 
@@ -34,8 +35,7 @@ export function buildPool(
       const f = grouper.field;
       const selectedValues = new Set([...selectedKeys].filter(k => k !== '__none__'));
       for (const m of movies) {
-        const v = m[f];
-        const vals = Array.isArray(v) ? v as string[] : (v ? [String(v)] : []);
+        const vals = fieldValues(m, f);
         if (vals.length === 0) {
           if (selectedKeys.has('__none__')) allowed.add(m.id);
         } else {
@@ -87,8 +87,7 @@ export function buildGrouperPanel(
     const f = grouper.field;
     const valueMap = new Map<string, number>();
     for (const m of allMovies) {
-      const v = m[f];
-      const vals = Array.isArray(v) ? v as string[] : (v ? [String(v)] : []);
+      const vals = fieldValues(m, f);
       if (vals.length === 0) { noneCount++; continue; }
       for (const val of vals) if (val) valueMap.set(val, (valueMap.get(val) ?? 0) + 1);
     }

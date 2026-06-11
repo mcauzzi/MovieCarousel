@@ -47,6 +47,8 @@ const LANG_NORMALIZE: Record<string, string> = {
   'Spanish': 'Spagnolo', 'Russian': 'Russo', 'Korean': 'Coreano',
 };
 
+// Valori dell'attributo `type` dei campi Tellico trattati come numerici
+// (es. Number e Rating): il loro testo viene convertito a `number`.
 const NUMERIC_TYPES = new Set(['5', '6', '14']);
 
 function localName(el: Element): string {
@@ -157,6 +159,15 @@ export function parseTellicoXml(xmlString: string): ParseResult {
   }
 
   const movies = childrenByName(collection, 'entry').map(e => parseEntry(e, fieldDefs));
+
+  // Garantisce un id numerico valido per ogni film: quelli senza id (mancante o
+  // NaN da parseInt) ricevono un id sintetico partendo da max(id esistenti)+1,
+  // così non collide con gli id reali del .tc. I consumatori possono assumere
+  // `Movie.id` sempre valido (niente cast a valle).
+  let maxId = 0;
+  for (const m of movies) if (Number.isFinite(m.id)) maxId = Math.max(maxId, m.id);
+  let nextId = maxId + 1;
+  for (const m of movies) if (!Number.isFinite(m.id)) m.id = nextId++;
 
   const imagesEl = findChild(collection, 'images');
   const embeddedImages = new Map<string, string>();

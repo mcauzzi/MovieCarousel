@@ -1,5 +1,6 @@
 import type { Movie } from './parser';
 import type { StoreAdapter } from './store';
+import { fieldValues, decadeKey } from './utils';
 
 export interface Group {
   key: string;
@@ -38,10 +39,7 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
   function groupByField(field: string, minSize: number): Group[] {
     const map = new Map<string, Movie[]>();
     for (const m of movies) {
-      const v = m[field];
-      if (!v) continue;
-      const vals = Array.isArray(v) ? (v as string[]) : [String(v)];
-      for (const val of vals) {
+      for (const val of fieldValues(m, field)) {
         if (!val) continue;
         if (!map.has(val)) map.set(val, []);
         map.get(val)!.push(m);
@@ -76,7 +74,7 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
     const map = new Map<string, Movie[]>();
     for (const m of movies) {
       if (!m.year) continue;
-      const key = Math.floor(m.year / 10) * 10 + 's';
+      const key = decadeKey(m.year);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(m);
     }

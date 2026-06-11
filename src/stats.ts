@@ -1,6 +1,7 @@
 import { render } from 'lit';
 import type { Movie } from './parser';
 import type { StoreAdapter } from './store';
+import { fieldValues, decadeKey } from './utils';
 import { statsTemplate } from './templates/stats.templates';
 
 export interface Stats {
@@ -29,12 +30,10 @@ export function computeStats(movies: Movie[], store: StoreAdapter): Stats {
   const dirMap = new Map<string, number>();
   const decadeMap = new Map<string, number>();
   for (const m of movies) {
-    const genres = Array.isArray(m.genre) ? m.genre as string[] : [];
-    for (const g of genres) genreMap.set(g, (genreMap.get(g) ?? 0) + 1);
-    const dirs = Array.isArray(m.director) ? m.director as string[] : [];
-    for (const d of dirs) dirMap.set(d, (dirMap.get(d) ?? 0) + 1);
+    for (const g of fieldValues(m, 'genre')) genreMap.set(g, (genreMap.get(g) ?? 0) + 1);
+    for (const d of fieldValues(m, 'director')) dirMap.set(d, (dirMap.get(d) ?? 0) + 1);
     if (m.year) {
-      const decade = Math.floor((m.year as number) / 10) * 10 + 's';
+      const decade = decadeKey(m.year as number);
       decadeMap.set(decade, (decadeMap.get(decade) ?? 0) + 1);
     }
   }
