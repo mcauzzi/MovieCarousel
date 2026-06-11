@@ -1,3 +1,13 @@
+// Font self-hostati (bundlati da Vite): nessuna dipendenza da Google Fonts,
+// così l'app funziona anche offline / in LAN sul NAS.
+import '@fontsource/bebas-neue/400.css';
+import '@fontsource/anton/400.css';
+import '@fontsource/oswald/400.css';
+import '@fontsource/oswald/500.css';
+import '@fontsource/oswald/600.css';
+import '@fontsource/oswald/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/700.css';
 import './style.css';
 import JSZip from 'jszip';
 import { render as litRender } from 'lit';
@@ -34,6 +44,8 @@ let filterSelections: Map<string, Set<string>> = new Map();
 let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
 const store: StoreAdapter = new LocalStorageAdapter();
+// Sync multi-scheda: se un'altra tab cambia stato/voto, ri-renderizza qui.
+store.setOnExternalChange?.(() => { if (movies.length) onMovieChange(); });
 
 // DOM refs
 const loaderEl = document.getElementById('loader') as HTMLElement;
@@ -59,7 +71,54 @@ function updateFilterBadge(): void {
 // Riferimento stabile (non ricreato a ogni render): il renderer lo invoca
 // tramite un handler stabile, evitando il ri-aggancio dei listener sulle card.
 const onOpenModal = (id: number) =>
-  withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, render));
+  withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange));
+
+// Chiamato dopo una modifica a stato/voto (dal modal o da un'altra scheda).
+// Un cambio di voto può spostare un film tra i gruppi del grouper "Voto",
+// quindi ricostruiamo i grouper prima di ri-renderizzare la vista corrente.
+function onMovieChange(): void {
+  rebuildGroupers();
+  if (isIntelView) {
+    renderStats(document.getElementById('main')!, computeStats(movies, store));
+  } else {
+    render();
+  }
+}
+
+// Ricostruisce i grouper (e quindi i gruppi del "Voto") conservando selezioni
+// filtro e grouper corrente; resetta il popup filtri perché cache-a pannelli
+// costruiti sui grouper ormai stantii.
+function rebuildGroupers(): void {
+  if (!groupers.length) return;
+  groupers = buildGroupers(movies, store);
+  if (!groupers.some(g => g.name === currentGrouper))
+    currentGrouper = groupers[0]?.name ?? '';
+  const next = new Map<string, Set<string>>();
+  for (const g of groupers) next.set(g.name, filterSelections.get(g.name) ?? new Set<string>());
+  filterSelections = next;
+  resetFilterPopup();
+  renderGroupButtons();
+}
+
+function renderGroupButtons(): void {
+  const groupSelect = document.getElementById('groupSelect')!;
+  groupSelect.innerHTML = '';
+  groupers.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'group-btn' + (!isIntelView && g.name === currentGrouper ? ' active' : '');
+    btn.textContent = g.label;
+    btn.dataset.name = g.name;
+    btn.onclick = () => {
+      currentGrouper = g.name;
+      isIntelView = false;
+      document.querySelectorAll<HTMLElement>('.group-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.name === g.name));
+      document.getElementById('intelBtn')?.classList.remove('active');
+      withTransition(() => render());
+    };
+    groupSelect.appendChild(btn);
+  });
+}
 
 function render(): void {
   const grouper = groupers.find(g => g.name === currentGrouper);
@@ -83,23 +142,7 @@ function initUI(): void {
   document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
 
   const groupSelect = document.getElementById('groupSelect')!;
-  groupSelect.innerHTML = '';
-
-  groupers.forEach(g => {
-    const btn = document.createElement('button');
-    btn.className = 'group-btn' + (g.name === currentGrouper ? ' active' : '');
-    btn.textContent = g.label;
-    btn.dataset.name = g.name;
-    btn.onclick = () => {
-      currentGrouper = g.name;
-      isIntelView = false;
-      document.querySelectorAll<HTMLElement>('.group-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.name === g.name));
-      document.getElementById('intelBtn')?.classList.remove('active');
-      withTransition(() => render());
-    };
-    groupSelect.appendChild(btn);
-  });
+  renderGroupButtons();
 
   // INTEL tab — nel masthead, separato dai bottoni di raggruppamento
   document.getElementById('intelBtn')?.remove();
@@ -127,7 +170,7 @@ function initUI(): void {
     groupers,
     store,
     initialWatchFilter: watchFilter,
-    onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store)),
+    onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange)),
   });
   masthead.insertBefore(randomBtn, reloadBtn);
   // Riposiziona il dropdown tema a destra di RANDOM, subito prima di reload.
@@ -310,6 +353,9 @@ reloadBtn.addEventListener('click', () => {
   headerEl.classList.remove('show');
   setStatus('');
   fileInput.value = '';
+  // Svuota anche l'input di ricerca: senza questo mostrerebbe il testo vecchio
+  // mentre searchTerm è già azzerato (UI e stato divergerebbero).
+  (document.getElementById('search') as HTMLInputElement).value = '';
 });
 document.getElementById('search')!.addEventListener('input', e => {
   searchTerm = (e.target as HTMLInputElement).value.toLowerCase().trim();
@@ -321,5 +367,6 @@ document.getElementById('search')!.addEventListener('input', e => {
   }
 });
 
-checkForNewVersion();
-tryAutoLoad();
+// Prima il controllo versione: se rileva un bundle stantio ricarica la pagina,
+// così evitiamo di lanciare l'auto-load (parsing del .tc) subito prima del reload.
+checkForNewVersion().then(reloading => { if (!reloading) tryAutoLoad(); });
