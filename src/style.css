@@ -9,6 +9,27 @@
   --hot-2:#ff1a2e;
   --hot-deep:#8a0008;
   --line:#1a0000;
+
+  /* ---- Manopole tematiche (default = PHANTOM / P5) ----
+     I temi le ridefiniscono nei blocchi [data-theme] in fondo. */
+  /* Pattern di sfondo (body::after): deriva da --hot, niente colori hardcoded. */
+  --pattern:repeating-linear-gradient(135deg,
+      transparent 0,
+      transparent 14px,
+      color-mix(in srgb, var(--hot) 4%, transparent) 14px,
+      color-mix(in srgb, var(--hot) 4%, transparent) 16px);
+  --pattern-size:auto;
+  /* Intensità della grana (body::before). */
+  --grain-opacity:0.05;
+  /* Skew del titolone INTEL (P3 lo ammorbidisce). */
+  --title-skew:-4deg;
+  /* Collage storto sulle card (P3 lo azzera). */
+  --card-tilt-a:-0.5deg;
+  --card-tilt-b:0.4deg;
+  /* Stella "All-Out Attack", riusabile come clip-path. */
+  --star:polygon(50% 0%, 63% 32%, 98% 35%, 71% 56%,
+                 82% 94%, 50% 72%, 18% 94%, 29% 56%,
+                 2% 35%, 37% 32%);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -21,23 +42,19 @@ body{
   overflow-x:hidden;
   position:relative;
 }
-/* Pattern halftone diagonale sullo sfondo */
+/* Pattern di sfondo tematico (halftone diagonale su P5) */
 body::after{
   content:'';
   position:fixed;
   inset:0;
   pointer-events:none;
   z-index:0;
-  background-image:
-    repeating-linear-gradient(135deg,
-      transparent 0,
-      transparent 14px,
-      rgba(230,0,18,0.025) 14px,
-      rgba(230,0,18,0.025) 16px);
+  background-image:var(--pattern);
+  background-size:var(--pattern-size);
 }
 /* Grana */
 body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:9000;opacity:0.05;
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9000;opacity:var(--grain-opacity);
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   mix-blend-mode:overlay;
 }
@@ -604,6 +621,15 @@ main{
 .card:hover{transform:translate(-3px,-3px)}
 .card:hover::before{transform:translate(9px,9px)}
 
+/* Collage storto P5: rotazioni leggere alternate (P3 le azzera via
+   variabili). `rotate` è una proprietà separata da `transform`, quindi
+   convive con il translate dell'hover senza conflitti. */
+.card:nth-child(odd){rotate:var(--card-tilt-a)}
+.card:nth-child(even){rotate:var(--card-tilt-b)}
+@media (prefers-reduced-motion: reduce){
+  .card{rotate:none}
+}
+
 .card .img-wrap{
   width:100%;
   height:280px;
@@ -1001,6 +1027,9 @@ main{
 /* =========================
    TEMI
    ========================= */
+/* MEMENTO (P3) — sobrio, lunare, malinconico.
+   Niente halftone: bagliore radiale in alto a destra; skew ridotti,
+   collage disattivato, grana più tenue. */
 [data-theme="p3"]{
   --hot:#3a7bd5;
   --hot-2:#5a9bf5;
@@ -1009,7 +1038,19 @@ main{
   --bg-2:#020a14;
   --surface:#071828;
   --line:#0a1a2a;
+  --pattern:radial-gradient(ellipse 70% 45% at 78% -12%,
+      color-mix(in srgb, var(--hot-2) 12%, transparent),
+      transparent 70%);
+  --pattern-size:auto;
+  --grain-opacity:0.03;
+  --title-skew:-1deg;
+  --card-tilt-a:0deg;
+  --card-tilt-b:0deg;
 }
+
+/* MAYONAKA (P4) — Midnight Channel.
+   Statico TV: pattern a puntini, scanline CRT sopra a tutto
+   (somma le righe al layer grana esistente), grana più forte. */
 [data-theme="p4"]{
   --hot:#f5c400;
   --hot-2:#ffd840;
@@ -1018,6 +1059,76 @@ main{
   --bg-2:#111111;
   --surface:#222200;
   --line:#2a2a00;
+  --pattern:radial-gradient(
+      color-mix(in srgb, var(--hot) 7%, transparent) 1.2px,
+      transparent 1.6px);
+  --pattern-size:13px 13px;
+  --grain-opacity:0.12;
+}
+[data-theme="p4"] body::before{
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0.8) 0, rgba(0,0,0,0.8) 1px,
+      transparent 1px, transparent 3px),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode:soft-light;
+}
+
+/* Transizioni per tema. I selettori doppi coprono .transitions-enabled
+   sia su <html> sia su <body>; la specificità (1,3,0) batte la base
+   (1,2,0), quindi vincono indipendentemente dall'ordine. */
+
+/* P3: tendina verticale — cala dall'alto, esce in basso. */
+[data-theme="p3"] #transition-overlay{
+  transform:translateY(-110%);
+}
+[data-theme="p3"].transitions-enabled #transition-overlay.t-enter,
+[data-theme="p3"] .transitions-enabled #transition-overlay.t-enter{
+  animation:t-enter-v 220ms cubic-bezier(0.2,0.8,0.2,1) forwards;
+}
+[data-theme="p3"].transitions-enabled #transition-overlay.t-exit,
+[data-theme="p3"] .transitions-enabled #transition-overlay.t-exit{
+  animation:t-exit-v 220ms cubic-bezier(0.8,0.2,0.8,1) forwards;
+}
+@keyframes t-enter-v{
+  from{transform:translateY(-110%)}
+  to{transform:translateY(0)}
+}
+@keyframes t-exit-v{
+  from{transform:translateY(0)}
+  to{transform:translateY(110%)}
+}
+
+/* P4: accensione/spegnimento CRT — parte come riga sottile al centro
+   e si espande; in uscita collassa e svanisce (opacity 0 finale,
+   niente riga residua a schermo). */
+[data-theme="p4"] #transition-overlay{
+  transform:scaleY(0.004);
+  transform-origin:center;
+  opacity:0;
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0.35) 0, rgba(0,0,0,0.35) 2px,
+      transparent 2px, transparent 4px),
+    var(--hot);
+}
+[data-theme="p4"].transitions-enabled #transition-overlay.t-enter,
+[data-theme="p4"] .transitions-enabled #transition-overlay.t-enter{
+  animation:t-enter-tv 220ms cubic-bezier(0.2,0.8,0.2,1) forwards;
+}
+[data-theme="p4"].transitions-enabled #transition-overlay.t-exit,
+[data-theme="p4"] .transitions-enabled #transition-overlay.t-exit{
+  animation:t-exit-tv 220ms cubic-bezier(0.8,0.2,0.8,1) forwards;
+}
+@keyframes t-enter-tv{
+  0%{transform:scaleY(0.004);opacity:1}
+  60%{transform:scaleY(1.05);opacity:1}
+  100%{transform:scaleY(1);opacity:1}
+}
+@keyframes t-exit-tv{
+  0%{transform:scaleY(1);opacity:1}
+  80%{transform:scaleY(0.004);opacity:1}
+  100%{transform:scaleY(0.004);opacity:0}
 }
 
 /* Theme dropdown nel masthead */
@@ -1148,7 +1259,7 @@ main{
   letter-spacing:-0.02em;
   text-shadow:4px 4px 0 var(--hot-deep);
   margin-bottom:0.5rem;
-  transform:skewX(-4deg);
+  transform:skewX(var(--title-skew));
   transform-origin:left;
   display:inline-block;
 }
@@ -1516,7 +1627,11 @@ main{
   color:var(--hot);text-transform:uppercase;font-weight:700;
 }
 
+/* ESTRAI — sticker strappato (clip irregolare su tutti i lati) con
+   stella "All-Out Attack" che spunta al hover. La stella ::after sta
+   DENTRO i bordi: il clip-path del bottone ritaglia anche i pseudo. */
 .random-extract-btn{
+  position:relative;
   background:var(--hot);
   border:3px solid var(--ink);
   color:var(--ink);
@@ -1524,12 +1639,33 @@ main{
   font-family:'Anton',sans-serif;
   font-size:1rem;letter-spacing:0.25em;text-transform:uppercase;
   cursor:pointer;transition:all 0.12s;
-  clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);
+  clip-path:polygon(0 10%, 3% 0, 97% 3%, 100% 14%,
+                    98% 88%, 93% 100%, 5% 97%, 0 86%);
+}
+.random-extract-btn::after{
+  content:'';
+  position:absolute;
+  top:50%;
+  right:10px;
+  translate:0 -50%;
+  width:16px;
+  height:16px;
+  background:var(--ink);
+  clip-path:var(--star);
+  opacity:0;
+  transform:scale(0.3) rotate(-25deg);
+  transition:opacity 0.12s, transform 0.12s;
+  pointer-events:none;
 }
 .random-extract-btn:hover:not(:disabled){
   background:var(--ink);color:var(--hot);
   transform:translate(-2px,-2px);
   box-shadow:4px 4px 0 var(--hot);
+}
+.random-extract-btn:hover:not(:disabled)::after{
+  background:var(--hot);
+  opacity:1;
+  transform:scale(1) rotate(8deg);
 }
 .random-extract-btn:disabled{opacity:0.4;cursor:not-allowed}
 
