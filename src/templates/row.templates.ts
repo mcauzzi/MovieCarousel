@@ -28,6 +28,7 @@ function scrollNext(e: Event): void { scrollCarousel(e, 1); }
 export function rowTemplate(
   row: RowData,
   onCardClick: (e: Event) => void,
+  onCardKeydown: (e: KeyboardEvent) => void,
   onImgError: (e: Event) => void
 ): TemplateResult {
   const num = String(row.idx + 1).padStart(2, '0');
@@ -46,7 +47,7 @@ export function rowTemplate(
     </div>
     <div class="carousel-wrap">
       <button class="carousel-btn prev" aria-label="Indietro" @click=${scrollPrev}><span>◀</span></button>
-      <div class="carousel">${repeat(row.filtered, c => c.movie.id, c => cardTemplate(c, onCardClick, onImgError))}</div>
+      <div class="carousel">${repeat(row.filtered, c => c.movie.id, c => cardTemplate(c, onCardClick, onCardKeydown, onImgError))}</div>
       <button class="carousel-btn next" aria-label="Avanti" @click=${scrollNext}><span>▶</span></button>
     </div>
   </section>`;
@@ -56,9 +57,10 @@ export function mainTemplate(
   rows: RowData[],
   emptyMsg: string,
   onCardClick: (e: Event) => void,
+  onCardKeydown: (e: KeyboardEvent) => void,
   onImgError: (e: Event) => void
 ): TemplateResult {
   return rows.length
-    ? html`${repeat(rows, r => r.key, r => rowTemplate(r, onCardClick, onImgError))}`
+    ? html`${repeat(rows, r => r.key, r => rowTemplate(r, onCardClick, onCardKeydown, onImgError))}`
     : html`<div class="empty">${emptyMsg}</div>`;
 }

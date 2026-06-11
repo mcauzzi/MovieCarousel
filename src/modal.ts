@@ -9,6 +9,15 @@ import type { FieldData, ModalHandlers } from './templates/modal.templates';
 const modalEl = document.getElementById('modal')!;
 const modalContent = document.getElementById('modalContent')!;
 
+// Elemento che aveva il focus prima dell'apertura: vi torna il focus alla chiusura.
+let lastFocused: HTMLElement | null = null;
+
+function focusables(): HTMLElement[] {
+  return Array.from(
+    modalContent.querySelectorAll<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])'),
+  ).filter(el => !el.hasAttribute('disabled'));
+}
+
 export function openModal(
   id: number,
   movies: Movie[],
@@ -76,12 +85,29 @@ export function openModal(
   modalContent.scrollTop = 0;
   modalEl.classList.add('show');
   document.body.style.overflow = 'hidden';
+  // Sposta il focus dentro il dialog (e ricordati da dove veniva, per ripristinarlo).
+  lastFocused = document.activeElement as HTMLElement | null;
+  focusables()[0]?.focus();
 }
 
 export function closeModal(): void {
   modalEl.classList.remove('show');
   document.body.style.overflow = '';
+  lastFocused?.focus();
+  lastFocused = null;
 }
+
+// Focus trap: con il dialog aperto, Tab/Shift+Tab restano dentro al modal.
+modalContent.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const items = focusables();
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+});
 
 modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModal(); });
 document.addEventListener('keydown', e => {

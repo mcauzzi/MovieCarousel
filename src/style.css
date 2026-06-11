@@ -1540,3 +1540,11 @@ main{
   .random-watch-row{padding:0.8rem 1rem}
   .random-footer{padding:0.8rem 1rem;flex-direction:column;gap:0.8rem;align-items:flex-start}
 }
+
+/* Indicatore di focus da tastiera per gli elementi interattivi resi navigabili
+   (card e item dei picker sono div con role="button" tabindex="0"). Solo
+   :focus-visible, così il mouse non mostra l'outline. */
+.card:focus-visible,.random-list-item:focus-visible{
+  outline:2px solid var(--hot);
+  outline-offset:2px;
+}

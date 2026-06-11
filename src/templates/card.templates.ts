@@ -21,6 +21,7 @@ export function placeholderTemplate(title: string | undefined, year: string): Te
 export function cardTemplate(
   data: CardData,
   onCardClick: (e: Event) => void,
+  onCardKeydown: (e: KeyboardEvent) => void,
   onImgError: (e: Event) => void
 ): TemplateResult {
   const { movie: m, url, status, failed } = data;
@@ -31,7 +32,8 @@ export function cardTemplate(
   const cover = url && !failed
     ? html`<img src=${url} alt=${m.title ?? ''} loading="lazy" @error=${onImgError}>`
     : placeholderTemplate(m.title, yr);
-  return html`<div class="card" data-id=${m.id} @click=${onCardClick}>
+  return html`<div class="card" data-id=${m.id} role="button" tabindex="0"
+    aria-label=${m.title ?? 'Dettagli film'} @click=${onCardClick} @keydown=${onCardKeydown}>
     <div class="card-inner">
       <div class="img-wrap">${cover}</div>
       <div class="card-overlay">
