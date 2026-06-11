@@ -1,0 +1,2 @@
+# Collassa il lockfile nei diff di GitHub (resta versionato, serve a npm ci)
+package-lock.json linguist-generated=true
