@@ -64,10 +64,25 @@ function findChild(el: Element | Document, name: string): Element | null {
   return null;
 }
 
+function groupChildrenByName(el: Element): Map<string, Element[]> {
+  const map = new Map<string, Element[]>();
+  for (const c of el.children) {
+    const name = localName(c);
+    const arr = map.get(name);
+    if (arr) arr.push(c); else map.set(name, [c]);
+  }
+  return map;
+}
+
 function parseEntry(entry: Element, fieldDefs: Record<string, FieldDef>): Movie {
   const data: Record<string, unknown> = {};
 
-  const castsEl = findChild(entry, 'casts');
+  // Raggruppa i figli diretti dell'entry una sola volta: i lookup per campo
+  // diventano O(1) invece di riscansionare i figli per ogni campo (O(campi×figli)).
+  const byName = groupChildrenByName(entry);
+  const first = (name: string): Element | null => byName.get(name)?.[0] ?? null;
+
+  const castsEl = first('casts');
   if (castsEl) {
     const castList: { actor: string; role: string }[] = [];
     for (const c of childrenByName(castsEl, 'cast')) {
@@ -84,7 +99,7 @@ function parseEntry(entry: Element, fieldDefs: Record<string, FieldDef>): Movie 
     if (fname === 'cast') continue;
     const finfo = fieldDefs[fname];
     if (MULTIVALUE_FIELDS.has(fname)) {
-      const wrapper = findChild(entry, fname + 's');
+      const wrapper = first(fname + 's');
       if (wrapper) {
         let vals = childrenByName(wrapper, fname)
           .map(el => (el.textContent || '').trim())
@@ -96,7 +111,7 @@ function parseEntry(entry: Element, fieldDefs: Record<string, FieldDef>): Movie 
         if (vals.length) data[fname] = vals;
       }
     } else {
-      const el = findChild(entry, fname);
+      const el = first(fname);
       if (el) {
         if (fname === 'cdate' || fname === 'mdate') {
           const y = findChild(el, 'year');

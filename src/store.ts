@@ -10,6 +10,8 @@ export interface StoreAdapter {
   setSeed(seed: Record<number, WatchStatus>): void;
   /** Voto di base proveniente dal file .tc (campo "Valutazione personale"). Sovrascritto da scelte manuali. */
   setSeedRating(seed: Record<number, Rating>): void;
+  /** Notificato quando un'altra scheda modifica stato/voto (evento `storage`). */
+  setOnExternalChange?(cb: () => void): void;
 }
 
 export class LocalStorageAdapter implements StoreAdapter {
@@ -22,6 +24,34 @@ export class LocalStorageAdapter implements StoreAdapter {
   // Popolata al primo accesso, tenuta aggiornata dalle scritture.
   private statusCache: Record<string, WatchStatus> | null = null;
   private ratingCache: Record<string, Rating> | null = null;
+  private onExternalChange: (() => void) | null = null;
+
+  constructor() {
+    // Sync multi-scheda: l'evento `storage` arriva solo nelle ALTRE schede.
+    // Invalidiamo la cache così la lettura successiva riflette il nuovo valore,
+    // poi notifichiamo (se cablato) per far ri-renderizzare questa scheda.
+    window.addEventListener('storage', e => {
+      if (e.key !== this.statusKey && e.key !== this.ratingKey) return;
+      if (e.key === this.statusKey) this.statusCache = null;
+      if (e.key === this.ratingKey) this.ratingCache = null;
+      this.onExternalChange?.();
+    });
+  }
+
+  setOnExternalChange(cb: () => void): void {
+    this.onExternalChange = cb;
+  }
+
+  private persist(key: string, data: unknown): void {
+    // localStorage può lanciare (modalità privata, quota piena): la cache in
+    // memoria è già aggiornata, quindi la sessione continua a funzionare anche
+    // se la persistenza fallisce.
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.warn('cm: impossibile salvare in localStorage', e);
+    }
+  }
 
   setSeed(seed: Record<number, WatchStatus>): void {
     this.seed = {};
@@ -65,7 +95,7 @@ export class LocalStorageAdapter implements StoreAdapter {
     const data = this.readStatus();
     data[String(id)] = status;
     this.statusCache = data;
-    localStorage.setItem(this.statusKey, JSON.stringify(data));
+    this.persist(this.statusKey, data);
   }
 
   getRating(id: number): Rating {
@@ -82,6 +112,6 @@ export class LocalStorageAdapter implements StoreAdapter {
     const data = this.readRating();
     data[String(id)] = stars;
     this.ratingCache = data;
-    localStorage.setItem(this.ratingKey, JSON.stringify(data));
+    this.persist(this.ratingKey, data);
   }
 }
