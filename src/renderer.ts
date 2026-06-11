@@ -52,6 +52,15 @@ function imgError(e: Event): void {
   scheduleRerender();
 }
 
+// Attiva la card da tastiera: le card sono div con role="button" tabindex="0",
+// quindi Enter/Spazio devono comportarsi come un click (Spazio senza scrollare).
+function cardKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    cardClick(e);
+  }
+}
+
 function doRender(): void {
   if (!lastArgs) return;
   const { grouper, searchTerm, embeddedImages, imgDir, store, watchFilter, allowedIds } = lastArgs;
@@ -78,10 +87,12 @@ function doRender(): void {
       })),
     });
   });
+  // Stringhe di stato vuoto coerenti in italiano (la "chrome" spy in inglese —
+  // masthead, placeholder ricerca, TARGET FILE — resta volutamente invariata).
   const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
     : watchFilter === 'unseen' ? 'Nessun film da vedere'
-    : 'No targets found';
-  render(mainTemplate(rows, emptyMsg, cardClick, imgError), document.getElementById('main')!);
+    : 'Nessun film trovato';
+  render(mainTemplate(rows, emptyMsg, cardClick, cardKeydown, imgError), document.getElementById('main')!);
 }
 
 export function renderMain(

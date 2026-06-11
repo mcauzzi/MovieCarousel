@@ -37,9 +37,12 @@ function listItemTemplate(
   selected: boolean,
   onToggle: (key: string) => void
 ): TemplateResult {
+  const activate = () => onToggle(key);
   return html`<div
     class="random-list-item ${isNone ? 'li-none' : ''} ${selected ? 'active' : ''}"
-    @click=${() => onToggle(key)}>
+    role="button" tabindex="0" aria-pressed=${selected}
+    @click=${activate}
+    @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } }}>
     <span class="li-label">${label}</span>
     <span class="li-count">×${count}</span>
   </div>`;

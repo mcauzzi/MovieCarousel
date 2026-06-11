@@ -68,14 +68,14 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
 | `src/transitions.ts` | Page-swipe transition overlay (`withTransition`) |
-| `src/utils.ts` | `coverUrl` — pure URL builder, imported by renderer and modal |
+| `src/utils.ts` | leaf di helper puri: `coverUrl` (URL builder), `fieldValues` (campo Movie → `string[]`), `decadeKey` (anno → `"1990s"`) |
 | `src/style.css` | All CSS (CSS custom properties for theming via `:root` + `[data-theme]`) |
 
 ### Data flow
 
 1. User drops a `.tc` file (or it auto-loads via `tryAutoLoad`)
-2. `handleFile` → JSZip extracts `tellico.xml` (falls back to raw XML if not zipped); seeds the store from the `.tc` "Visto" and rating fields; assigns synthetic ids to movies without a valid one
-3. `parseTellicoXml` → `{ movies: Movie[], embeddedImages: Map<string, string> }`
+2. `handleFile` → JSZip extracts `tellico.xml` (falls back to raw XML if not zipped); seeds the store from the `.tc` "Visto" and rating fields
+3. `parseTellicoXml` → `{ movies: Movie[], embeddedImages: Map<string, string> }`; il parser **garantisce** un `id` numerico valido per ogni film (gli id mancanti/NaN ricevono un id sintetico da max+1), quindi i consumatori non castano `Movie.id`
 4. `initUI` → `buildGroupers(movies, store)` → populates group selector buttons, masthead buttons (INTEL, RANDOM), FILTRI button → `render()`
 5. `render()` → computes `allowedIds` from `filterSelections` via `buildPool` → builds `onOpenModal` (card click → `openModal`) → `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter, allowedIds)` which lit-renders the carousel
 6. Card click → `openModal(id, movies, embeddedImages, imgDir, store, render)` — the `onStatusChange` callback re-renders `#main` so the card badge stays in sync (no manual DOM mutation across render roots)
@@ -125,6 +125,10 @@ Created at runtime: `.theme-dropdown` + `#intelBtn` + `#randomBtn` (masthead), `
 ### XSS safety
 
 All user-sourced strings are interpolated into lit-html `` html`...` `` templates; lit auto-escapes text and attribute bindings, so no manual escaping is needed (the old `escapeHtml` has been removed; `coverUrl` — pure URL construction — remains). Numeric fields (`id`, `year`, `running-time`) interpolate directly. **Never** use the `unsafeHTML` directive for user data — lit does not escape inside it; no current code uses it, keep it that way.
+
+### Accessibilità
+
+Le card e gli item dei picker sono `div` resi attivabili da tastiera: `role="button"` + `tabindex="0"` + handler `@keydown` (Enter/Spazio → click; le card usano un handler stabile `cardKeydown` propagato come `onCardClick`). Il focus è visibile via `:focus-visible` in `style.css`. Il modal è un `role="dialog" aria-modal="true"` con focus trap (Tab/Shift+Tab restano dentro) e ripristino del focus all'elemento di partenza alla chiusura. Il dropdown tema ha un `aria-label`.
 
 ### .tc file format
 
