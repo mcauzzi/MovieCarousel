@@ -233,15 +233,7 @@ async function handleFile(file: File): Promise<void> {
     embeddedImages = result.embeddedImages;
     imgDir = imgDirInput.value || configuredImgDir;
     if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
-    // Assegna un id sintetico ai film privi di id valido (mancante o NaN da parseInt).
-    // Partiamo da max(id esistenti)+1 per non collidere con gli id reali del .tc.
-    let maxId = 0;
-    for (const m of movies)
-      if (typeof m.id === 'number' && Number.isFinite(m.id)) maxId = Math.max(maxId, m.id);
-    let nextId = maxId + 1;
-    for (const m of movies)
-      if (typeof m.id !== 'number' || !Number.isFinite(m.id))
-        (m as Record<string, unknown>)['id'] = nextId++;
+    // Gli id sono già garantiti numerici dal parser (anche quelli sintetici).
     // Stato di base "visto" dal file .tc: i film con <visto>true</visto> partono come SEEN.
     const seed: Record<number, WatchStatus> = {};
     movies.forEach(m => { if (m.visto === 'true' && typeof m.id === 'number') seed[m.id] = 'seen'; });
@@ -311,6 +303,7 @@ const themeWrap = document.createElement('div');
 themeWrap.className = 'theme-dropdown-wrap';
 const themeDropdown = document.createElement('select');
 themeDropdown.className = 'theme-dropdown';
+themeDropdown.setAttribute('aria-label', 'Tema');
 THEMES.forEach(t => {
   const opt = document.createElement('option');
   opt.value = t.id;
