@@ -17,7 +17,7 @@ export function applyTheme(id: string): void {
   } else {
     document.documentElement.dataset.theme = id;
   }
-  localStorage.setItem(THEME_KEY, id);
+  try { localStorage.setItem(THEME_KEY, id); } catch (e) { console.warn('cm: impossibile salvare il tema', e); }
   const sel = document.querySelector<HTMLSelectElement>('.theme-dropdown');
   if (sel && sel.value !== id) sel.value = id;
 }
