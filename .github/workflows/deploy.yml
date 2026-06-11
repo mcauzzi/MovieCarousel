@@ -39,18 +39,23 @@ jobs:
           [ -d /deploy ] || { echo "::error::volume /deploy non montato nel container del runner"; exit 1; }
           [ -f dist/index.html ] || { echo "::error::build incompleta: dist/index.html mancante"; exit 1; }
 
-          mkdir -p /deploy/assets
-          # Copia tutti gli asset hashati prodotti dal build: bundle JS/CSS e i
-          # font self-hostati (.woff/.woff2). collezione.tc, covers/ e config.json
-          # vivono in /deploy(/assets) sul NAS e non sono in dist/, quindi restano.
-          cp dist/assets/* /deploy/assets/
+          mkdir -p /deploy/assets/fonts
+          # Copia tutti gli asset hashati prodotti dal build: bundle JS/CSS in
+          # assets/ e i font self-hostati (.woff/.woff2) in assets/fonts/.
+          # collezione.tc, covers/ e config.json vivono in /deploy(/assets) sul
+          # NAS e non sono in dist/, quindi restano. -r per includere fonts/.
+          cp -r dist/assets/* /deploy/assets/
           cp dist/index.html /deploy/index.html
 
           # Rimuove i soli asset hashati non più referenziati. Limitato alle
           # estensioni di build: non tocca mai collezione.tc, covers/ o config.json.
-          for f in /deploy/assets/*.js /deploy/assets/*.css /deploy/assets/*.woff /deploy/assets/*.woff2; do
+          for f in /deploy/assets/*.js /deploy/assets/*.css; do
             [ -e "$f" ] || continue
             [ -e "dist/assets/$(basename "$f")" ] || rm -- "$f"
+          done
+          for f in /deploy/assets/fonts/*.woff /deploy/assets/fonts/*.woff2; do
+            [ -e "$f" ] || continue
+            [ -e "dist/assets/fonts/$(basename "$f")" ] || rm -- "$f"
           done
 
           echo "Deploy completato"
