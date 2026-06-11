@@ -7,13 +7,12 @@ export function initToast(): void {
   document.body.appendChild(toastEl);
 }
 
-export function showToast(message: string, type: 'info' | 'success' | 'warn' = 'info'): void {
+export function showToast(message: string): void {
   if (dismissTimer) {
     clearTimeout(dismissTimer);
     dismissTimer = null;
   }
   toastEl.textContent = message;
-  toastEl.dataset.type = type;
   toastEl.classList.remove('show');
   void toastEl.offsetWidth;
   toastEl.classList.add('show');
