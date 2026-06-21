@@ -17,7 +17,7 @@ import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
 import { renderMain, resetRenderer } from './renderer';
 import type { WatchFilter } from './renderer';
-import { filterButtonTemplate } from './templates/toolbar.templates';
+import { filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
 import { openModal } from './modal';
 import { LocalStorageAdapter } from './store';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
@@ -37,6 +37,7 @@ let imgDir = '';
 let configuredImgDir = '';
 let groupers: Grouper[] = [];
 let currentGrouper = '';
+let isViewMenuOpen = false;
 let searchTerm = '';
 let isIntelView = false;
 let watchFilter: WatchFilter = 'all';
@@ -101,24 +102,32 @@ function rebuildGroupers(): void {
   renderGroupButtons();
 }
 
+function updateToolbarActions(): void {
+  document.getElementById('intelBtn')?.classList.toggle('active', isIntelView);
+}
+
 function renderGroupButtons(): void {
   const groupSelect = document.getElementById('groupSelect')!;
-  groupSelect.innerHTML = '';
-  groupers.forEach(g => {
-    const btn = document.createElement('button');
-    btn.className = 'group-btn' + (!isIntelView && g.name === currentGrouper ? ' active' : '');
-    btn.textContent = g.label;
-    btn.dataset.name = g.name;
-    btn.onclick = () => {
-      currentGrouper = g.name;
-      isIntelView = false;
-      document.querySelectorAll<HTMLElement>('.group-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.name === g.name));
-      document.getElementById('intelBtn')?.classList.remove('active');
-      withTransition(() => render());
-    };
-    groupSelect.appendChild(btn);
-  });
+  litRender(viewSelectorTemplate(
+    groupers,
+    currentGrouper,
+    isViewMenuOpen,
+    !isIntelView,
+    {
+      onToggle: () => {
+        isViewMenuOpen = !isViewMenuOpen;
+        renderGroupButtons();
+      },
+      onSelect: name => {
+        currentGrouper = name;
+        isIntelView = false;
+        isViewMenuOpen = false;
+        renderGroupButtons();
+        withTransition(() => render());
+      },
+    }
+  ), groupSelect);
+  updateToolbarActions();
 }
 
 function render(): void {
@@ -138,15 +147,16 @@ function initUI(): void {
   groupers = buildGroupers(movies, store);
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
+  isViewMenuOpen = false;
   watchFilter = 'all';
   filterSelections = new Map(groupers.map(g => [g.name, new Set<string>()]));
   resetFilterPopup();
   document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
 
-  const groupSelect = document.getElementById('groupSelect')!;
   renderGroupButtons();
+  const toolbar = document.querySelector('.toolbar')!;
 
-  // INTEL tab — nel masthead, separato dai bottoni di raggruppamento
+  // INTEL tab — azione compatta nella toolbar, separata dal selettore Vista.
   document.getElementById('intelBtn')?.remove();
   const intelBtn = document.createElement('button');
   intelBtn.id = 'intelBtn';
@@ -154,14 +164,14 @@ function initUI(): void {
   intelBtn.textContent = 'INTEL';
   intelBtn.onclick = () => {
     isIntelView = true;
-    document.querySelectorAll<HTMLElement>('.group-btn').forEach(b => b.classList.remove('active'));
-    intelBtn.classList.add('active');
+    isViewMenuOpen = false;
+    renderGroupButtons();
+    updateToolbarActions();
     const stats = computeStats(movies, store);
     withTransition(() => renderStats(document.getElementById('main')!, stats));
   };
-  masthead.insertBefore(intelBtn, reloadBtn);
 
-  // Bottone RANDOM nel masthead
+  // Bottone RANDOM nella toolbar
   document.getElementById('randomBtn')?.remove();
   const randomBtn = document.createElement('button');
   randomBtn.id = 'randomBtn';
@@ -174,9 +184,7 @@ function initUI(): void {
     initialWatchFilter: watchFilter,
     onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange)),
   });
-  masthead.insertBefore(randomBtn, reloadBtn);
-  // Riposiziona il dropdown tema a destra di RANDOM, subito prima di reload.
-  // Va rifatto a ogni initUI perché i bottoni INTEL/RANDOM vengono ricreati.
+  // Mantiene il dropdown tema nel masthead subito prima di reload.
   masthead.insertBefore(themeWrap, reloadBtn);
 
   // Bottone FILTRI — apre il popup filtri avanzati
@@ -201,8 +209,10 @@ function initUI(): void {
       if (!isIntelView) render();
     },
   });
-  const toolbar = document.querySelector('.toolbar')!;
-  toolbar.insertBefore(filterBtn, groupSelect);
+  toolbar.appendChild(filterBtn);
+  toolbar.appendChild(randomBtn);
+  toolbar.appendChild(intelBtn);
+  updateToolbarActions();
 
   withTransition(() => {
     loaderEl.style.display = 'none';
@@ -337,6 +347,7 @@ reloadBtn.addEventListener('click', () => {
   imgDir = '';
   groupers = [];
   currentGrouper = '';
+  isViewMenuOpen = false;
   searchTerm = '';
   isIntelView = false;
   watchFilter = 'all';
@@ -360,6 +371,20 @@ document.getElementById('search')!.addEventListener('input', e => {
     // entro i 300 ms, e un render() tardivo sovrascriverebbe la vista statistiche.
     searchDebounce = setTimeout(() => { if (!isIntelView) render(); }, 300);
   }
+});
+
+document.addEventListener('click', e => {
+  if (!isViewMenuOpen) return;
+  const groupSelect = document.getElementById('groupSelect');
+  if (groupSelect?.contains(e.target as Node)) return;
+  isViewMenuOpen = false;
+  if (groupers.length) renderGroupButtons();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !isViewMenuOpen) return;
+  isViewMenuOpen = false;
+  if (groupers.length) renderGroupButtons();
 });
 
 // Prima il controllo versione: se rileva un bundle stantio ricarica la pagina,
