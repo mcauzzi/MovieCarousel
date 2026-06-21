@@ -75,6 +75,7 @@ export function openModal(
       rating = (rating === i ? null : i) as Rating;
       store.setRating(id, rating);
       showToast('INTEL UPDATED');
+      onStatusChange?.();
       rerender();
     },
   };

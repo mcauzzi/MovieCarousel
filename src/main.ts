@@ -96,6 +96,7 @@ function rebuildGroupers(): void {
   const next = new Map<string, Set<string>>();
   for (const g of groupers) next.set(g.name, filterSelections.get(g.name) ?? new Set<string>());
   filterSelections = next;
+  resetRandomPicker();
   resetFilterPopup();
   renderGroupButtons();
 }
@@ -133,6 +134,7 @@ function render(): void {
 
 function initUI(): void {
   resetRenderer();
+  resetRandomPicker();
   groupers = buildGroupers(movies, store);
   if (!groupers.length) { setStatus('✕ NO GROUPS', true); return; }
   currentGrouper = groupers[0].name;
