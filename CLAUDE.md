@@ -67,6 +67,7 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/themes.ts` | Theme list + `applyTheme`/`getSavedTheme` (persisted in localStorage, `data-theme` on `<html>`) |
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
+| `src/bgm.ts` | Widget musica di sottofondo nel masthead — `initBgm(masthead, anchorEl, bgmDir?)`. Controller leaf auto-contenuto: discovery tracce (autoindex del server → fallback manifest `bgm/tracks.json`), elemento `<audio loop>`, play/pausa + volume, stato in closure. **Deroga** consapevole all'invariante "stato solo in main.ts": lo stato del player è UI-locale (come `toast.ts`/`transitions.ts`), non stato di dominio. Se non trova tracce non monta nulla |
 | `src/transitions.ts` | Page-swipe transition overlay (`withTransition`) |
 | `src/utils.ts` | leaf di helper puri: `coverUrl` (URL builder), `fieldValues` (campo Movie → `string[]`), `decadeKey` (anno → `"1990s"`) |
 | `src/style.css` | All CSS (CSS custom properties for theming via `:root` + `[data-theme]`) |
@@ -105,6 +106,8 @@ Both popups are built from the `filters.ts` building blocks and share the `rando
 | `cm_status` | watch status overrides — `{ [movieId]: 'seen' \| 'watchlist' \| null }` |
 | `cm_rating` | star rating overrides — `{ [movieId]: 1–5 \| null }` |
 | `cm_theme` | selected theme id (`p5`, `p3`, `p4`) |
+| `cm_bgm_vol` | volume musica di sottofondo (`0..1`, default `0.5`) |
+| `cm_bgm_track` | nome file dell'ultima traccia BGM scelta (ripristinata nel dropdown ma **non** riavviata automaticamente) |
 
 Seed semantics: at load, `<visto>true</visto>` and the personal rating field of the `.tc` seed the store **in memory**. A manual override stored in localStorage — including an explicit `null` — always wins over the seed. The Reload button resets only in-memory state; it does **not** clear localStorage. Ids are the `.tc` ids, so overrides survive reloading the same collection but may mismatch if the collection is re-exported with different ids.
 
@@ -136,13 +139,13 @@ Tellico collection files are ZIP archives containing `tellico.xml`. They may als
 
 ### Auto-load e config.json
 
-All'avvio `tryAutoLoad` fa `fetch('config.json')` per leggere `tcFile` e `imgDir`. Se il file manca o è irraggiungibile, usa come fallback il nome derivato dall'URL della pagina + `.tc`. Il parametro URL `?file=path.tc` ha la precedenza su tutto. L'input manuale `#imgDir` nella loader UI sovrascrive `imgDir` da config (utile per drag-and-drop locale). `public/config.json` è la fonte di verità — viene copiato in `dist/` da Vite durante il build. Non modificare `dist/config.json` direttamente.
+All'avvio `tryAutoLoad` fa `fetch('config.json')` per leggere `tcFile`, `imgDir` e `bgmDir` (opzionale, default `./assets/bgm/` — cartella delle tracce di sottofondo). Se il file manca o è irraggiungibile, usa come fallback il nome derivato dall'URL della pagina + `.tc`. Il parametro URL `?file=path.tc` ha la precedenza su tutto. L'input manuale `#imgDir` nella loader UI sovrascrive `imgDir` da config (utile per drag-and-drop locale). `public/config.json` è la fonte di verità — viene copiato in `dist/` da Vite durante il build. Non modificare `dist/config.json` direttamente.
 
 Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 
 ## Deploy
 
-**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia (`cp -r`) `dist/index.html` + **tutti** gli asset hashati: bundle JS/CSS in `dist/assets/` e i font self-hostati `.woff/.woff2` in `dist/assets/fonts/` (la sottocartella è impostata via `assetFileNames` in `vite.config.ts`), nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css` in `assets/`, `*.woff|woff2` in `assets/fonts/`), quindi `config.json`, `collezione.tc` e `covers/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
+**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia (`cp -r`) `dist/index.html` + **tutti** gli asset hashati: bundle JS/CSS in `dist/assets/` e i font self-hostati `.woff/.woff2` in `dist/assets/fonts/` (la sottocartella è impostata via `assetFileNames` in `vite.config.ts`), nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css` in `assets/`, `*.woff|woff2` in `assets/fonts/`), quindi `config.json`, `collezione.tc`, `covers/` e `bgm/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
 
 **Manuale** (fallback):
 
@@ -169,7 +172,8 @@ web-root/
 {
   "tcFile": "./assets/collezione.tc",
   "imgDir": "./assets/covers/",
-  "title": "Cinema XYZ"
+  "title": "Cinema XYZ",
+  "bgmDir": "./assets/bgm/"
 }
 ```
 `title` aggiorna simultaneamente il `<title>` della tab, il titolo nel loader e lo span `.accent` nel masthead.
