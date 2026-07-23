@@ -1277,6 +1277,110 @@ main{
   .theme-dropdown{font-size:0.65rem;padding:0.35rem 1.7rem 0.35rem 0.55rem}
 }
 
+/* Widget musica di sottofondo (BGM) nel masthead */
+.bgm-widget{
+  display:inline-flex;
+  align-items:center;
+  gap:0.5rem;
+}
+.bgm-icon{
+  color:var(--hot);
+  font-size:1.1rem;
+  line-height:1;
+}
+.bgm-select-wrap{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+}
+.bgm-select-wrap::after{
+  content:'▾';
+  position:absolute;
+  right:0.5rem;
+  top:50%;
+  transform:translateY(-50%);
+  color:var(--hot);
+  font-size:0.7rem;
+  pointer-events:none;
+  font-family:'Anton',sans-serif;
+  font-weight:700;
+}
+.bgm-select{
+  appearance:none;
+  -webkit-appearance:none;
+  background:var(--bg);
+  border:2px solid var(--ink);
+  color:var(--ink);
+  padding:0.4rem 1.7rem 0.4rem 0.6rem;
+  max-width:240px;
+  min-width:150px;
+  font-family:'Oswald',sans-serif;
+  font-size:0.8rem;
+  letter-spacing:0.02em;
+  text-overflow:ellipsis;
+  cursor:pointer;
+  outline:none;
+  transition:border-color 0.1s;
+}
+.bgm-select:hover,.bgm-select:focus{border-color:var(--hot)}
+.bgm-select option{background:var(--bg);color:var(--ink)}
+.bgm-play{
+  box-sizing:border-box;
+  background:var(--hot);
+  border:2px solid var(--ink);
+  color:var(--ink);
+  width:2rem;
+  height:2rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:0.8rem;
+  cursor:pointer;
+  transition:all 0.12s;
+}
+.bgm-play:hover:not(:disabled){background:var(--ink);color:var(--hot);transform:translate(-1px,-1px)}
+.bgm-play:disabled{opacity:0.4;cursor:not-allowed}
+.bgm-volume{
+  -webkit-appearance:none;
+  appearance:none;
+  width:120px;
+  height:7px;
+  /* Fallback: il riempimento reale (rosso fino al valore, rosso scuro dopo) è
+     dipinto in JS via gradient su background, così è ben visibile su fondo nero. */
+  background:var(--hot-deep);
+  border:2px solid var(--ink);
+  cursor:pointer;
+  outline:none;
+}
+.bgm-volume::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  appearance:none;
+  width:14px;
+  height:16px;
+  background:var(--hot);
+  border:2px solid var(--ink);
+  box-shadow:2px 2px 0 var(--hot-deep);
+  cursor:pointer;
+}
+.bgm-volume::-moz-range-track{background:transparent;height:7px}
+.bgm-volume::-moz-range-thumb{
+  width:14px;
+  height:16px;
+  background:var(--hot);
+  border:2px solid var(--ink);
+  border-radius:0;
+  box-shadow:2px 2px 0 var(--hot-deep);
+  cursor:pointer;
+}
+.bgm-volume:hover::-webkit-slider-thumb,
+.bgm-volume:focus-visible::-webkit-slider-thumb{background:var(--ink)}
+.bgm-volume:hover::-moz-range-thumb,
+.bgm-volume:focus-visible::-moz-range-thumb{background:var(--ink)}
+@media(max-width:780px){
+  .bgm-select{max-width:160px;min-width:120px;font-size:0.7rem}
+  .bgm-volume{width:90px}
+}
+
 /* Badge contatore filtri attivi */
 .filter-badge{
   display:inline-block;

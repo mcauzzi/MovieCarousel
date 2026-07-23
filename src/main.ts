@@ -29,12 +29,14 @@ import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
 import { computeStats, renderStats } from './stats';
 import { checkForNewVersion } from './version-check';
+import { initBgm } from './bgm';
 
 // Stato
 let movies: Movie[] = [];
 let embeddedImages = new Map<string, string>();
 let imgDir = '';
 let configuredImgDir = '';
+let configuredBgmDir = '';
 let groupers: Grouper[] = [];
 let currentGrouper = '';
 let isViewMenuOpen = false;
@@ -273,9 +275,10 @@ async function tryAutoLoad(): Promise<void> {
   try {
     const res = await fetch('config.json', { cache: 'no-cache' });
     if (res.ok) {
-      const cfg = await res.json() as { tcFile?: string; imgDir?: string; title?: string };
+      const cfg = await res.json() as { tcFile?: string; imgDir?: string; title?: string; bgmDir?: string };
       configuredFile = cfg.tcFile ?? null;
       configuredImgDir = cfg.imgDir ?? '';
+      configuredBgmDir = cfg.bgmDir ?? '';
       if (cfg.title) {
         document.title = cfg.title;
         const loaderH1 = document.querySelector<HTMLElement>('#loader h1');
@@ -285,6 +288,10 @@ async function tryAutoLoad(): Promise<void> {
       }
     }
   } catch (_) { /* config.json assente o non raggiungibile */ }
+
+  // Monta il widget musicale (indipendente dalla collezione): scopre le tracce
+  // in bgmDir e si aggancia al masthead. Se non ci sono tracce, è un no-op.
+  void initBgm(masthead, themeWrap, configuredBgmDir);
 
   const htmlBase = location.pathname.split('/').pop()!.replace(/-p\d+\.html$|\.html$/i, '');
   const autoName = configuredFile ?? (htmlBase || 'collection') + '.tc';
