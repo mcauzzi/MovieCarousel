@@ -8,6 +8,15 @@ import '@fontsource/oswald/600.css';
 import '@fontsource/oswald/700.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
+// Font dei temi MEMENTO (P3: Barlow Condensed) e MAYONAKA (P4: Baloo 2): il
+// browser scarica i file solo quando il tema attivo li usa.
+import '@fontsource/barlow-condensed/300.css';
+import '@fontsource/barlow-condensed/300-italic.css';
+import '@fontsource/barlow-condensed/500.css';
+import '@fontsource/barlow-condensed/500-italic.css';
+import '@fontsource/barlow-condensed/700-italic.css';
+import '@fontsource/baloo-2/600.css';
+import '@fontsource/baloo-2/800.css';
 import './style.css';
 import JSZip from 'jszip';
 import { render as litRender } from 'lit';

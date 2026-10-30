@@ -38,6 +38,10 @@
                   58% 100%,44% 76%,12% 92%,28% 64%,0% 42%,34% 36%);
   /* Testo SOPRA uno sfondo --hot (bianco su rosso/blu, nero sul giallo P4). */
   --on-hot:#ffffff;
+  /* Famiglie tipografiche per ruolo: i temi P3/P4 le sostituiscono. */
+  --f-display:'Anton',sans-serif;          /* numeri, etichette, bottoni */
+  --f-head:'Oswald',sans-serif;            /* titoli e testo */
+  --f-mono:'JetBrains Mono',monospace;     /* eyebrow, contatori */
   /* Moltiplicatore delle inclinazioni "a mano": ogni rotate() decorativo
      usa calc(Xdeg * var(--tilt)). P3 lo riduce, P4 lo attenua. */
   --tilt:1;
@@ -47,7 +51,7 @@ html{scroll-behavior:smooth}
 body{
   background:var(--bg);
   color:var(--ink);
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-weight:400;
   min-height:100vh;
   overflow-x:hidden;
@@ -93,11 +97,11 @@ body::before{
   transform:translateY(var(--y)) rotate(calc(var(--r) * var(--tilt))) scale(var(--s));
   transition:transform 0.25s cubic-bezier(0.2,1.6,0.4,1);
 }
-.ransom-l.rk1{background:var(--ink);color:#000;font-family:'Anton',sans-serif}
-.ransom-l.rk2{background:var(--hot);color:var(--on-hot);font-family:'Oswald',sans-serif;font-weight:700;font-style:italic}
-.ransom-l.rk3{background:#000;color:var(--ink);font-family:'JetBrains Mono',monospace;font-weight:700;box-shadow:inset 0 0 0 2px var(--ink)}
-.ransom-l.rk4{color:var(--ink);font-family:'Anton',sans-serif;text-shadow:3px 3px 0 var(--hot)}
-.ransom-l.rk5{background:var(--ink);color:var(--hot);font-family:'Oswald',sans-serif;font-weight:700}
+.ransom-l.rk1{background:var(--ink);color:#000;font-family:var(--f-display)}
+.ransom-l.rk2{background:var(--hot);color:var(--on-hot);font-family:var(--f-head);font-weight:700;font-style:italic}
+.ransom-l.rk3{background:#000;color:var(--ink);font-family:var(--f-mono);font-weight:700;box-shadow:inset 0 0 0 2px var(--ink)}
+.ransom-l.rk4{color:var(--ink);font-family:var(--f-display);text-shadow:3px 3px 0 var(--hot)}
+.ransom-l.rk5{background:var(--ink);color:var(--hot);font-family:var(--f-head);font-weight:700}
 /* Giallo P4 su bianco non si legge: in MAYONAKA la lettera prende la variante scura. */
 [data-theme="p4"] .ransom-l.rk5{color:var(--hot-deep)}
 .ransom:hover .ransom-l{transform:translateY(calc(var(--y) * -1)) rotate(calc(var(--r) * var(--tilt) * -1)) scale(var(--s))}
@@ -105,7 +109,7 @@ body::before{
 .cap-initial{
   display:inline-block;
   background:var(--ink);color:#000;
-  font-family:'Anton',sans-serif;font-style:normal;font-weight:400;
+  font-family:var(--f-display);font-style:normal;font-weight:400;
   padding:0 0.12em;margin-right:0.04em;
   line-height:0.95;
   transform:rotate(calc(-7deg * var(--tilt)));
@@ -158,7 +162,7 @@ body::before{
 }
 .loader-left{position:relative}
 .loader-left .issue{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.7rem;
   letter-spacing:0.3em;
   color:var(--hot);
@@ -187,7 +191,7 @@ body::before{
   font-style:italic;
 }
 .loader-left .lede{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-size:1.15rem;
   line-height:1.35;
   color:var(--ink-dim);
@@ -200,7 +204,7 @@ body::before{
   position:absolute;
   top:-1.5rem;
   right:-1rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;
   letter-spacing:0.15em;
   color:var(--on-hot);
@@ -241,14 +245,14 @@ body::before{
   transform:translate(-3px,-3px) skewX(-2deg);
 }
 .drop-zone .step{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.7rem;
   letter-spacing:0.25em;
   margin-bottom:0.8rem;
   font-weight:700;
 }
 .drop-zone p{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-weight:700;
   font-style:italic;
   font-size:1.6rem;
@@ -260,7 +264,7 @@ body::before{
   z-index:1;
 }
 .drop-zone .or{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-size:0.85rem;
   margin-bottom:0.5rem;
   text-transform:uppercase;
@@ -273,7 +277,7 @@ body::before{
   background:var(--bg);
   color:var(--hot);
   padding:0.6rem 1.4rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1rem;
   letter-spacing:0.25em;
   text-transform:uppercase;
@@ -293,7 +297,7 @@ body::before{
 }
 .img-config label{
   display:block;
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.65rem;
   letter-spacing:0.25em;
   text-transform:uppercase;
@@ -307,14 +311,14 @@ body::before{
   border:none;
   border-bottom:2px solid var(--ink);
   color:var(--ink);
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.85rem;
   padding:0.3rem 0;
   outline:none;
 }
 .img-config input[type=text]:focus{border-bottom-color:var(--hot)}
 .img-config .hint{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-size:0.8rem;
   color:var(--ink-faint);
   margin-top:0.6rem;
@@ -325,7 +329,7 @@ body::before{
 
 .status{
   margin-top:1.2rem;
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.8rem;
   color:var(--ink-dim);
   min-height:1.2em;
@@ -374,7 +378,7 @@ header::after{
 .masthead h1 .accent{display:inline-flex}
 /* Contatore: fumetto bianco frastagliato "N TARGETS" */
 .masthead .tag{
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.9rem;
   letter-spacing:0.14em;
   text-transform:uppercase;
@@ -396,7 +400,7 @@ header::after{
   border:0;
   color:var(--on-hot);
   padding:0.55rem 1.1rem 0.5rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.8rem;
   letter-spacing:0.2em;
   text-transform:uppercase;
@@ -450,7 +454,7 @@ header::after{
   border:none;
   padding:0.62rem 0.9rem 0.56rem 2.3rem;
   color:#000;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.95rem;
   letter-spacing:0.12em;
   outline:none;
@@ -471,7 +475,7 @@ header::after{
   border:2px solid var(--ink);
   color:var(--ink);
   padding:0.5rem 1.1rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;
   letter-spacing:0.18em;
   text-transform:uppercase;
@@ -539,7 +543,7 @@ header::after{
 .view-label{
   color:currentColor;
   opacity:0.72;
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.68rem;
   font-weight:700;
   letter-spacing:0.16em;
@@ -576,7 +580,7 @@ header::after{
 }
 .view-select.open .view-menu{display:grid;gap:0.2rem}
 .view-menu-title{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   color:var(--hot);
   font-size:0.65rem;
   font-weight:700;
@@ -597,7 +601,7 @@ header::after{
   background:transparent;
   color:var(--ink);
   cursor:pointer;
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-style:italic;
   font-size:1.25rem;
   font-weight:700;
@@ -631,7 +635,7 @@ header::after{
 }
 .view-option-count{
   color:var(--ink-faint);
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-style:normal;
   font-size:0.62rem;
   letter-spacing:0.1em;
@@ -707,7 +711,7 @@ main{
 .row-cal small{
   position:relative;z-index:1;
   margin-bottom:6px;
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-weight:700;
   font-size:0.62rem;
   letter-spacing:0.3em;
@@ -718,7 +722,7 @@ main{
 }
 .row-cal b{
   display:inline-block;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-weight:400;
   font-size:4.2rem;
   letter-spacing:-0.03em;
@@ -729,7 +733,7 @@ main{
 }
 .row-title{
   min-width:0;
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-weight:700;
   font-style:italic;
   font-size:clamp(2rem, 4vw, 3rem);
@@ -748,7 +752,7 @@ main{
   display:flex;
   align-items:baseline;
   gap:0.4rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;
   letter-spacing:0.2em;
   color:var(--ink-dim);
@@ -787,7 +791,7 @@ main{
   background:transparent;
   border:0;
   color:var(--on-hot);
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.2rem;
   cursor:pointer;
   z-index:5;
@@ -895,7 +899,7 @@ main{
 }
 .card .placeholder .pl-title{
   position:relative;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.55rem;line-height:0.92;letter-spacing:-0.01em;
   text-transform:uppercase;
   text-wrap:balance;overflow-wrap:anywhere;
@@ -904,7 +908,7 @@ main{
 }
 .card .placeholder .pl-tag{
   position:absolute;top:2.4rem;left:0.9rem;
-  font-family:'JetBrains Mono',monospace;font-size:0.55rem;font-weight:700;
+  font-family:var(--f-mono);font-size:0.55rem;font-weight:700;
   letter-spacing:0.25em;color:var(--hot-2);text-transform:uppercase;
 }
 
@@ -914,7 +918,7 @@ main{
   top:-8px;
   left:-8px;
   z-index:3;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.9rem;
   line-height:1;
   letter-spacing:0.12em;
@@ -934,7 +938,7 @@ main{
   padding:0.5rem 0.8rem 0.42rem 0.7rem;
   background:#000;
   color:var(--ink);
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-weight:700;
   font-style:italic;
   font-size:1rem;
@@ -952,7 +956,7 @@ main{
   position:relative;
   z-index:3;
   margin:5px 0 0 6px;
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.6rem;
   letter-spacing:0.14em;
   color:var(--ink-faint);
@@ -965,7 +969,7 @@ main{
 .empty{
   text-align:center;
   padding:6rem 2rem;
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-style:italic;
   font-weight:700;
   font-size:2rem;
@@ -1058,11 +1062,11 @@ main{
   overflow:hidden;
 }
 .modal-cover .ph-tag{
-  font-family:'JetBrains Mono',monospace;font-weight:700;
+  font-family:var(--f-mono);font-weight:700;
   font-size:0.6rem;letter-spacing:0.25em;color:var(--hot);
 }
 .modal-cover .ph-title{
-  font-family:'Anton',sans-serif;text-transform:uppercase;
+  font-family:var(--f-display);text-transform:uppercase;
   font-size:2.2rem;line-height:0.9;color:var(--ink);
   overflow-wrap:anywhere;
 }
@@ -1075,7 +1079,7 @@ main{
   width:48px;height:46px;
   background:transparent;color:#000;
   border:0;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.4rem;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   isolation:isolate;
@@ -1092,7 +1096,7 @@ main{
 .modal-close:focus-visible,.watch-btn:focus-visible,.rank-pip:focus-visible{outline:3px solid var(--hot-2);outline-offset:3px}
 
 .modal .m-eyebrow{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.68rem;letter-spacing:0.3em;
   color:var(--hot);text-transform:uppercase;
   margin-bottom:0.7rem;font-weight:700;
@@ -1107,7 +1111,7 @@ main{
 /* Meta come tag inclinati alternati bianco/nero */
 .m-tags{display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem}
 .m-tag{
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;letter-spacing:0.14em;text-transform:uppercase;
   padding:0.3rem 0.7rem 0.25rem;
   transform:rotate(calc(-2deg * var(--tilt)));
@@ -1117,7 +1121,7 @@ main{
 .m-tag:nth-child(3){transform:rotate(calc(-1deg * var(--tilt)))}
 .m-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:1.1rem 1.6rem;margin-bottom:1.5rem}
 .modal .m-plot{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-size:1.05rem;line-height:1.5;
   color:var(--ink);margin-bottom:1.5rem;
   font-weight:400;
@@ -1129,7 +1133,7 @@ main{
   font-size:0.95rem;
 }
 .modal-meta dt{
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   color:var(--hot);
   text-transform:uppercase;
   font-size:0.85rem;
@@ -1137,7 +1141,7 @@ main{
   padding-top:0.15rem;
 }
 .modal-meta dd{
-  font-family:'Oswald',sans-serif;color:var(--ink);font-weight:500;
+  font-family:var(--f-head);color:var(--ink);font-weight:500;
   text-transform:uppercase;letter-spacing:0.02em;
 }
 /* Pill frastagliate, alternate --hot / bianco */
@@ -1146,7 +1150,7 @@ main{
   background:var(--ink);color:#000;
   padding:0.2rem 0.75rem 0.16rem;
   margin:0.15rem 0.3rem 0.15rem 0;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.78rem;
   letter-spacing:0.12em;
   text-transform:uppercase;
@@ -1170,7 +1174,7 @@ main{
 }
 .cast-section h3{
   display:inline-block;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-weight:400;
   font-size:1.15rem;
   text-transform:uppercase;
@@ -1193,8 +1197,8 @@ main{
   background:linear-gradient(90deg, color-mix(in srgb, var(--hot) 12%, transparent), transparent 70%);
   min-width:0;
 }
-.cast-list .actor{font-family:'Oswald',sans-serif;color:var(--ink);font-weight:600;text-transform:uppercase;letter-spacing:0.02em}
-.cast-list .role{font-family:'Oswald',sans-serif;color:var(--ink-faint);font-style:italic;font-size:0.85rem;display:block;text-transform:none}
+.cast-list .actor{font-family:var(--f-head);color:var(--ink);font-weight:600;text-transform:uppercase;letter-spacing:0.02em}
+.cast-list .role{font-family:var(--f-head);color:var(--ink-faint);font-style:italic;font-size:0.85rem;display:block;text-transform:none}
 
 /* =========================
    MOBILE
@@ -1271,7 +1275,7 @@ main{
   z-index:9998;
   background:#fff;
   color:#000;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.9rem;
   line-height:1.25;
   letter-spacing:0.12em;
@@ -1447,7 +1451,7 @@ main{
   color:var(--hot);
   font-size:0.8rem;
   pointer-events:none;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-weight:700;
 }
 .theme-dropdown{
@@ -1457,7 +1461,7 @@ main{
   border:0;
   color:#000;
   padding:0.5rem 2rem 0.45rem 0.85rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.8rem;
   letter-spacing:0.2em;
   text-transform:uppercase;
@@ -1499,7 +1503,7 @@ main{
   color:var(--hot);
   font-size:0.7rem;
   pointer-events:none;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-weight:700;
 }
 .bgm-select-wrap{filter:drop-shadow(3px 3px 0 var(--hot))}
@@ -1515,7 +1519,7 @@ main{
   padding:0.4rem 1.7rem 0.4rem 0.6rem;
   max-width:240px;
   min-width:150px;
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-size:0.8rem;
   letter-spacing:0.02em;
   text-overflow:ellipsis;
@@ -1591,7 +1595,7 @@ main{
   background:var(--ink);
   color:#000;
   transform:rotate(calc(8deg * var(--tilt)));
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.6rem;
   font-weight:700;
   letter-spacing:0;
@@ -1638,7 +1642,7 @@ main{
   position:absolute;
   right:2.5rem;
   bottom:-0.1em;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:clamp(6rem,14vw,12rem);
   letter-spacing:-0.04em;
   line-height:1;
@@ -1655,7 +1659,7 @@ main{
   width:100%;
 }
 .intel-eyebrow{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.7rem;
   letter-spacing:0.3em;
   color:var(--hot);
@@ -1673,7 +1677,7 @@ main{
   display:inline-block;
 }
 .intel-subtitle{
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;
   letter-spacing:0.25em;
   color:var(--hot);
@@ -1726,29 +1730,29 @@ main{
 .stat-card:nth-child(even)::before,.stat-card:nth-child(even)::after{clip-path:polygon(0 0,98% 5%,100% 100%,3% 95%)}
 .stat-card:hover{transform:rotate(0) translate(-2px,-4px) scale(1.03)}
 .stat-card-val{
-  font-family:'Anton',sans-serif;font-size:3.2rem;
+  font-family:var(--f-display);font-size:3.2rem;
   line-height:0.9;letter-spacing:-0.02em;margin-bottom:0.55rem;
   color:var(--bg);-webkit-text-stroke:2px var(--ink);text-shadow:4px 4px 0 var(--hot);
 }
 .stat-card-label{
   display:inline-block;
-  font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;
+  font-family:var(--f-mono);font-size:0.62rem;font-weight:700;
   letter-spacing:0.25em;text-transform:uppercase;
   background:var(--ink);color:#000;padding:0.2rem 0.5rem;
   transform:rotate(calc(-3deg * var(--tilt)));
 }
 .stat-progress-label{
-  font-family:'JetBrains Mono',monospace;font-size:0.7rem;
+  font-family:var(--f-mono);font-size:0.7rem;
   letter-spacing:0.2em;color:var(--hot);text-transform:uppercase;font-weight:700;
   margin-bottom:0.6rem;display:flex;justify-content:space-between;align-items:baseline;
 }
-.stat-progress-label span{font-family:'Anton',sans-serif;font-size:1.6rem;letter-spacing:0}
+.stat-progress-label span{font-family:var(--f-display);font-size:1.6rem;letter-spacing:0}
 /* Metro a tacche oblique (come il RANK della scheda) */
 .stat-progress-track{display:flex;gap:4px;height:26px;padding-left:6px}
 .stat-seg{flex:1;background:var(--surface);box-shadow:inset 0 0 0 2px var(--ink-faint);transform:skewX(-18deg)}
 .stat-seg.on{background:var(--hot);box-shadow:inset 0 0 0 2px var(--ink)}
 .stats-section-title{
-  font-family:'Oswald',sans-serif;font-weight:700;font-style:italic;
+  font-family:var(--f-head);font-weight:700;font-style:italic;
   font-size:1.6rem;text-transform:uppercase;letter-spacing:-0.01em;
   color:var(--ink);margin-bottom:1.1rem;
   padding-bottom:0.5rem;border-bottom:3px solid var(--hot);
@@ -1760,7 +1764,7 @@ main{
   align-items:center;gap:1rem;margin-bottom:0.7rem;
 }
 .stat-bar-label{
-  font-family:'Oswald',sans-serif;font-size:0.9rem;text-transform:uppercase;
+  font-family:var(--f-head);font-size:0.9rem;text-transform:uppercase;
   letter-spacing:0.02em;color:var(--ink);font-weight:500;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
@@ -1775,7 +1779,7 @@ main{
   transition:width 0.5s cubic-bezier(0.2,0.8,0.2,1);
 }
 .stat-bar-val{
-  font-family:'Anton',sans-serif;font-size:1.05rem;
+  font-family:var(--f-display);font-size:1.05rem;
   color:var(--hot);text-align:right;letter-spacing:0.05em;
 }
 .stat-rank-pips{display:inline-flex;gap:3px;vertical-align:middle}
@@ -1789,7 +1793,7 @@ main{
 .radar-axis{stroke:var(--ink-faint);stroke-width:1}
 .radar-shape{fill:var(--hot);fill-opacity:0.85;stroke:var(--ink);stroke-width:2.5;stroke-linejoin:bevel}
 .radar-shape-shadow{fill:#000;fill-opacity:0.6}
-.radar-label{font-family:'Anton',sans-serif;font-size:13px;letter-spacing:0.08em;fill:var(--ink)}
+.radar-label{font-family:var(--f-display);font-size:13px;letter-spacing:0.08em;fill:var(--ink)}
 .radar-val{fill:var(--hot)}
 @media(max-width:780px){
   .stats-grid{grid-template-columns:repeat(2,1fr);padding:0 1.2rem;gap:1.2rem}
@@ -1815,7 +1819,7 @@ main{
   top:calc(var(--poster-h) * 0.45);
   left:50%;
   pointer-events:none;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.5rem;
   line-height:1.1;
   letter-spacing:0.18em;
@@ -1837,7 +1841,7 @@ main{
   align-items:center;
   gap:0.4rem;
   pointer-events:none;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.72rem;
   line-height:1;
   letter-spacing:0.16em;
@@ -1867,7 +1871,7 @@ main{
 .watch-btn{
   position:relative;isolation:isolate;
   background:transparent;border:0;color:var(--ink);
-  padding:0.45rem 0.9rem 0.4rem;font-family:'Anton',sans-serif;
+  padding:0.45rem 0.9rem 0.4rem;font-family:var(--f-display);
   font-size:0.8rem;letter-spacing:0.14em;text-transform:uppercase;
   cursor:pointer;
   transition:transform 0.16s cubic-bezier(0.2,1.6,0.4,1), color 0.1s;
@@ -1888,12 +1892,12 @@ main{
 /* RANK: numero grande + tacche oblique */
 .star-rank{display:flex;align-items:center;gap:0.6rem}
 .star-rank-label{
-  font-family:'JetBrains Mono',monospace;font-size:0.62rem;
+  font-family:var(--f-mono);font-size:0.62rem;
   letter-spacing:0.25em;color:var(--ink-dim);text-transform:uppercase;
   font-weight:700;
 }
 .rank-num{
-  font-family:'Anton',sans-serif;font-size:2.4rem;line-height:0.8;
+  font-family:var(--f-display);font-size:2.4rem;line-height:0.8;
   color:var(--hot);min-width:1.1em;text-align:center;
   transform:skewX(-8deg);
 }
@@ -1993,7 +1997,7 @@ main{
   opacity:0.55;
 }
 .random-title{
-  font-family:'Oswald',sans-serif;
+  font-family:var(--f-head);
   font-weight:700;font-style:italic;
   font-size:2.4rem;letter-spacing:-0.02em;
   text-transform:uppercase;line-height:0.95;
@@ -2018,7 +2022,7 @@ main{
   width:44px;height:40px;
   background:var(--ink);color:var(--bg);
   border:2px solid var(--bg);
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.3rem;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:all 0.12s;z-index:5;
@@ -2060,7 +2064,7 @@ main{
 .random-grouper-header.open .random-grouper-arrow{color:var(--on-hot)}
 
 .random-grouper-label{
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.85rem;letter-spacing:0.15em;
   text-transform:uppercase;color:var(--ink);
 }
@@ -2075,7 +2079,7 @@ main{
 }
 
 .random-no-filter{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.65rem;color:var(--ink-faint);
   letter-spacing:0.1em;text-transform:uppercase;
 }
@@ -2085,7 +2089,7 @@ main{
   display:inline-flex;align-items:center;gap:0.25rem;
   background:var(--hot);color:var(--on-hot);
   padding:0.22rem 0.6rem 0.2rem 0.5rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;
   clip-path:polygon(0 6%,100% 0,calc(100% - 5px) 100%,3px 92%);
   transform:rotate(calc(-1.5deg * var(--tilt)));
@@ -2112,7 +2116,7 @@ main{
 .random-search{
   background:transparent;border:none;
   border-bottom:1px solid var(--hot);
-  color:var(--ink);font-family:'Oswald',sans-serif;
+  color:var(--ink);font-family:var(--f-head);
   font-size:0.8rem;letter-spacing:0.05em;
   padding:0.25rem 0;outline:none;width:100%;
 }
@@ -2126,7 +2130,7 @@ main{
 .random-list-item{
   display:flex;align-items:center;gap:0.4rem;
   padding:0.28rem 0.6rem;cursor:pointer;
-  font-family:'Oswald',sans-serif;font-size:0.78rem;letter-spacing:0.05em;
+  font-family:var(--f-head);font-size:0.78rem;letter-spacing:0.05em;
   border-left:2px solid transparent;transition:all 0.08s;user-select:none;
 }
 .random-list-item:hover{background:var(--hot-deep);padding-left:0.85rem}
@@ -2135,7 +2139,7 @@ main{
   border-bottom:1px solid var(--line);font-style:italic;opacity:0.85;
 }
 .random-list-item.li-none.active{opacity:1}
-.li-count{margin-left:auto;font-size:0.65rem;opacity:0.6;font-family:'JetBrains Mono',monospace}
+.li-count{margin-left:auto;font-size:0.65rem;opacity:0.6;font-family:var(--f-mono)}
 
 .random-quick-row{
   display:flex;gap:0.3rem;
@@ -2161,7 +2165,7 @@ main{
   flex-wrap:wrap;
 }
 .random-watch-label{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.7rem;letter-spacing:0.25em;
   color:var(--hot);text-transform:uppercase;
   font-weight:700;margin-right:0.5rem;
@@ -2177,7 +2181,7 @@ main{
 }
 
 .random-pool-count{
-  font-family:'JetBrains Mono',monospace;
+  font-family:var(--f-mono);
   font-size:0.85rem;letter-spacing:0.2em;
   color:var(--hot);text-transform:uppercase;font-weight:700;
 }
@@ -2193,7 +2197,7 @@ main{
   box-shadow:inset 0 0 0 3px #000;
   color:var(--on-hot);
   padding:0.85rem 2.6rem 0.8rem 2.2rem;
-  font-family:'Anton',sans-serif;
+  font-family:var(--f-display);
   font-size:1.15rem;letter-spacing:0.25em;text-transform:uppercase;
   cursor:pointer;
   transition:transform 0.14s cubic-bezier(0.2,1.8,0.4,1), background 0.1s, color 0.1s;
@@ -2332,7 +2336,7 @@ main{
 }
 .cc-line{
   margin:0 0 0.6rem;
-  font-family:'Oswald',sans-serif;font-weight:700;
+  font-family:var(--f-head);font-weight:700;
   text-transform:uppercase;font-size:1rem;line-height:1.25;
 }
 .cc-film{display:flex;align-items:center;gap:16px;margin:0.5rem 0 1rem}
@@ -2345,7 +2349,7 @@ main{
 .cc-thumb img{display:block;width:100%;height:100%;object-fit:cover}
 .cc-thumb-ph{
   display:flex;align-items:center;justify-content:center;width:100%;height:100%;
-  font-family:'Anton',sans-serif;font-size:2.6rem;color:var(--hot);
+  font-family:var(--f-display);font-size:2.6rem;color:var(--hot);
   background:repeating-linear-gradient(-45deg, #000 0 8px, color-mix(in srgb, var(--hot) 16%, #000) 8px 16px);
 }
 .cc-film-txt{flex:1;min-width:0}
@@ -2359,12 +2363,12 @@ main{
 .cc-meta{
   display:inline-block;margin-top:0.6rem;
   background:#000;color:#fff;
-  font-family:'JetBrains Mono',monospace;font-size:0.72rem;font-weight:700;
+  font-family:var(--f-mono);font-size:0.72rem;font-weight:700;
   letter-spacing:0.08em;text-transform:uppercase;
   padding:0.18rem 0.5rem;
 }
 .cc-sig{
-  font-family:'Anton',sans-serif;letter-spacing:0.2em;font-size:0.85rem;
+  font-family:var(--f-display);letter-spacing:0.2em;font-size:0.85rem;
   text-align:right;margin-top:0.2rem;
 }
 
@@ -2372,7 +2376,7 @@ main{
 .cc-act{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
 .cc-btn{
   border:0;cursor:pointer;
-  font-family:'Anton',sans-serif;letter-spacing:0.18em;text-transform:uppercase;
+  font-family:var(--f-display);letter-spacing:0.18em;text-transform:uppercase;
   transition:transform 0.14s cubic-bezier(0.2,1.8,0.4,1), background 0.1s, color 0.1s;
 }
 .cc-pri,.cc-retry{
@@ -2389,7 +2393,7 @@ main{
 .cc-retry kbd{
   display:inline-block;margin-left:0.45rem;padding:0.08rem 0.38rem;
   background:#000;color:#fff;
-  font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:700;letter-spacing:0;
+  font-family:var(--f-mono);font-size:0.7rem;font-weight:700;letter-spacing:0;
   vertical-align:0.12em;
 }
 .cc-pri:hover,.cc-pri:focus-visible{transform:rotate(calc(-2deg * var(--tilt))) scale(1.05)}
@@ -2410,7 +2414,7 @@ main{
 .cc-sec:focus-visible{outline:3px solid #000;outline-offset:2px}
 .cc-pool{
   margin-left:auto;
-  font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:700;
+  font-family:var(--f-mono);font-size:0.7rem;font-weight:700;
   letter-spacing:0.15em;text-transform:uppercase;
 }
 
@@ -2464,3 +2468,17 @@ main{
   outline:2px solid var(--hot);
   outline-offset:2px;
 }
+
+/* =========================
+   TEMA MEMENTO (P3) — linguaggio visivo
+   Persona 3 / Reload: blu notte e ciano, vetro e acqua, luna dell'Ora Buia,
+   tipografia sottile e condensata, forme pulite, movimenti fluidi.
+   Tutte le regole sono sotto [data-theme="p3"].
+   ========================= */
+
+/* =========================
+   TEMA MAYONAKA (P4) — linguaggio visivo
+   Persona 4: giallo e nero, Midnight Channel, cornice TV, statico e
+   scanline, angoli arrotondati, font tondo e pesante, rimbalzi giocosi.
+   Tutte le regole sono sotto [data-theme="p4"].
+   ========================= */
