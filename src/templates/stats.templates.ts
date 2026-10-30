@@ -2,6 +2,7 @@ import { html, svg } from 'lit';
 import type { TemplateResult } from 'lit';
 import type { Stats } from '../stats';
 import { ransomTemplate, capTitleTemplate } from './ransom.templates';
+import { currentCopy } from '../copy';
 
 // Numero di tacche della barra PROGRESS (stile metro a segmenti P5).
 const PROGRESS_SEGMENTS = 20;
@@ -55,6 +56,7 @@ function radarTemplate(entries: [string, number][]): TemplateResult | string {
 }
 
 export function statsTemplate(stats: Stats): TemplateResult {
+  const c = currentCopy();
   const seenPct = stats.total > 0 ? Math.round((stats.seen / stats.total) * 100) : 0;
   const filledSegs = Math.round((seenPct / 100) * PROGRESS_SEGMENTS);
   const genreMax = stats.topGenres[0]?.[1] ?? 1;
@@ -68,19 +70,19 @@ export function statsTemplate(stats: Stats): TemplateResult {
     <div class="intel-header">
       <div class="intel-header-stripe"></div>
       <div class="intel-header-content">
-        <div class="intel-eyebrow">▰ PHANTOM INTEL ▰</div>
-        <h2 class="intel-title" aria-label="Thieves' Den">${ransomTemplate("THIEVES' DEN")}</h2>
-        <div class="intel-subtitle">ARCHIVE REPORT</div>
+        <div class="intel-eyebrow">${c.intelEyebrow}</div>
+        <h2 class="intel-title" aria-label=${c.intelTitle}>${ransomTemplate(c.intelTitle)}</h2>
+        <div class="intel-subtitle">${c.intelSubtitle}</div>
       </div>
     </div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-card-val">${stats.total}</div><div class="stat-card-label">TARGETS</div></div>
-      <div class="stat-card"><div class="stat-card-val">${stats.seen}</div><div class="stat-card-label">NEUTRALIZED</div></div>
-      <div class="stat-card"><div class="stat-card-val">${stats.watchlist}</div><div class="stat-card-label">ON RADAR</div></div>
+      <div class="stat-card"><div class="stat-card-val">${stats.total}</div><div class="stat-card-label">${c.unit.toUpperCase()}</div></div>
+      <div class="stat-card"><div class="stat-card-val">${stats.seen}</div><div class="stat-card-label">${c.statSeen}</div></div>
+      <div class="stat-card"><div class="stat-card-val">${stats.watchlist}</div><div class="stat-card-label">${c.statWatchlist}</div></div>
       <div class="stat-card"><div class="stat-card-val">${stats.avgRating?.toFixed(1) ?? '—'}</div><div class="stat-card-label">AVG RANK</div></div>
     </div>
     <div class="stat-progress-row">
-      <div class="stat-progress-label">PROGRESS <span>${seenPct}%</span></div>
+      <div class="stat-progress-label">${c.statProgress} <span>${seenPct}%</span></div>
       <div class="stat-progress-track" role="progressbar" aria-label="Film visti" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${seenPct}>
         ${Array.from({ length: PROGRESS_SEGMENTS }, (_, i) => html`<span class="stat-seg ${i < filledSegs ? 'on' : ''}"></span>`)}
       </div>

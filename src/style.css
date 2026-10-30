@@ -2864,10 +2864,8 @@ main{
   to{opacity:1;translate:0 0}
 }
 
-/* ---- Righe: ARCANA + numero romano sottile, titolo leggero corsivo ---- */
-[data-theme="p3"] main{counter-reset:p3-arcana}
+/* ---- Righe: ARCANA + numero romano sottile (testi da copy.ts), titolo leggero corsivo ---- */
 [data-theme="p3"] .row{
-  counter-increment:p3-arcana;
   animation-name:p3-row-in;
   animation-duration:0.8s;
   animation-timing-function:cubic-bezier(0.22,1,0.36,1);
@@ -2891,21 +2889,14 @@ main{
 [data-theme="p3"] .row-cal{align-items:center}
 [data-theme="p3"] .row-cal small,
 [data-theme="p3"] .row:nth-child(even) .row-cal small{
-  font-size:0;background:none;padding:0;margin-bottom:4px;
+  background:none;padding:0;margin-bottom:4px;
   color:var(--p3-cyan);transform:none;
-}
-[data-theme="p3"] .row-cal small::before{
-  content:'ARCANA';
-  content:'ARCANA' / '';
   font-family:var(--f-display);font-weight:500;font-style:italic;
   font-size:0.7rem;letter-spacing:0.5em;margin-right:-0.5em;
 }
 [data-theme="p3"] .row-cal b,
 [data-theme="p3"] .row:nth-child(even) .row-cal b{
-  font-size:0;-webkit-text-stroke:0;text-shadow:none;transform:none;
-}
-[data-theme="p3"] .row-cal b::after{
-  content:counter(p3-arcana, upper-roman);
+  -webkit-text-stroke:0;transform:none;
   font-family:var(--f-display);font-weight:300;
   font-size:4.4rem;line-height:0.9;letter-spacing:0.02em;
   color:var(--ink);
@@ -3048,18 +3039,14 @@ main{
 }
 [data-theme="p3"] .card-dir{letter-spacing:0.18em}
 
-/* Visto → banda "CLEARED" orizzontale sul poster */
+/* Visto → banda orizzontale sul poster ("CLEARED" da copy.ts) */
 [data-theme="p3"] .card-stamp{
-  font-size:0;border:0;padding:0;background:none;
+  border:0;
   -webkit-mask-image:none;mask-image:none;
   left:5px;right:5px;top:calc(var(--poster-h) * 0.5);
   transform:translateY(-50%);
   text-align:center;
   color:var(--p3-cyan);
-}
-[data-theme="p3"] .card-stamp::before{
-  content:'CLEARED';
-  content:'CLEARED' / '';
   display:block;
   font-family:var(--f-display);font-weight:500;font-style:italic;
   font-size:0.95rem;line-height:1;letter-spacing:0.45em;
@@ -3068,21 +3055,17 @@ main{
   box-shadow:0 -1px 0 rgba(127,232,255,0.7), 0 1px 0 rgba(127,232,255,0.7);
   text-shadow:0 0 10px rgba(127,232,255,0.75);
 }
-/* Watchlist → tag "REQUEST" (richieste della Velvet Room) */
+/* Watchlist → tag "REQUEST" (richieste della Velvet Room; testo da copy.ts) */
 [data-theme="p3"] .card-target{
-  font-size:0;gap:0;
+  gap:0;
+  font-family:var(--f-display);font-weight:500;font-style:italic;
+  font-size:0.7rem;letter-spacing:0.24em;
   top:16px;right:-6px;
   transform:none;box-shadow:none;
   background:linear-gradient(90deg, #1550c8, var(--hot));
   color:#ffffff;
   padding:0.32rem 0.8rem 0.28rem 0.95rem;
   clip-path:var(--p3-par);
-}
-[data-theme="p3"] .card-target::after{
-  content:'REQUEST';
-  content:'REQUEST' / '';
-  font-family:var(--f-display);font-weight:500;font-style:italic;
-  font-size:0.7rem;letter-spacing:0.24em;
 }
 [data-theme="p3"] .card-target i{
   width:6px;height:6px;margin-right:0.5rem;
@@ -3668,11 +3651,11 @@ main{
   [data-theme="p3"] .view-option,[data-theme="p3"] .view-option:nth-child(odd){font-size:1.2rem}
   [data-theme="p3"] .row-header::after{width:88%}
   [data-theme="p3"] .row-header::before{left:1.2rem;right:10%}
-  [data-theme="p3"] .row-cal b::after{font-size:3.1rem}
+  [data-theme="p3"] .row-cal b,[data-theme="p3"] .row:nth-child(even) .row-cal b{font-size:3.1rem}
   [data-theme="p3"] .row-meta b{font-size:1.8rem}
   [data-theme="p3"] .carousel-btn{width:40px;height:40px}
   [data-theme="p3"] .card-burst{left:-40px;right:-40px}
-  [data-theme="p3"] .card-stamp::before{font-size:0.78rem;letter-spacing:0.32em}
+  [data-theme="p3"] .card-stamp{font-size:0.78rem;letter-spacing:0.32em}
   [data-theme="p3"] .modal{box-shadow:0 0 0 4px rgba(3,10,28,0.6), 0 0 0 5px rgba(127,232,255,0.14), 0 24px 60px rgba(0,0,0,0.6)}
   [data-theme="p3"] .modal-cover{border-right:0;border-bottom:1px solid rgba(127,232,255,0.3);padding:2.4rem 0 1.9rem}
   [data-theme="p3"] .modal .m-plot{font-size:1.08rem}

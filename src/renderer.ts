@@ -108,8 +108,8 @@ function doRender(): void {
       })),
     });
   });
-  // Stringhe di stato vuoto coerenti in italiano (la "chrome" spy in inglese —
-  // masthead, placeholder ricerca, TARGET FILE — resta volutamente invariata).
+  // Stringhe di stato vuoto in italiano, uguali in ogni tema (i testi "di colore"
+  // dipendenti dal tema stanno in copy.ts).
   const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
     : watchFilter === 'unseen' ? 'Nessun film da vedere'
     : 'Nessun film trovato';

@@ -3,6 +3,7 @@ import type { TemplateResult } from 'lit';
 import type { Movie } from '../parser';
 import type { WatchStatus, Rating } from '../store';
 import { ransomTemplate } from './ransom.templates';
+import { currentCopy } from '../copy';
 
 export interface FieldData {
   label: string;
@@ -60,9 +61,10 @@ export function rankTemplate(current: Rating, onPick: (i: number) => void): Temp
 export function modalTemplate(data: ModalData, state: ModalState, h: ModalHandlers): TemplateResult {
   const m = data.movie;
   const title = m.title ?? '';
+  const c = currentCopy();
   const cover = data.url
     ? html`<img src=${data.url} alt=${title}>`
-    : html`<div class="placeholder"><span class="ph-tag">▰ NO VISUAL ▰</span><span class="ph-title">${title}</span></div>`;
+    : html`<div class="placeholder"><span class="ph-tag">${c.noVisual}</span><span class="ph-title">${title}</span></div>`;
   return html`
     <div class="modal-cover">
       <span class="modal-tape" aria-hidden="true"></span>
@@ -70,7 +72,7 @@ export function modalTemplate(data: ModalData, state: ModalState, h: ModalHandle
     </div>
     <div class="modal-body">
       <button class="modal-close" aria-label="Chiudi" @click=${h.onClose}>✕</button>
-      <div class="m-eyebrow">▰ TARGET FILE Nº ${String(m.id).padStart(3, '0')} ▰</div>
+      <div class="m-eyebrow">${c.fileEyebrow(m.id)}</div>
       <h2><span class="visually-hidden">${title}</span>${ransomTemplate(title)}</h2>
       ${data.meta.length ? html`<div class="m-tags">${data.meta.map(t => html`<span class="m-tag">${t}</span>`)}</div>` : ''}
       <div class="m-ctrl">
@@ -90,5 +92,5 @@ export function modalTemplate(data: ModalData, state: ModalState, h: ModalHandle
 
 /** Banda del cut-in d'apertura: titolo a lettera anonima (decorativo, il nome sta nel dialog). */
 export function cutinTemplate(title: string): TemplateResult {
-  return html`<div class="modal-cutin-band">${ransomTemplate(title || 'TARGET')}</div>`;
+  return html`<div class="modal-cutin-band">${ransomTemplate(title || currentCopy().seenBadge)}</div>`;
 }

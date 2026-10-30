@@ -1,10 +1,11 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
 import type { Grouper } from '../groupers';
+import { currentCopy } from '../copy';
 
-/** Fumetto bianco frastagliato del masthead: "N TARGETS". */
+/** Contatore del masthead: "N TARGETS" (unità dal tema). */
 export function countLabelTemplate(count: number): TemplateResult {
-  return html`<b>${count}</b> TARGETS`;
+  return html`<b>${count}</b> ${currentCopy().unit.toUpperCase()}`;
 }
 
 export function filterButtonTemplate(count: number): TemplateResult {

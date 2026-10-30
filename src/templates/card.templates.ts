@@ -3,6 +3,7 @@ import type { TemplateResult } from 'lit';
 import type { Movie } from '../parser';
 import type { WatchStatus } from '../store';
 import { capTitleTemplate } from './ransom.templates';
+import { currentCopy } from '../copy';
 
 /** Dati pronti per il rendering di una card (calcolati dal renderer). */
 export interface CardData {
@@ -20,7 +21,7 @@ export interface CardData {
 // (L'anno sta già nel tag della card: qui solo titolo ed etichetta.)
 export function placeholderTemplate(title: string | undefined): TemplateResult {
   return html`<div class="placeholder">
-    <div class="pl-tag">▰ No cover</div>
+    <div class="pl-tag">${currentCopy().noCover}</div>
     <div class="pl-title">${title ?? ''}</div>
   </div>`;
 }
@@ -35,6 +36,7 @@ export function cardTemplate(
   onImgError: (e: Event) => void
 ): TemplateResult {
   const { movie: m, url, status, failed, clip, tilt } = data;
+  const c = currentCopy();
   const title = m.title ?? '';
   const yr = m.year ? String(m.year) : '';
   const director = Array.isArray(m.director) ? m.director[0] : (m.director ?? '');
@@ -49,8 +51,8 @@ export function cardTemplate(
     <div class="card-shadow" aria-hidden="true"></div>
     <div class="card-frame"><div class="img-wrap">${cover}</div></div>
     ${yr ? html`<div class="card-tag">${yr}</div>` : ''}
-    ${status === 'seen' ? html`<div class="card-stamp">STOLEN</div>` : ''}
-    ${status === 'watchlist' ? html`<div class="card-target"><i aria-hidden="true"></i>TARGET</div>` : ''}
+    ${status === 'seen' ? html`<div class="card-stamp">${c.seenBadge}</div>` : ''}
+    ${status === 'watchlist' ? html`<div class="card-target"><i aria-hidden="true"></i>${c.watchBadge}</div>` : ''}
     <div class="card-bar">${title ? capTitleTemplate(title) : ''}</div>
     ${director ? html`<div class="card-dir">${director}</div>` : ''}
   </div>`;

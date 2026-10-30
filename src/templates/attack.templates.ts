@@ -2,6 +2,7 @@ import { html } from 'lit';
 import type { TemplateResult } from 'lit';
 import type { Movie } from '../parser';
 import { ransomTemplate } from './ransom.templates';
+import { currentCopy } from '../copy';
 
 /* Overlay "ALL-OUT ATTACK!" del RANDOM: prima la raffica (raggi + stelle +
    scritta a lettere ritagliate), poi il biglietto da visita col film estratto.
@@ -15,9 +16,10 @@ function starsTemplate(count: number, cls: string): TemplateResult[] {
 }
 
 export function attackBurstTemplate(): TemplateResult {
+  const attack = currentCopy().attack;
   return html`
     <div class="aoa-stars" aria-hidden="true">${starsTemplate(11, 'aoa-star')}</div>
-    <div class="aoa-txt">${ransomTemplate('All-out attack!')}<span class="visually-hidden">All-out attack!</span></div>`;
+    <div class="aoa-txt">${ransomTemplate(attack)}<span class="visually-hidden">${attack}</span></div>`;
 }
 
 export interface CallingCardData {
@@ -45,15 +47,14 @@ export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers):
   const m = d.movie;
   const title = m.title || 'Senza titolo';
   const minutes = m['running-time'];
-  const stolen = typeof minutes === 'number' && minutes > 0
-    ? `stasera ti ruberemo ${minutes} minuti di vita con`
-    : 'stasera ti ruberemo il tempo con';
+  const c = currentCopy();
+  const stolen = c.ccStolen(typeof minutes === 'number' && minutes > 0 ? minutes : null);
   const meta = [m.year ? String(m.year) : '', (m.director ?? []).slice(0, 2).join(', ')].filter(Boolean).join(' · ');
 
   return html`
     <div class="card-call">
       <div class="cc-emb" aria-hidden="true"></div>
-      <p class="cc-line">Gentile spettatore,</p>
+      <p class="cc-line">${c.ccGreeting}</p>
       <p class="cc-line">${stolen}</p>
       <div class="cc-film">
         <div class="cc-thumb">${d.cover
@@ -64,8 +65,8 @@ export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers):
           ${meta ? html`<p class="cc-meta">${meta}</p>` : ''}
         </div>
       </div>
-      <p class="cc-line">Non potrai opporti.</p>
-      <div class="cc-sig">— I LADRI DI PELLICOLE</div>
+      <p class="cc-line">${c.ccClosing}</p>
+      <div class="cc-sig">${c.ccSignature}</div>
       <div class="cc-act">
         <button class="cc-btn cc-pri" data-cc="open" @click=${h.onOpen}>APRI SCHEDA</button>
         <button class="cc-btn cc-retry" data-cc="retry" @click=${h.onRetry}

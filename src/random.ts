@@ -9,6 +9,7 @@ import { randomPickerBodyTemplate } from './templates/popup.templates';
 import { attackBurstTemplate, callingCardTemplate } from './templates/attack.templates';
 import type { CallingCardHandlers } from './templates/attack.templates';
 import { trapTab } from './utils';
+import { currentCopy } from './copy';
 
 interface PickerParams {
   movies: Movie[];
@@ -81,7 +82,9 @@ function buildPicker(params: PickerParams, onLaunch: (pool: Movie[]) => void): P
   let poolCount = 0;
   let extractDisabled = true;
 
-  const shell = buildPanelShell('RANDOM', 'TARGET');
+  // Titolo del tema attivo alla costruzione: al cambio tema main rilascia il
+  // picker (refreshRandomPicker), che alla prossima apertura riprende il nuovo.
+  const shell = buildPanelShell('RANDOM', currentCopy().randomAccent);
   const { panel, close } = shell;
 
   const body = document.createElement('div');

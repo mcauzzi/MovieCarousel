@@ -3,6 +3,7 @@ import type { Movie } from './parser';
 import { coverUrl, focusablesIn, trapTab } from './utils';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { showToast } from './toast';
+import { currentCopy } from './copy';
 import { modalTemplate, cutinTemplate } from './templates/modal.templates';
 import type { FieldData, ModalData, ModalHandlers } from './templates/modal.templates';
 
@@ -93,14 +94,15 @@ export function openModal(
     onStatus: (v: WatchStatus) => {
       status = v;
       store.setStatus(id, v);
-      showToast(v === 'seen' ? 'TARGET NEUTRALIZED' : v === 'watchlist' ? 'ADDED TO WATCHLIST' : 'TARGET CLEARED');
+      const c = currentCopy();
+      showToast(v === 'seen' ? c.toastSeen : v === 'watchlist' ? c.toastWatchlist : c.toastCleared);
       onStatusChange?.();
       rerender();
     },
     onRating: (i: number) => {
       rating = (rating === i ? null : i) as Rating;
       store.setRating(id, rating);
-      showToast('INTEL UPDATED');
+      showToast(currentCopy().toastRating);
       onStatusChange?.();
       rerender();
     },

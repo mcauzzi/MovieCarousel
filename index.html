@@ -13,21 +13,21 @@
 <div id="loader">
   <div class="loader-grid">
     <div class="loader-left">
-      <div class="issue">▰ MISSION 01 ▰ COLLECTION DATA</div>
+      <div class="issue" data-copy="loaderIssue">▰ MISSION 01 ▰ COLLECTION DATA</div>
       <h1>CineManager</h1>
-      <p class="lede">Take your films back.<br>Carica il file di Tellico.</p>
-      <div class="stamp">★ ALL OUT ATTACK</div>
+      <p class="lede"><span data-copy="loaderLede">Take your films back.</span><br>Carica il file di Tellico.</p>
+      <div class="stamp" data-copy="loaderStamp">★ ALL OUT ATTACK</div>
     </div>
     <div class="loader-right">
       <label class="drop-zone" id="dropZone">
         <input type="file" id="fileInput" accept=".tc,.zip">
-        <div class="step">▶ STEP 01 ▶ TARGET</div>
+        <div class="step" data-copy="loaderStep1">▶ STEP 01 ▶ TARGET</div>
         <p>Trascina il file<br>.tc qui</p>
         <div class="or">— oppure —</div>
         <span class="cta">▶ Scegli file</span>
       </label>
       <div class="img-config">
-        <label for="imgDir">▶ STEP 02 ▶ COPERTINE</label>
+        <label for="imgDir" data-copy="loaderStep2">▶ STEP 02 ▶ COPERTINE</label>
         <input type="text" id="imgDir" value="" placeholder="es. miacollezione_files/">
         <div class="hint">L'HTML deve stare nella cartella che contiene le copertine. Se sono dentro al .tc vengono usate quelle.</div>
       </div>

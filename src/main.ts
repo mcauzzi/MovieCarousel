@@ -35,6 +35,8 @@ import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
 import { openRandomPicker, resetRandomPicker, refreshRandomPicker } from './random';
+import { currentCopy } from './copy';
+import type { ThemeCopy } from './copy';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
 import { coverUrl } from './utils';
@@ -92,6 +94,31 @@ function renderTitle(title: string): void {
     litRender(ransomTemplate(title), host);
   }
   titleMounted = true;
+}
+
+// Testi statici di index.html che cambiano col tema: gli elementi con
+// data-copy="<chiave>" ricevono la stringa omonima di ThemeCopy.
+type CopyTextKey = { [K in keyof ThemeCopy]: ThemeCopy[K] extends string ? K : never }[keyof ThemeCopy];
+function applyStaticCopy(): void {
+  const c = currentCopy();
+  document.querySelectorAll<HTMLElement>('[data-copy]').forEach(el => {
+    const text = c[el.dataset.copy as CopyTextKey];
+    if (typeof text === 'string') el.textContent = text;
+  });
+  (document.getElementById('search') as HTMLInputElement).placeholder = c.searchPlaceholder;
+}
+
+// Cambio tema: oltre a data-theme aggiorna i testi "di colore" (copy.ts) già a
+// schermo. Il picker RANDOM ha il titolo costruito una volta: si rilascia e
+// verrà ricostruito alla prossima apertura (un biglietto aperto resta).
+function onThemeChange(id: string): void {
+  applyTheme(id);
+  applyStaticCopy();
+  if (!movies.length) return;
+  litRender(countLabelTemplate(movies.length), document.getElementById('countLabel')!);
+  refreshRandomPicker();
+  if (isIntelView) renderStats(document.getElementById('main')!, computeStats(movies, store));
+  else render();
 }
 
 function setStatus(msg: string, error = false): void {
@@ -262,7 +289,7 @@ function initUI(): void {
 }
 
 async function handleFile(file: File): Promise<void> {
-  setStatus('▶ READING TARGET...');
+  setStatus(currentCopy().statusReading);
   try {
     const arrayBuf = await file.arrayBuffer();
     let xmlString: string;
@@ -271,12 +298,12 @@ async function handleFile(file: File): Promise<void> {
       const xmlFile = zip.file('tellico.xml');
       if (!xmlFile) throw new Error('tellico.xml non trovato nello zip');
       xmlString = await xmlFile.async('string');
-      setStatus('▶ EXTRACTING DATA...');
+      setStatus(currentCopy().statusExtracting);
     } catch (zipErr) {
       const text = new TextDecoder('utf-8').decode(arrayBuf);
       if (text.trim().startsWith('<?xml') || text.includes('<tellico')) {
         xmlString = text;
-        setStatus('▶ PARSING DIRECT XML...');
+        setStatus(currentCopy().statusParsing);
       } else throw zipErr;
     }
     const result = parseTellicoXml(xmlString);
@@ -297,7 +324,7 @@ async function handleFile(file: File): Promise<void> {
         ratingSeed[m.id] = m.rating as Rating;
     });
     store.setSeedRating(ratingSeed);
-    setStatus(`✓ ${movies.length} TARGETS ACQUIRED`);
+    setStatus(currentCopy().statusLoaded(movies.length));
     setTimeout(() => initUI(), 400);
   } catch (err) {
     console.error(err);
@@ -350,6 +377,7 @@ async function tryAutoLoad(): Promise<void> {
 initTransitions();
 initToast();
 applyTheme(getSavedTheme());
+applyStaticCopy();
 // Titolo di default (testo statico di index.html); config.json può sovrascriverlo.
 renderTitle(mastTitle?.textContent?.trim() || 'CineManager');
 
@@ -365,7 +393,7 @@ THEMES.forEach(t => {
   if (getSavedTheme() === t.id) opt.selected = true;
   themeDropdown.appendChild(opt);
 });
-themeDropdown.onchange = () => applyTheme(themeDropdown.value);
+themeDropdown.onchange = () => onThemeChange(themeDropdown.value);
 themeWrap.appendChild(themeDropdown);
 masthead.insertBefore(themeWrap, reloadBtn);
 

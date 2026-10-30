@@ -2,6 +2,7 @@ import { html } from 'lit';
 import type { TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { cardTemplate } from './card.templates';
+import { currentCopy } from '../copy';
 import type { CardData } from './card.templates';
 import { capTitleTemplate } from './ransom.templates';
 
@@ -32,17 +33,18 @@ export function rowTemplate(
   onCardKeydown: (e: KeyboardEvent) => void,
   onImgError: (e: Event) => void
 ): TemplateResult {
-  const num = String(row.idx + 1).padStart(2, '0');
+  const c = currentCopy();
+  const num = c.rowNumber(row.idx + 1);
   const delay = Math.min(row.idx * 0.05, 0.4);
-  // Header "a calendario": etichetta MISSION + numero grande in contorno, titolo
+  // Header "a calendario": etichetta (MISSION/ARCANA/CHANNEL) + numero grande, titolo
   // con l'iniziale ritagliata (aria-label: il riquadro non spezza la lettura).
   return html`<section class="row" style="animation-delay:${delay}s">
     <div class="row-header">
-      <div class="row-cal" aria-hidden="true"><small>MISSION</small><b>${num}</b></div>
+      <div class="row-cal" aria-hidden="true"><small>${c.rowEyebrow}</small><b>${num}</b></div>
       <h2 class="row-title" aria-label=${row.label}>${capTitleTemplate(row.label)}</h2>
       <div class="row-meta">
         <b>${row.filtered.length}</b>
-        <span>${row.filtered.length !== row.totalCount ? '/ ' + row.totalCount + ' targets' : 'targets'}</span>
+        <span>${row.filtered.length !== row.totalCount ? '/ ' + row.totalCount + ' ' + c.unit : c.unit}</span>
       </div>
     </div>
     <div class="carousel-wrap">
