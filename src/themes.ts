@@ -7,6 +7,7 @@ export const THEMES: Theme[] = [
   { id: 'p5', label: 'PHANTOM' },
   { id: 'p3', label: 'MEMENTO' },
   { id: 'p4', label: 'MAYONAKA' },
+  { id: 'sh2', label: 'TOLUCA' },
 ];
 
 const THEME_KEY = 'cm_theme';

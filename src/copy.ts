@@ -1,12 +1,12 @@
 /* Testi "di colore" dipendenti dal tema: ogni tema parla il gergo del suo gioco
    (P5 i Ladri Fantasma, P3 la Velvet Room e la S.E.E.S., P4 l'Investigation
-   Team e il Midnight Channel). Restano invece fissi i nomi funzionali dei
+   Team e il Midnight Channel, TOLUCA la nebbia, i memo e la radio di SH2). Restano invece fissi i nomi funzionali dei
    controlli (FILTRI, RANDOM, INTEL, VISTA, SEEN/WATCHLIST) e i messaggi
    d'errore, così l'app si usa allo stesso modo in ogni tema.
    Foglia senza import: i template la leggono al render con currentCopy();
    al cambio tema main.ts ri-renderizza la vista e aggiorna i testi statici. */
 
-export type ThemeId = 'p5' | 'p3' | 'p4';
+export type ThemeId = 'p5' | 'p3' | 'p4' | 'sh2';
 
 export interface ThemeCopy {
   /** Unità del contatore film (masthead, card INTEL, messaggio di caricamento). */
@@ -182,6 +182,44 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     statusExtracting: '▣ CLEARING THE FOG...',
     statusParsing: '▣ DECODING SIGNAL...',
     statusLoaded: n => `✓ ${n} CHANNELS FOUND`,
+  },
+  // TOLUCA — Silent Hill 2: nebbia, stanze d'albergo, memo battuti a macchina,
+  // la radio che gracchia, una lettera, la mappa della città. Testi originali.
+  sh2: {
+    unit: 'memories',
+    rowEyebrow: 'ROOM',
+    rowNumber: n => String(300 + n),
+    seenBadge: 'REMEMBERED',
+    watchBadge: 'SAVE',
+    noCover: 'Lost in the fog',
+    noVisual: 'LOST IN THE FOG',
+    fileEyebrow: id => `MEMO Nº ${String(id).padStart(3, '0')}`,
+    toastSeen: 'MEMORIA RECUPERATA',
+    toastWatchlist: 'PROGRESSI SALVATI',
+    toastCleared: 'DIMENTICATO',
+    toastRating: 'MEMO AGGIORNATO',
+    randomAccent: 'RADIO',
+    attack: 'Qualcosa si avvicina',
+    ccGreeting: 'Ti scrivo dalla nebbia.',
+    ccStolen: min => min ? `Stasera ti aspetto per ${min} minuti con` : 'Stasera ti aspetto con',
+    ccClosing: 'Ti aspetterò in riva al lago.',
+    ccSignature: '— M.',
+    intelEyebrow: 'MAPPA · ARCHIVIO',
+    intelTitle: 'South Vale',
+    intelSubtitle: 'TOWN MAP',
+    statSeen: 'REMEMBERED',
+    statWatchlist: 'SAVED',
+    statProgress: 'EXPLORED',
+    loaderIssue: 'LETTERA Nº 01 · COLLECTION DATA',
+    loaderLede: "C'è qualcosa che hai dimenticato.",
+    loaderStamp: '■ SAVE POINT',
+    loaderStep1: 'STEP 01 · LA LETTERA',
+    loaderStep2: 'STEP 02 · COPERTINE',
+    searchPlaceholder: 'cerca nella nebbia...',
+    statusReading: 'APRO LA LETTERA...',
+    statusExtracting: 'LA NEBBIA SI DIRADA...',
+    statusParsing: 'DECIFRO LA CALLIGRAFIA...',
+    statusLoaded: n => `✓ ${n} MEMORIES RECOVERED`,
   },
 };
 
