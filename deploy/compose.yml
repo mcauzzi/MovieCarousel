@@ -1,0 +1,18 @@
+# Stack Komodo "cinemalometti".
+# Variabili da impostare nell'Environment dello stack in Komodo:
+#   WEB_ROOT  cartella del NAS con config.json e assets/ (collezione .tc, covers/, bgm/)
+#   PORT      porta sull'host del NAS (default 8091), quella a cui punta Caddy
+services:
+  cinemalometti:
+    image: ghcr.io/mcauzzi/moviecarousel:latest
+    container_name: cinemalometti
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8091}:80"
+    volumes:
+      - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}:/srv/data:ro"
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp

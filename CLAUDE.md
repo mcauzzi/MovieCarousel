@@ -16,7 +16,7 @@ npm run format       # Prettier --write su src/**/*.ts (opt-in)
 
 `npm run typecheck`/`lint` require `node_modules` (run `npm install` first) or fail on the `jszip` import. Prettier è disponibile come strumento ma **non** è imposto in CI: il codebase ha allineamenti manuali deliberati, quindi non fare mass-reformat (`format:check` non gira in `ci.yml`).
 
-CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner GitHub-hosted ed esegue install + typecheck + lint + build. `deploy.yml` resta separato (solo push su `master`, runner NAS self-hosted).
+CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner GitHub-hosted ed esegue install + typecheck + lint + build. `deploy.yml` resta separato (solo push su `master`, builda e pubblica l'immagine Docker su GHCR).
 
 ## Architecture
 
@@ -145,7 +145,11 @@ Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 
 ## Deploy
 
-**Automatico:** a ogni push su `master`, il workflow `.github/workflows/deploy.yml` gira su un runner self-hosted (container Docker sul NAS, label `nas`) che builda e copia (`cp -r`) `dist/index.html` + **tutti** gli asset hashati: bundle JS/CSS in `dist/assets/` e i font self-hostati `.woff/.woff2` in `dist/assets/fonts/` (la sottocartella è impostata via `assetFileNames` in `vite.config.ts`), nella cartella web montata come `/deploy`. La pulizia dei file stantii è limitata alle estensioni di build (`*.js|css` in `assets/`, `*.woff|woff2` in `assets/fonts/`), quindi `config.json`, `collezione.tc`, `covers/` e `bgm/` sul NAS non vengono mai toccati; `dist/config.json` non viene copiato. Il percorso reale della cartella web e il PAT vivono solo nel compose sul NAS — mai nel repo. Setup e manutenzione: `deploy/nas-runner/README.md`.
+**Automatico:** a ogni push su `master`, `.github/workflows/deploy.yml` (runner GitHub-hosted) builda l'immagine dal `Dockerfile` (typecheck + `vite build`, poi `nginx:stable-alpine` con dentro solo `dist/`) e la pubblica come `ghcr.io/mcauzzi/moviecarousel:latest` (più il tag con lo SHA). Sul NAS lo stack Komodo `cinemalometti` usa `deploy/compose.yml` e aggiorna il container quando esce l'immagine nuova. Nessun runner self-hosted: il NAS non esegue codice preso da GitHub.
+
+I dati non sono nell'immagine: la cartella del NAS (`config.json`, `assets/<collezione>.tc`, `assets/covers/`, `assets/bgm/`) è montata in sola lettura su `/srv/data`. `deploy/nginx.conf` serve prima il bundle dell'immagine e, per tutto ciò che non c'è, ripiega sui dati; quindi index.html e bundle vecchi rimasti nella cartella del NAS vengono ignorati. `assets/bgm/` ha `autoindex on` perché `bgm.ts` scopre le tracce dal listing (se cambi `bgmDir` in `config.json`, aggiorna anche quella location). `index.html` è servito `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`.
+
+Variabili dello stack Komodo: `WEB_ROOT` (cartella dei dati sul NAS, obbligatoria) e `PORT` (porta host, default `8091`). Caddy su OPNsense fa reverse proxy HTTP verso quella porta, con forward auth Authelia.
 
 **Manuale** (fallback):
 
