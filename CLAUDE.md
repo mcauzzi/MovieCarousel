@@ -32,11 +32,11 @@ main.ts  →  parser.ts       (leaf)
          →  renderer.ts     →  parser.ts, groupers.ts, utils.ts, store.ts (types), templates/row, lit
          →  modal.ts        →  parser.ts, utils.ts, store.ts (types), toast.ts, templates/modal, lit
          →  stats.ts        →  parser.ts, store.ts (types), templates/stats, lit
-         →  random.ts       →  filters.ts, templates/popup, lit (+ shared types)
+         →  random.ts       →  filters.ts, templates/popup, templates/attack, lit (+ shared types)
          →  filter-popup.ts →  filters.ts, templates/popup, lit (+ shared types)
          →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only), templates/filters, lit
          →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts   (leaves)
-         →  templates/*.templates.ts   (leaves — import only lit + types)
+         →  templates/*.templates.ts   (import only lit, types, utils.ts and other templates — mai moduli con stato)
          →  style.css
 
 utils.ts (leaf — no imports)
@@ -57,19 +57,19 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/parser.ts` | Parses Tellico `.tc` XML → `Movie[]` + embedded images map |
 | `src/groupers.ts` | Builds `Grouper[]` from movies; `matchesSearch` for filtering |
 | `src/renderer.ts` | Renders the carousel into `#main` via lit (search + watch filter + optional `allowedIds`); owns the failed-image set; events bound in templates, carousel scroll via `e.currentTarget`. `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter?, allowedIds?)`, `resetRenderer()` |
-| `src/modal.ts` | Opens/closes the film detail overlay; watch status & star rating controls (lit re-render on change). `openModal(id, movies, embeddedImages, imgDir, store, onStatusChange?)` |
+| `src/modal.ts` | Opens/closes the film detail overlay ("dossier"): cut-in a tutto schermo col titolo (`.modal-cutin`, creato a runtime; saltato con `prefers-reduced-motion`), poi il dossier entra; watch status & RANK a tacche 1–5 (lit re-render on change). `openModal(id, movies, embeddedImages, imgDir, store, onStatusChange?)`. L'apertura NON passa da `withTransition`: il cut-in la sostituisce |
 | `src/filters.ts` | Shared filter logic & UI block builders: `buildPool` (pure) plus `buildGrouperPanel`/`buildPanelShell`/`buildWatchRow` (each owns a root element + lit re-render) |
-| `src/templates/` | Pure lit-html template functions: `card`, `row`, `modal`, `stats`, `filters`, `popup`, `toolbar` |
-| `src/random.ts` | RANDOM picker popup — private per-grouper selections + watch filter → extract a random film |
+| `src/templates/` | Pure lit-html template functions: `card`, `row`, `modal`, `stats`, `filters`, `popup`, `toolbar`, `attack` (All-Out Attack + biglietto), `ransom` (`ransomTemplate` lettere ritagliate per parola, aria-hidden → il chiamante mette il nome accessibile; `capTitleTemplate` solo iniziale) |
+| `src/random.ts` | RANDOM picker popup — private per-grouper selections + watch filter → ESTRAI lancia l'overlay "All-Out Attack" (`.aoa`, ~1.1 s) e poi il biglietto col film estratto: APRI SCHEDA (`onPick`), RITENTA (tasto R; ri-estrae dallo stesso pool senza ripescare il film corrente), MODIFICA (riapre il picker), CHIUDI/Escape. Picker e overlay sono cache-ati insieme e rilasciati da `resetRandomPicker` |
 | `src/filter-popup.ts` | FILTRI popup — same panels, but selections persist in main and filter the carousel view live |
-| `src/stats.ts` | INTEL view — computes and renders collection statistics |
+| `src/stats.ts` | INTEL view — computes and renders collection statistics (titolo ransom, PROGRESS a tacche, radar SVG dei top generi in scala, barre oblique) |
 | `src/store.ts` | `LocalStorageAdapter` for watch status and ratings (with seed from the `.tc` file); `setItem` wrapped in try/catch; `setOnExternalChange` ri-renderizza su evento `storage` (sync multi-scheda) |
 | `src/themes.ts` | Theme list + `applyTheme`/`getSavedTheme` (persisted in localStorage, `data-theme` on `<html>`) |
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
 | `src/bgm.ts` | Widget musica di sottofondo nel masthead — `initBgm(masthead, anchorEl, bgmDir?)`. Controller leaf auto-contenuto: discovery tracce (autoindex del server → fallback manifest `bgm/tracks.json`), elemento `<audio loop>`, play/pausa + volume, stato in closure. **Deroga** consapevole all'invariante "stato solo in main.ts": lo stato del player è UI-locale (come `toast.ts`/`transitions.ts`), non stato di dominio. Se non trova tracce non monta nulla |
 | `src/transitions.ts` | Page-swipe transition overlay (`withTransition`) |
-| `src/utils.ts` | leaf di helper puri: `coverUrl` (URL builder), `fieldValues` (campo Movie → `string[]`), `decadeKey` (anno → `"1990s"`) |
+| `src/utils.ts` | leaf di helper puri: `coverUrl` (URL builder), `fieldValues` (campo Movie → `string[]`), `decadeKey` (anno → `"1990s"`), `seededRandom` (PRNG deterministico da stringa: composizioni ransom e poligono/inclinazione per-card in `renderer.ts`, stabili tra i render) |
 | `src/style.css` | All CSS (CSS custom properties for theming via `:root` + `[data-theme]`) |
 
 ### Data flow
@@ -96,7 +96,7 @@ Rows left empty by filtering are dropped entirely. The INTEL view ignores search
 Both popups are built from the `filters.ts` building blocks and share the `random-*` CSS classes. The shell (`buildPanelShell`, kept imperative) provides backdrop, accented title, ✕ button, click-outside and Escape closing, and a `destroy()` that detaches DOM + key listener. Each popup appends a `body` container to the shell `panel` and lit-renders its grid/watch-row/footer there (`templates/popup.templates.ts`); the live grouper-panel and watch-row elements are interpolated into that template as DOM nodes (lit keeps them in place across re-renders, preserving their internal state).
 
 - Built lazily on first open, then cached at module level and re-shown; `resetRandomPicker()` / `resetFilterPopup()` destroy them (called on Reload, and `resetFilterPopup` also in `initUI` so a newly loaded file gets fresh panels).
-- **RANDOM** keeps its selections private and ends with ESTRAI → `onPick(id)` → film modal.
+- **RANDOM** keeps its selections private and ends with ESTRAI → All-Out Attack → biglietto → APRI SCHEDA → `onPick(id)` → film modal (RITENTA/R ri-estrae dal pool corrente del picker).
 - **FILTRI** mutates main's `filterSelections` in place and triggers `render()` on every change; its footer shows a live "N / total film" count and a global reset button.
 
 ### Persistence (localStorage)
@@ -117,13 +117,15 @@ Seed semantics: at load, `<visto>true</visto>` and the personal rating field of 
 
 Defined in `themes.ts` (`THEMES`): `p5` PHANTOM (default, red), `p3` MEMENTO (blue), `p4` MAYONAKA (gold). Selected via the `<select class="theme-dropdown">` in the masthead. `p5` removes the `data-theme` attribute from `<html>`; the others set it, activating the `[data-theme="..."]` CSS custom-property overrides.
 
-To add a theme: append `{ id, label }` to `THEMES` and add a `[data-theme="id"]` block in `style.css` overriding `--hot`, `--hot-2`, `--hot-deep`, `--bg`, `--bg-2`, `--surface`, `--line`.
+Token tematici trasversali: `--on-hot` (colore del testo sopra uno sfondo `--hot`: bianco su P5/P3, nero su P4 — usalo sempre al posto di `--ink` in quel caso) e `--tilt` (moltiplicatore delle inclinazioni decorative: ogni rotazione "a mano" è `rotate(calc(Xdeg * var(--tilt)))`; 1 su P5, 0.25 su P3, 0.8 su P4). `--star` e `--burst` sono clip-path a stella riusabili.
+
+To add a theme: append `{ id, label }` to `THEMES` and add a `[data-theme="id"]` block in `style.css` overriding `--hot`, `--hot-2`, `--hot-deep`, `--bg`, `--bg-2`, `--surface`, `--line` (and `--on-hot` / `--tilt` if the defaults don't fit).
 
 ### Key DOM elements
 
 Static, required in `index.html`: `loader`, `header`, `dropZone`, `fileInput`, `imgDir`, `status`, `countLabel`, `reloadBtn`, `search`, `groupSelect`, `main`, `modal`, `modalContent`.
 
-Created at runtime: `.theme-dropdown` + `#intelBtn` + `#randomBtn` (masthead), `#filterBtn` with `.filter-badge` (toolbar), `#toast`, `#transition-overlay`, the two popup backdrops (`.random-backdrop`).
+Created at runtime: `.theme-dropdown` + `#intelBtn` + `#randomBtn` (masthead), `#filterBtn` with `.filter-badge` (toolbar), `#toast`, `#transition-overlay`, the two popup backdrops (`.random-backdrop`), `.modal-cutin` (banda del cut-in, aria-hidden), `.aoa` (overlay All-Out Attack / biglietto). Il titolo di loader e masthead è renderizzato da `renderTitle` in `main.ts` (ransom + `aria-label` sull'h1), anche quando arriva da `config.json`.
 
 ### XSS safety
 
@@ -131,7 +133,7 @@ All user-sourced strings are interpolated into lit-html `` html`...` `` template
 
 ### Accessibilità
 
-Le card e gli item dei picker sono `div` resi attivabili da tastiera: `role="button"` + `tabindex="0"` + handler `@keydown` (Enter/Spazio → click; le card usano un handler stabile `cardKeydown` propagato come `onCardClick`). Il focus è visibile via `:focus-visible` in `style.css`. Il modal è un `role="dialog" aria-modal="true"` con focus trap (Tab/Shift+Tab restano dentro) e ripristino del focus all'elemento di partenza alla chiusura. Il dropdown tema ha un `aria-label`.
+Le card e gli item dei picker sono `div` resi attivabili da tastiera: `role="button"` + `tabindex="0"` + handler `@keydown` (Enter/Spazio → click; le card usano un handler stabile `cardKeydown` propagato come `onCardClick`). Il focus è visibile via `:focus-visible` in `style.css`. Il modal è un `role="dialog" aria-modal="true"` con focus trap (Tab/Shift+Tab restano dentro) e ripristino del focus all'elemento di partenza alla chiusura. Il dropdown tema ha un `aria-label`. I titoli ransom hanno le lettere `aria-hidden` e il nome in `aria-label` (o testo visually-hidden). L'overlay All-Out Attack è un dialog con focus trap, Escape gestito in capture (chiude solo lui) e ritorno del focus a `#randomBtn`. Con `prefers-reduced-motion` cut-in, raffica e flip vengono saltati.
 
 ### .tc file format
 

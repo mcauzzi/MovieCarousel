@@ -10,14 +10,17 @@ import { seededRandom } from '../utils';
 
 export function ransomTemplate(text: string): TemplateResult {
   const rnd = seededRandom(text);
-  return html`<span class="ransom" aria-hidden="true">${[...text.toUpperCase()].map(ch => {
-    if (ch === ' ') return html`<span class="ransom-sp"></span>`;
-    const kind = 1 + Math.floor(rnd() * 5);
-    const rot = (rnd() * 16 - 8).toFixed(1);
-    const y = (rnd() * 6 - 3).toFixed(1);
-    const s = (0.88 + rnd() * 0.26).toFixed(2);
-    return html`<span class="ransom-l rk${kind}" style="--r:${rot}deg;--y:${y}px;--s:${s}">${ch}</span>`;
-  })}</span>`;
+  // Lettere raggruppate per parola (.ransom-w non va a capo): i titoli lunghi
+  // si spezzano solo tra le parole, mai a metà ("SH / ELL").
+  const words = text.toUpperCase().split(/\s+/).filter(Boolean);
+  return html`<span class="ransom" aria-hidden="true">${words.map(w =>
+    html`<span class="ransom-w">${[...w].map(ch => {
+      const kind = 1 + Math.floor(rnd() * 5);
+      const rot = (rnd() * 16 - 8).toFixed(1);
+      const y = (rnd() * 6 - 3).toFixed(1);
+      const s = (0.88 + rnd() * 0.26).toFixed(2);
+      return html`<span class="ransom-l rk${kind}" style="--r:${rot}deg;--y:${y}px;--s:${s}">${ch}</span>`;
+    })}</span>`)}</span>`;
 }
 
 /** Versione leggera per i titoli lunghi/ripetuti: solo l'iniziale nel riquadro. */

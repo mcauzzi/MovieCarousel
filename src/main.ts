@@ -17,7 +17,8 @@ import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
 import { renderMain, resetRenderer } from './renderer';
 import type { WatchFilter } from './renderer';
-import { filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
+import { countLabelTemplate, filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
+import { ransomTemplate } from './templates/ransom.templates';
 import { openModal } from './modal';
 import { LocalStorageAdapter } from './store';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
@@ -27,6 +28,7 @@ import { initToast } from './toast';
 import { openRandomPicker, resetRandomPicker } from './random';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
+import { coverUrl } from './utils';
 import { computeStats, renderStats } from './stats';
 import { checkForNewVersion } from './version-check';
 import { initBgm } from './bgm';
@@ -62,6 +64,26 @@ const imgDirInput = document.getElementById('imgDir') as HTMLInputElement;
 const masthead = document.querySelector<HTMLElement>('.masthead')!;
 const reloadBtn = document.getElementById('reloadBtn')!;
 const themeWrap = document.createElement('div');
+const loaderTitle = document.querySelector<HTMLElement>('#loader h1');
+const mastTitle = document.querySelector<HTMLElement>('.masthead h1');
+
+// Titolo "a lettera anonima" nel loader e nel masthead (.accent). Le lettere
+// sono aria-hidden: il nome accessibile va in aria-label sull'h1. Al primo
+// render si svuota il testo statico di index.html (lit non lo rimuove da sé).
+let titleMounted = false;
+function renderTitle(title: string): void {
+  const targets: [HTMLElement | null, HTMLElement | null][] = [
+    [loaderTitle, loaderTitle],
+    [mastTitle, mastTitle?.querySelector<HTMLElement>('.accent') ?? null],
+  ];
+  for (const [heading, host] of targets) {
+    if (!heading || !host) continue;
+    if (!titleMounted) host.textContent = '';
+    heading.setAttribute('aria-label', title);
+    litRender(ransomTemplate(title), host);
+  }
+  titleMounted = true;
+}
 
 function setStatus(msg: string, error = false): void {
   statusEl.textContent = msg;
@@ -78,8 +100,9 @@ function updateFilterBadge(): void {
 
 // Riferimento stabile (non ricreato a ogni render): il renderer lo invoca
 // tramite un handler stabile, evitando il ri-aggancio dei listener sulle card.
+// Niente withTransition: l'apertura ha già il suo cut-in (modal.ts).
 const onOpenModal = (id: number) =>
-  withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange));
+  openModal(id, movies, embeddedImages, imgDir, store, onMovieChange);
 
 // Chiamato dopo una modifica a stato/voto (dal modal o da un'altra scheda).
 // Un cambio di voto può spostare un film tra i gruppi del grouper "Voto",
@@ -158,7 +181,7 @@ function initUI(): void {
   watchFilter = 'all';
   filterSelections = new Map(groupers.map(g => [g.name, new Set<string>()]));
   resetFilterPopup();
-  document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
+  litRender(countLabelTemplate(movies.length), document.getElementById('countLabel')!);
 
   renderGroupButtons();
   const toolbar = document.querySelector('.toolbar')!;
@@ -189,7 +212,8 @@ function initUI(): void {
     groupers,
     store,
     initialWatchFilter: watchFilter,
-    onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange)),
+    onPick: onOpenModal,
+    coverFor: m => coverUrl(m, embeddedImages, imgDir),
   });
   // Mantiene il dropdown tema nel masthead subito prima di reload.
   masthead.insertBefore(themeWrap, reloadBtn);
@@ -286,10 +310,7 @@ async function tryAutoLoad(): Promise<void> {
       configuredBgmDir = cfg.bgmDir ?? '';
       if (cfg.title) {
         document.title = cfg.title;
-        const loaderH1 = document.querySelector<HTMLElement>('#loader h1');
-        if (loaderH1) loaderH1.textContent = cfg.title;
-        const accentEl = document.querySelector<HTMLElement>('.masthead .accent');
-        if (accentEl) accentEl.textContent = cfg.title;
+        renderTitle(cfg.title);
       }
     }
   } catch (_) { /* config.json assente o non raggiungibile */ }
@@ -320,6 +341,8 @@ async function tryAutoLoad(): Promise<void> {
 initTransitions();
 initToast();
 applyTheme(getSavedTheme());
+// Titolo di default (testo statico di index.html); config.json può sovrascriverlo.
+renderTitle(mastTitle?.textContent?.trim() || 'CineManager');
 
 // Theme dropdown nel masthead
 themeWrap.className = 'theme-dropdown-wrap';
