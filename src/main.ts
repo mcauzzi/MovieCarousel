@@ -57,6 +57,11 @@ const dropZone = document.getElementById('dropZone') as HTMLElement;
 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
 const statusEl = document.getElementById('status') as HTMLElement;
 const imgDirInput = document.getElementById('imgDir') as HTMLInputElement;
+// Usati anche da initUI (riposizionamento del dropdown tema): dichiarati qui,
+// prima di ogni funzione che li referenzia, per non dipendere dall'ordine di chiamata.
+const masthead = document.querySelector<HTMLElement>('.masthead')!;
+const reloadBtn = document.getElementById('reloadBtn')!;
+const themeWrap = document.createElement('div');
 
 function setStatus(msg: string, error = false): void {
   statusEl.textContent = msg;
@@ -317,8 +322,6 @@ initToast();
 applyTheme(getSavedTheme());
 
 // Theme dropdown nel masthead
-const masthead = document.querySelector<HTMLElement>('.masthead')!;
-const themeWrap = document.createElement('div');
 themeWrap.className = 'theme-dropdown-wrap';
 const themeDropdown = document.createElement('select');
 themeDropdown.className = 'theme-dropdown';
@@ -332,7 +335,6 @@ THEMES.forEach(t => {
 });
 themeDropdown.onchange = () => applyTheme(themeDropdown.value);
 themeWrap.appendChild(themeDropdown);
-const reloadBtn = document.getElementById('reloadBtn')!;
 masthead.insertBefore(themeWrap, reloadBtn);
 
 // --- Event listeners ---
