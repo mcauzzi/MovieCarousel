@@ -20,7 +20,7 @@ CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner G
 
 ## Architecture
 
-Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build). Dev tooling: `eslint` + `typescript-eslint` + `prettier`.
+Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build: Anton, Oswald, JetBrains Mono, Bebas Neue; Barlow Condensed per MEMENTO e Baloo 2 per MAYONAKA). Dev tooling: `eslint` + `typescript-eslint` + `prettier`.
 
 All UI is built with **lit-html functional templates** (`` html`...` `` rendered via `render()`), not LitElement/web components — no Shadow DOM, so the global `style.css` applies everywhere. Templates are pure functions returning `TemplateResult`, kept in dedicated files under `src/templates/` (they import only `lit` + types, so they stay leaves and don't break the decoupling points). Each view module computes data + handlers and calls `render(template(...), container)`; stateful UI (popups, modal) keeps its state in a closure and re-renders on change — lit diffs efficiently. Event handlers are bound in the templates (`@click`/`@input`/`@error`).
 
@@ -117,9 +117,15 @@ Seed semantics: at load, `<visto>true</visto>` and the personal rating field of 
 
 Defined in `themes.ts` (`THEMES`): `p5` PHANTOM (default, red), `p3` MEMENTO (blue), `p4` MAYONAKA (gold). Selected via the `<select class="theme-dropdown">` in the masthead. `p5` removes the `data-theme` attribute from `<html>`; the others set it, activating the `[data-theme="..."]` CSS custom-property overrides.
 
-Token tematici trasversali: `--on-hot` (colore del testo sopra uno sfondo `--hot`: bianco su P5/P3, nero su P4 — usalo sempre al posto di `--ink` in quel caso) e `--tilt` (moltiplicatore delle inclinazioni decorative: ogni rotazione "a mano" è `rotate(calc(Xdeg * var(--tilt)))`; 1 su P5, 0.25 su P3, 0.8 su P4). `--star` e `--burst` sono clip-path a stella riusabili.
+Token tematici trasversali: `--on-hot` (colore del testo sopra uno sfondo `--hot`: bianco su P5, scuro su P3/P4 dove serve — usalo sempre al posto di `--ink` in quel caso), `--tilt` (moltiplicatore delle inclinazioni decorative: ogni rotazione "a mano" è `rotate(calc(Xdeg * var(--tilt)))`; 1 su P5, 0 su P3, 0.5 su P4), `--f-display` / `--f-head` / `--f-mono` (famiglie per ruolo: tutte le `font-family` di `style.css` passano da qui). `--star` e `--burst` sono clip-path a stella riusabili (P4 li ridefinisce come forme tonde).
 
-To add a theme: append `{ id, label }` to `THEMES` and add a `[data-theme="id"]` block in `style.css` overriding `--hot`, `--hot-2`, `--hot-deep`, `--bg`, `--bg-2`, `--surface`, `--line` (and `--on-hot` / `--tilt` if the defaults don't fit).
+Ogni tema ha un proprio linguaggio visivo, non solo una palette. Le regole di base (e la sezione TEMI coi token) disegnano PHANTOM; MEMENTO e MAYONAKA hanno ciascuno una sezione in fondo a `style.css` ("TEMA MEMENTO (P3)", "TEMA MAYONAKA (P4)") dove **ogni selettore inizia con `[data-theme="pX"]`** — PHANTOM non deve mai dipendere da quelle sezioni. Token privati: `--p3-*` e `--p4-*`.
+- **PHANTOM (P5):** rosso/nero/bianco, lettere ritagliate, poligoni strappati, ombre piene sfalsate, scatti con overshoot. Font Anton + Oswald.
+- **MEMENTO (P3 Reload):** blu notte e ciano, vetro e acqua, luna dell'Ora Buia, parallelogrammi puliti, nessuna rotazione, movimenti fluidi senza rimbalzi; i titoli ransom diventano un logotipo sottile (prima lettera ciano). Font Barlow Condensed. Alcuni testi decorativi sono sostituiti via CSS (`font-size:0` + `content`): MISSION→ARCANA e numero di riga→numero romano (aria-hidden), STOLEN→CLEARED, TARGET→REQUEST (dentro la card, che ha già `aria-label`). `backdrop-filter` solo su modal/popup/biglietto/loader, mai sulle card.
+- **MAYONAKA (P4):** giallo/nero, Midnight Channel: card e scheda come televisori (antenne, vetro CRT), statico e scanline, pavimento a scacchi e nebbia (`html::before/::after`), nastro giallo/nero, forme arrotondate (clip-path azzerati), bottoni "pressabili", pop giocosi; titoli ransom a tasselli tondi. Font Baloo 2.
+I font di P3/P4 sono bundlati via `@fontsource` ma scaricati dal browser solo quando il tema li usa. Ogni sezione tema ha il proprio blocco `prefers-reduced-motion` (le sue regole sono più specifiche di quelle base).
+
+To add a theme: append `{ id, label }` to `THEMES` and add a `[data-theme="id"]` block in `style.css` overriding `--hot`, `--hot-2`, `--hot-deep`, `--bg`, `--bg-2`, `--surface`, `--line` (and `--on-hot` / `--tilt` / `--f-*` if the defaults don't fit); for a distinct visual language add a dedicated "TEMA …" section at the end of `style.css` with every selector scoped to `[data-theme="id"]`.
 
 ### Key DOM elements
 
