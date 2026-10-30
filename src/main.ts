@@ -8,6 +8,15 @@ import '@fontsource/oswald/600.css';
 import '@fontsource/oswald/700.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
+// Font dei temi MEMENTO (P3: Barlow Condensed) e MAYONAKA (P4: Baloo 2): il
+// browser scarica i file solo quando il tema attivo li usa.
+import '@fontsource/barlow-condensed/300.css';
+import '@fontsource/barlow-condensed/300-italic.css';
+import '@fontsource/barlow-condensed/500.css';
+import '@fontsource/barlow-condensed/500-italic.css';
+import '@fontsource/barlow-condensed/700-italic.css';
+import '@fontsource/baloo-2/600.css';
+import '@fontsource/baloo-2/800.css';
 import './style.css';
 import JSZip from 'jszip';
 import { render as litRender } from 'lit';
@@ -17,16 +26,20 @@ import { buildGroupers } from './groupers';
 import type { Grouper } from './groupers';
 import { renderMain, resetRenderer } from './renderer';
 import type { WatchFilter } from './renderer';
-import { filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
+import { countLabelTemplate, filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
+import { ransomTemplate } from './templates/ransom.templates';
 import { openModal } from './modal';
 import { LocalStorageAdapter } from './store';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
-import { openRandomPicker, resetRandomPicker } from './random';
+import { openRandomPicker, resetRandomPicker, refreshRandomPicker } from './random';
+import { currentCopy } from './copy';
+import type { ThemeCopy } from './copy';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
+import { coverUrl } from './utils';
 import { computeStats, renderStats } from './stats';
 import { checkForNewVersion } from './version-check';
 import { initBgm } from './bgm';
@@ -62,6 +75,51 @@ const imgDirInput = document.getElementById('imgDir') as HTMLInputElement;
 const masthead = document.querySelector<HTMLElement>('.masthead')!;
 const reloadBtn = document.getElementById('reloadBtn')!;
 const themeWrap = document.createElement('div');
+const loaderTitle = document.querySelector<HTMLElement>('#loader h1');
+const mastTitle = document.querySelector<HTMLElement>('.masthead h1');
+
+// Titolo "a lettera anonima" nel loader e nel masthead (.accent). Le lettere
+// sono aria-hidden: il nome accessibile va in aria-label sull'h1. Al primo
+// render si svuota il testo statico di index.html (lit non lo rimuove da sé).
+let titleMounted = false;
+function renderTitle(title: string): void {
+  const targets: [HTMLElement | null, HTMLElement | null][] = [
+    [loaderTitle, loaderTitle],
+    [mastTitle, mastTitle?.querySelector<HTMLElement>('.accent') ?? null],
+  ];
+  for (const [heading, host] of targets) {
+    if (!heading || !host) continue;
+    if (!titleMounted) host.textContent = '';
+    heading.setAttribute('aria-label', title);
+    litRender(ransomTemplate(title), host);
+  }
+  titleMounted = true;
+}
+
+// Testi statici di index.html che cambiano col tema: gli elementi con
+// data-copy="<chiave>" ricevono la stringa omonima di ThemeCopy.
+type CopyTextKey = { [K in keyof ThemeCopy]: ThemeCopy[K] extends string ? K : never }[keyof ThemeCopy];
+function applyStaticCopy(): void {
+  const c = currentCopy();
+  document.querySelectorAll<HTMLElement>('[data-copy]').forEach(el => {
+    const text = c[el.dataset.copy as CopyTextKey];
+    if (typeof text === 'string') el.textContent = text;
+  });
+  (document.getElementById('search') as HTMLInputElement).placeholder = c.searchPlaceholder;
+}
+
+// Cambio tema: oltre a data-theme aggiorna i testi "di colore" (copy.ts) già a
+// schermo. Il picker RANDOM ha il titolo costruito una volta: si rilascia e
+// verrà ricostruito alla prossima apertura (un biglietto aperto resta).
+function onThemeChange(id: string): void {
+  applyTheme(id);
+  applyStaticCopy();
+  if (!movies.length) return;
+  litRender(countLabelTemplate(movies.length), document.getElementById('countLabel')!);
+  refreshRandomPicker();
+  if (isIntelView) renderStats(document.getElementById('main')!, computeStats(movies, store));
+  else render();
+}
 
 function setStatus(msg: string, error = false): void {
   statusEl.textContent = msg;
@@ -78,8 +136,9 @@ function updateFilterBadge(): void {
 
 // Riferimento stabile (non ricreato a ogni render): il renderer lo invoca
 // tramite un handler stabile, evitando il ri-aggancio dei listener sulle card.
+// Niente withTransition: l'apertura ha già il suo cut-in (modal.ts).
 const onOpenModal = (id: number) =>
-  withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange));
+  openModal(id, movies, embeddedImages, imgDir, store, onMovieChange);
 
 // Chiamato dopo una modifica a stato/voto (dal modal o da un'altra scheda).
 // Un cambio di voto può spostare un film tra i gruppi del grouper "Voto",
@@ -104,7 +163,7 @@ function rebuildGroupers(): void {
   const next = new Map<string, Set<string>>();
   for (const g of groupers) next.set(g.name, filterSelections.get(g.name) ?? new Set<string>());
   filterSelections = next;
-  resetRandomPicker();
+  refreshRandomPicker();
   resetFilterPopup();
   renderGroupButtons();
 }
@@ -158,7 +217,7 @@ function initUI(): void {
   watchFilter = 'all';
   filterSelections = new Map(groupers.map(g => [g.name, new Set<string>()]));
   resetFilterPopup();
-  document.getElementById('countLabel')!.textContent = '▰ ' + movies.length + ' targets ▰';
+  litRender(countLabelTemplate(movies.length), document.getElementById('countLabel')!);
 
   renderGroupButtons();
   const toolbar = document.querySelector('.toolbar')!;
@@ -189,7 +248,8 @@ function initUI(): void {
     groupers,
     store,
     initialWatchFilter: watchFilter,
-    onPick: id => withTransition(() => openModal(id, movies, embeddedImages, imgDir, store, onMovieChange)),
+    onPick: onOpenModal,
+    coverFor: m => coverUrl(m, embeddedImages, imgDir),
   });
   // Mantiene il dropdown tema nel masthead subito prima di reload.
   masthead.insertBefore(themeWrap, reloadBtn);
@@ -229,7 +289,7 @@ function initUI(): void {
 }
 
 async function handleFile(file: File): Promise<void> {
-  setStatus('▶ READING TARGET...');
+  setStatus(currentCopy().statusReading);
   try {
     const arrayBuf = await file.arrayBuffer();
     let xmlString: string;
@@ -238,12 +298,12 @@ async function handleFile(file: File): Promise<void> {
       const xmlFile = zip.file('tellico.xml');
       if (!xmlFile) throw new Error('tellico.xml non trovato nello zip');
       xmlString = await xmlFile.async('string');
-      setStatus('▶ EXTRACTING DATA...');
+      setStatus(currentCopy().statusExtracting);
     } catch (zipErr) {
       const text = new TextDecoder('utf-8').decode(arrayBuf);
       if (text.trim().startsWith('<?xml') || text.includes('<tellico')) {
         xmlString = text;
-        setStatus('▶ PARSING DIRECT XML...');
+        setStatus(currentCopy().statusParsing);
       } else throw zipErr;
     }
     const result = parseTellicoXml(xmlString);
@@ -264,7 +324,7 @@ async function handleFile(file: File): Promise<void> {
         ratingSeed[m.id] = m.rating as Rating;
     });
     store.setSeedRating(ratingSeed);
-    setStatus(`✓ ${movies.length} TARGETS ACQUIRED`);
+    setStatus(currentCopy().statusLoaded(movies.length));
     setTimeout(() => initUI(), 400);
   } catch (err) {
     console.error(err);
@@ -286,10 +346,7 @@ async function tryAutoLoad(): Promise<void> {
       configuredBgmDir = cfg.bgmDir ?? '';
       if (cfg.title) {
         document.title = cfg.title;
-        const loaderH1 = document.querySelector<HTMLElement>('#loader h1');
-        if (loaderH1) loaderH1.textContent = cfg.title;
-        const accentEl = document.querySelector<HTMLElement>('.masthead .accent');
-        if (accentEl) accentEl.textContent = cfg.title;
+        renderTitle(cfg.title);
       }
     }
   } catch (_) { /* config.json assente o non raggiungibile */ }
@@ -320,6 +377,9 @@ async function tryAutoLoad(): Promise<void> {
 initTransitions();
 initToast();
 applyTheme(getSavedTheme());
+applyStaticCopy();
+// Titolo di default (testo statico di index.html); config.json può sovrascriverlo.
+renderTitle(mastTitle?.textContent?.trim() || 'CineManager');
 
 // Theme dropdown nel masthead
 themeWrap.className = 'theme-dropdown-wrap';
@@ -333,7 +393,7 @@ THEMES.forEach(t => {
   if (getSavedTheme() === t.id) opt.selected = true;
   themeDropdown.appendChild(opt);
 });
-themeDropdown.onchange = () => applyTheme(themeDropdown.value);
+themeDropdown.onchange = () => onThemeChange(themeDropdown.value);
 themeWrap.appendChild(themeDropdown);
 masthead.insertBefore(themeWrap, reloadBtn);
 

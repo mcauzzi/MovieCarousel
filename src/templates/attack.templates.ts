@@ -1,0 +1,83 @@
+import { html } from 'lit';
+import type { TemplateResult } from 'lit';
+import type { Movie } from '../parser';
+import { ransomTemplate } from './ransom.templates';
+import { currentCopy } from '../copy';
+
+/* Overlay "ALL-OUT ATTACK!" del RANDOM: prima la raffica (raggi + stelle +
+   scritta a lettere ritagliate), poi il biglietto da visita col film estratto.
+   Le scritte in ransomTemplate sono aria-hidden: il testo accessibile sta in
+   elementi .visually-hidden affiancati. */
+
+/** Posizioni pseudo-casuali ma deterministiche per le stelle (stessa formula a ogni raffica). */
+function starsTemplate(count: number, cls: string): TemplateResult[] {
+  return Array.from({ length: count }, (_, i) => html`<i class=${cls}
+    style="--w:${40 + (i * 37) % 70}px;--x:${(i * 53) % 92}%;--y:${(i * 31 + 7) % 86}%;--d:${i * 45}ms"></i>`);
+}
+
+export function attackBurstTemplate(): TemplateResult {
+  const attack = currentCopy().attack;
+  return html`
+    <div class="aoa-stars" aria-hidden="true">${starsTemplate(11, 'aoa-star')}</div>
+    <div class="aoa-txt">${ransomTemplate(attack)}<span class="visually-hidden">${attack}</span></div>`;
+}
+
+export interface CallingCardData {
+  movie: Movie;
+  /** URL della copertina, null se assente o se il caricamento è fallito. */
+  cover: string | null;
+  poolCount: number;
+}
+
+export interface CallingCardHandlers {
+  onOpen: () => void;
+  onRetry: () => void;
+  onEdit: () => void;
+  onClose: () => void;
+  onCoverError: () => void;
+}
+
+/** Titolo come lettera anonima (va a capo solo tra le parole). Titoli lunghi → corpo più piccolo. */
+function titleTemplate(title: string): TemplateResult {
+  const size = title.length > 34 ? 'cc-title-xs' : title.length > 18 ? 'cc-title-sm' : '';
+  return html`<div class="cc-title ${size}">${ransomTemplate(title)}</div>`;
+}
+
+export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers): TemplateResult {
+  const m = d.movie;
+  const title = m.title || 'Senza titolo';
+  const minutes = m['running-time'];
+  const c = currentCopy();
+  const stolen = c.ccStolen(typeof minutes === 'number' && minutes > 0 ? minutes : null);
+  const meta = [m.year ? String(m.year) : '', (m.director ?? []).slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+
+  return html`
+    <div class="card-call">
+      <div class="cc-emb" aria-hidden="true"></div>
+      <p class="cc-line">${c.ccGreeting}</p>
+      <p class="cc-line">${stolen}</p>
+      <div class="cc-film">
+        <div class="cc-thumb">${d.cover
+          ? html`<img src=${d.cover} alt="" @error=${h.onCoverError}>`
+          : html`<span class="cc-thumb-ph" aria-hidden="true">?</span>`}</div>
+        <div class="cc-film-txt">
+          <h2 class="cc-h">${titleTemplate(title)}<span class="visually-hidden">${title}</span></h2>
+          ${meta ? html`<p class="cc-meta">${meta}</p>` : ''}
+        </div>
+      </div>
+      <p class="cc-line">${c.ccClosing}</p>
+      <div class="cc-sig">${c.ccSignature}</div>
+      <div class="cc-act">
+        <button class="cc-btn cc-pri" data-cc="open" @click=${h.onOpen}>APRI SCHEDA</button>
+        <button class="cc-btn cc-retry" data-cc="retry" @click=${h.onRetry}
+          aria-keyshortcuts="R">↻ RITENTA <kbd aria-hidden="true">R</kbd></button>
+      </div>
+      <div class="cc-sub">
+        <button class="cc-btn cc-sec" @click=${h.onEdit}>MODIFICA</button>
+        <button class="cc-btn cc-sec" @click=${h.onClose}>CHIUDI</button>
+        <span class="cc-pool">Pool: ${d.poolCount} film</span>
+      </div>
+    </div>
+    <div class="cc-reroll-stars" aria-hidden="true">${starsTemplate(5, 'cc-rstar')}</div>
+    <p class="visually-hidden" aria-live="polite">Film estratto: ${title}</p>`;
+}

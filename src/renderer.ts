@@ -1,7 +1,7 @@
 import { render, nothing } from 'lit';
 import type { Grouper } from './groupers';
 import { matchesSearch } from './groupers';
-import { coverUrl } from './utils';
+import { coverUrl, seededRandom } from './utils';
 import type { StoreAdapter } from './store';
 import { mainTemplate } from './templates/row.templates';
 import type { RowData } from './templates/row.templates';
@@ -25,6 +25,26 @@ interface RenderArgs {
   onOpenModal: OpenModalFn;
   watchFilter: WatchFilter;
   allowedIds?: Set<number>;
+}
+
+// Forma "tagliata a mano" per-card (poligono irregolare + inclinazione),
+// deterministica dall'id: stessa card, stessa forma a ogni render. Memoizzata
+// perché il render ricalcola tutte le card (badge, filtri, ricerca).
+interface CardShape { clip: string; tilt: string }
+const shapes = new Map<number, CardShape>();
+
+function cardShape(id: number): CardShape {
+  let s = shapes.get(id);
+  if (!s) {
+    const rnd = seededRandom('card' + id);
+    const j = (n: number) => (rnd() * n).toFixed(1);
+    s = {
+      clip: `polygon(${j(4)}% ${j(3)}%, ${(100 - rnd() * 3).toFixed(1)}% ${j(2)}%, 100% ${(100 - rnd() * 4).toFixed(1)}%, ${j(3)}% 100%)`,
+      tilt: (rnd() * 4 - 2).toFixed(2),
+    };
+    shapes.set(id, s);
+  }
+  return s;
 }
 
 let lastArgs: RenderArgs | null = null;
@@ -84,11 +104,12 @@ function doRender(): void {
         url: coverUrl(m, embeddedImages, imgDir),
         status: store.getStatus(m.id),
         failed: failedIds.has(m.id),
+        ...cardShape(m.id),
       })),
     });
   });
-  // Stringhe di stato vuoto coerenti in italiano (la "chrome" spy in inglese —
-  // masthead, placeholder ricerca, TARGET FILE — resta volutamente invariata).
+  // Stringhe di stato vuoto in italiano, uguali in ogni tema (i testi "di colore"
+  // dipendenti dal tema stanno in copy.ts).
   const emptyMsg = watchFilter === 'seen' ? 'Nessun film visto'
     : watchFilter === 'unseen' ? 'Nessun film da vedere'
     : 'Nessun film trovato';
@@ -112,6 +133,7 @@ export function renderMain(
 /** Azzera lo stato del renderer e svuota #main (su Reload e a ogni nuova collezione). */
 export function resetRenderer(): void {
   failedIds.clear();
+  shapes.clear();
   lastArgs = null;
   render(nothing, document.getElementById('main')!);
 }
