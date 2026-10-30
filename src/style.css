@@ -30,6 +30,14 @@
   --star:polygon(50% 0%, 63% 32%, 98% 35%, 71% 56%,
                  82% 94%, 50% 72%, 18% 94%, 29% 56%,
                  2% 35%, 37% 32%);
+  /* Stella "esplosione" a 12 punte (burst dietro le card, AOA). */
+  --burst:polygon(50% 0%,61% 30%,95% 22%,72% 48%,100% 70%,66% 72%,
+                  58% 100%,44% 76%,12% 92%,28% 64%,0% 42%,34% 36%);
+  /* Testo SOPRA uno sfondo --hot (bianco su rosso/blu, nero sul giallo P4). */
+  --on-hot:#ffffff;
+  /* Moltiplicatore delle inclinazioni "a mano": ogni rotate() decorativo
+     usa calc(Xdeg * var(--tilt)). P3 lo riduce, P4 lo attenua. */
+  --tilt:1;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -69,6 +77,36 @@ body::before{
 }
 .clip-tilt-right{
   clip-path:polygon(0 8%, 100% 0, 100% 92%, 0 100%);
+}
+
+/* =========================
+   RANSOM NOTE (templates/ransom.templates.ts)
+   ========================= */
+.ransom{display:inline-flex;flex-wrap:wrap;align-items:center;gap:0.04em;line-height:1;font-style:normal}
+.ransom-sp{display:inline-block;width:0.32em}
+.ransom-l{
+  display:inline-block;
+  padding:0.06em 0.12em 0.02em;
+  transform:translateY(var(--y)) rotate(calc(var(--r) * var(--tilt))) scale(var(--s));
+  transition:transform 0.25s cubic-bezier(0.2,1.6,0.4,1);
+}
+.ransom-l.rk1{background:var(--ink);color:#000;font-family:'Anton',sans-serif}
+.ransom-l.rk2{background:var(--hot);color:var(--on-hot);font-family:'Oswald',sans-serif;font-weight:700;font-style:italic}
+.ransom-l.rk3{background:#000;color:var(--ink);font-family:'JetBrains Mono',monospace;font-weight:700;box-shadow:inset 0 0 0 2px var(--ink)}
+.ransom-l.rk4{color:var(--ink);font-family:'Anton',sans-serif;text-shadow:3px 3px 0 var(--hot)}
+.ransom-l.rk5{background:var(--ink);color:var(--hot);font-family:'Oswald',sans-serif;font-weight:700}
+.ransom:hover .ransom-l{transform:translateY(calc(var(--y) * -1)) rotate(calc(var(--r) * var(--tilt) * -1)) scale(var(--s))}
+/* Iniziale ritagliata (capTitleTemplate) */
+.cap-initial{
+  display:inline-block;
+  background:var(--ink);color:#000;
+  font-family:'Anton',sans-serif;font-style:normal;font-weight:400;
+  padding:0 0.12em;margin-right:0.04em;
+  line-height:0.95;
+  transform:rotate(calc(-7deg * var(--tilt)));
+}
+@media (prefers-reduced-motion: reduce){
+  .ransom-l{transition:none}
 }
 
 /* =========================
@@ -1152,6 +1190,7 @@ main{
   --title-skew:-1deg;
   --card-tilt-a:0deg;
   --card-tilt-b:0deg;
+  --tilt:0.25;
 }
 
 /* MAYONAKA (P4) — Midnight Channel.
@@ -1170,6 +1209,8 @@ main{
       transparent 1.6px);
   --pattern-size:13px 13px;
   --grain-opacity:0.12;
+  --on-hot:#111111;
+  --tilt:0.8;
 }
 [data-theme="p4"] body::before{
   background-image:
