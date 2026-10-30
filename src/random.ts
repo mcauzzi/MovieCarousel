@@ -8,6 +8,7 @@ import type { PanelShell } from './filters';
 import { randomPickerBodyTemplate } from './templates/popup.templates';
 import { attackBurstTemplate, callingCardTemplate } from './templates/attack.templates';
 import type { CallingCardHandlers } from './templates/attack.templates';
+import { trapTab } from './utils';
 
 interface PickerParams {
   movies: Movie[];
@@ -31,23 +32,29 @@ interface AttackOverlay {
   destroy: () => void;
 }
 
-/* Picker e overlay All-Out Attack sono cache-ati a livello modulo e
-   rilasciati insieme da resetRandomPicker (Reload, nuova collezione, rebuild
-   dei grouper): l'overlay ri-estrae dal pool del picker, quindi vivono in coppia. */
+/* Picker e overlay All-Out Attack sono cache-ati a livello modulo.
+   resetRandomPicker (Reload, nuova collezione) li rilascia entrambi;
+   refreshRandomPicker (rebuild dei grouper, anche da un'altra scheda) rilascia
+   solo il picker, così il biglietto aperto sopravvive: RITENTA ripiega sul pool
+   del lancio finché non esiste un nuovo picker. */
 let picker: Picker | null = null;
 let attack: AttackOverlay | null = null;
 
 export function resetRandomPicker(): void {
-  picker?.shell.destroy();
-  picker = null;
+  refreshRandomPicker();
   attack?.destroy();
   attack = null;
+}
+
+export function refreshRandomPicker(): void {
+  picker?.shell.destroy();
+  picker = null;
 }
 
 export function openRandomPicker(params: PickerParams): void {
   if (!picker) {
     picker = buildPicker(params, pool => {
-      attack ??= buildAttack(params, () => picker?.getPool() ?? [], reopenPicker);
+      attack ??= buildAttack(params, () => picker?.getPool() ?? null, reopenPicker);
       attack.launch(pool);
     });
     document.body.appendChild(picker.shell.backdrop);
@@ -57,9 +64,11 @@ export function openRandomPicker(params: PickerParams): void {
   picker.shell.backdrop.classList.add('show');
 }
 
-/** MODIFICA: riapre il picker cached così com'è (selezioni intatte). */
+/** MODIFICA: riapre il picker cached così com'è (selezioni intatte). Se nel
+ *  frattempo è stato rilasciato (rebuild dei grouper), passa dal bottone RANDOM,
+ *  che lo ricostruisce con i parametri aggiornati di main. */
 function reopenPicker(): void {
-  if (!picker) return;
+  if (!picker) { document.getElementById('randomBtn')?.click(); return; }
   picker.shell.backdrop.classList.add('show');
   picker.shell.panel.querySelector<HTMLButtonElement>('.random-extract-btn')?.focus();
 }
@@ -128,7 +137,7 @@ function buildPicker(params: PickerParams, onLaunch: (pool: Movie[]) => void): P
    prefers-reduced-motion niente raffica: il biglietto appare subito.
    La tastiera è gestita in capture su document: Escape chiude SOLO l'overlay
    (stopPropagation → non arriva agli handler di modal, shell dei popup, menu Vista). */
-function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () => void): AttackOverlay {
+function buildAttack(params: PickerParams, getPool: () => Movie[] | null, onEdit: () => void): AttackOverlay {
   const { onPick, coverFor } = params;
   const BURST_MS = 1100;
 
@@ -142,6 +151,8 @@ function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () =>
 
   let phase: 'burst' | 'card' = 'burst';
   let movie: Movie | null = null;
+  // Pool del lancio: ripiego per RITENTA se il picker è stato rilasciato.
+  let launchedPool: Movie[] = [];
   let poolCount = 0;
   let coverFailed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -168,7 +179,9 @@ function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () =>
 
   /** Estrazione casuale; con pool > 1 evita di ripescare il film appena uscito. */
   function draw(pool: Movie[], avoidId?: number): Movie {
-    const candidates = pool.length > 1 && avoidId !== undefined ? pool.filter(m => m.id !== avoidId) : pool;
+    const others = avoidId !== undefined ? pool.filter(m => m.id !== avoidId) : pool;
+    // Con id duplicati nel .tc il filtro può svuotare il pool: si ripesca da tutto.
+    const candidates = others.length ? others : pool;
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
@@ -189,6 +202,7 @@ function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () =>
     if (!pool.length) return;
     clearTimer();
     movie = draw(pool);
+    launchedPool = pool;
     poolCount = pool.length;
     coverFailed = false;
     root.classList.remove('aoa-reroll');
@@ -203,7 +217,7 @@ function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () =>
 
   function onRetry(): void {
     if (phase !== 'card' || !movie) return;
-    const pool = getPool();
+    const pool = getPool() ?? launchedPool;
     if (!pool.length) return;
     movie = draw(pool, movie.id);
     poolCount = pool.length;
@@ -247,12 +261,7 @@ function buildAttack(params: PickerParams, getPool: () => Movie[], onEdit: () =>
       e.stopPropagation();
       onClose();
     } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const items = [...root.querySelectorAll<HTMLButtonElement>('button')];
-      if (!items.length) { root.focus(); return; }
-      const i = items.indexOf(document.activeElement as HTMLButtonElement);
-      const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i + 1) % items.length;
-      items[next].focus();
+      trapTab(root, e);
     } else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
       e.preventDefault();
       // Il focus resta dov'è: R, R, R… poi Invio su APRI SCHEDA.

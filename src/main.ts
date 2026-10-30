@@ -25,7 +25,7 @@ import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
 import { initTransitions, withTransition } from './transitions';
 import { initToast } from './toast';
-import { openRandomPicker, resetRandomPicker } from './random';
+import { openRandomPicker, resetRandomPicker, refreshRandomPicker } from './random';
 import { openFilterPopup, resetFilterPopup } from './filter-popup';
 import { buildPool } from './filters';
 import { coverUrl } from './utils';
@@ -127,7 +127,7 @@ function rebuildGroupers(): void {
   const next = new Map<string, Set<string>>();
   for (const g of groupers) next.set(g.name, filterSelections.get(g.name) ?? new Set<string>());
   filterSelections = next;
-  resetRandomPicker();
+  refreshRandomPicker();
   resetFilterPopup();
   renderGroupButtons();
 }

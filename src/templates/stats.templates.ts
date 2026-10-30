@@ -6,10 +6,12 @@ import { ransomTemplate, capTitleTemplate } from './ransom.templates';
 // Numero di tacche della barra PROGRESS (stile metro a segmenti P5).
 const PROGRESS_SEGMENTS = 20;
 
-export function barTemplate(label: string | TemplateResult, value: number, max: number, ariaLabel?: string): TemplateResult {
+/** `srLabel`: testo per gli screen reader quando l'etichetta visiva è grafica
+ *  (tacche RANK aria-hidden). Un aria-label su un div generico verrebbe ignorato. */
+export function barTemplate(label: string | TemplateResult, value: number, max: number, srLabel?: string): TemplateResult {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return html`<div class="stat-bar-row">
-    <div class="stat-bar-label" aria-label=${ariaLabel ?? (typeof label === 'string' ? label : '')}>${label}</div>
+    <div class="stat-bar-label">${label}${srLabel ? html`<span class="visually-hidden">${srLabel}</span>` : ''}</div>
     <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${pct}%"></div></div>
     <div class="stat-bar-val">${value}</div>
   </div>`;
@@ -35,7 +37,7 @@ function radarTemplate(entries: [string, number][]): TemplateResult | string {
   const ring = (f: number) => entries.map((_, i) => pt(i, f).join(',')).join(' ');
   const shape = entries.map(([, v], i) => pt(i, v / max).join(',')).join(' ');
   return html`<figure class="stat-radar">
-    <svg viewBox="-60 0 420 300" role="img" aria-label=${'Generi principali: ' + entries.map(([g, v]) => `${g} ${v}`).join(', ')}>
+    <svg viewBox="-100 0 500 300" role="img" aria-label=${'Generi principali: ' + entries.map(([g, v]) => `${g} ${v}`).join(', ')}>
       ${[1, 0.66, 0.33].map(f => svg`<polygon class="radar-ring" points=${ring(f)}></polygon>`)}
       ${entries.map((_, i) => { const [x, y] = pt(i, 1); return svg`<line class="radar-axis" x1=${C} y1=${C} x2=${x} y2=${y}></line>`; })}
       <polygon class="radar-shape-shadow" points=${shape} transform="translate(6 6)"></polygon>
@@ -43,7 +45,10 @@ function radarTemplate(entries: [string, number][]): TemplateResult | string {
       ${entries.map(([g, v], i) => {
         const [x, y] = pt(i, 1.2);
         const anchor = Math.abs(x - C) < 8 ? 'middle' : x > C ? 'start' : 'end';
-        return svg`<text class="radar-label" x=${x} y=${y} text-anchor=${anchor} dominant-baseline="middle">${g.toUpperCase()} <tspan class="radar-val">${v}</tspan></text>`;
+        // Etichette lunghe accorciate: il viewBox lascia ~130 unità oltre l'etichetta
+        // (nome completo nell'aria-label dell'svg).
+        const name = g.length > 13 ? g.slice(0, 12) + '…' : g;
+        return svg`<text class="radar-label" x=${x} y=${y} text-anchor=${anchor} dominant-baseline="middle">${name.toUpperCase()} <tspan class="radar-val">${v}</tspan></text>`;
       })}
     </svg>
   </figure>`;
@@ -57,7 +62,7 @@ export function statsTemplate(stats: Stats): TemplateResult {
   const decadeMax = Math.max(...stats.byDecade.map(([, n]) => n), 1);
   const ratingMax = Math.max(...stats.byRating.map(([, n]) => n), 1);
   const section = (title: string, body: unknown, wide = false) =>
-    html`<div class="stats-section ${wide ? 'stats-section-wide' : ''}"><h3 class="stats-section-title">${capTitleTemplate(title)}</h3>${body}</div>`;
+    html`<div class="stats-section ${wide ? 'stats-section-wide' : ''}"><h3 class="stats-section-title" aria-label=${title}>${capTitleTemplate(title)}</h3>${body}</div>`;
 
   return html`<div class="stats-panel">
     <div class="intel-header">

@@ -42,3 +42,25 @@ export function seededRandom(seed: string): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/** Elementi attivabili da tastiera dentro `container` (esclusi i disabilitati). */
+export function focusablesIn(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter(el => !el.hasAttribute('disabled'));
+}
+
+/** Focus trap condiviso dai dialog (scheda film, All-Out Attack): da chiamare
+ *  nel keydown di Tab. Il focus cicla tra gli elementi attivabili senza uscire
+ *  da `container`, anche quando parte dal container stesso (es. durante il cut-in). */
+export function trapTab(container: HTMLElement, e: KeyboardEvent): void {
+  const items = focusablesIn(container);
+  if (!items.length) { e.preventDefault(); container.focus(); return; }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  if (i === -1) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (e.shiftKey && i === 0) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && i === items.length - 1) { e.preventDefault(); first.focus(); }
+}

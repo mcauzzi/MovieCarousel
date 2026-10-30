@@ -6,7 +6,7 @@ import { ransomTemplate } from './ransom.templates';
 /* Overlay "ALL-OUT ATTACK!" del RANDOM: prima la raffica (raggi + stelle +
    scritta a lettere ritagliate), poi il biglietto da visita col film estratto.
    Le scritte in ransomTemplate sono aria-hidden: il testo accessibile sta in
-   elementi .aoa-sr (visually hidden) affiancati. */
+   elementi .visually-hidden affiancati. */
 
 /** Posizioni pseudo-casuali ma deterministiche per le stelle (stessa formula a ogni raffica). */
 function starsTemplate(count: number, cls: string): TemplateResult[] {
@@ -17,7 +17,7 @@ function starsTemplate(count: number, cls: string): TemplateResult[] {
 export function attackBurstTemplate(): TemplateResult {
   return html`
     <div class="aoa-stars" aria-hidden="true">${starsTemplate(11, 'aoa-star')}</div>
-    <div class="aoa-txt">${ransomTemplate('All-out')}${ransomTemplate('attack!')}<span class="aoa-sr">All-out attack!</span></div>`;
+    <div class="aoa-txt">${ransomTemplate('All-out attack!')}<span class="visually-hidden">All-out attack!</span></div>`;
 }
 
 export interface CallingCardData {
@@ -35,12 +35,10 @@ export interface CallingCardHandlers {
   onCoverError: () => void;
 }
 
-/** Titolo come lettera anonima, una parola per ritaglio: va a capo tra le
- *  parole invece che a metà parola. Titoli lunghi → corpo più piccolo. */
+/** Titolo come lettera anonima (va a capo solo tra le parole). Titoli lunghi → corpo più piccolo. */
 function titleTemplate(title: string): TemplateResult {
-  const words = title.split(/\s+/).filter(Boolean);
   const size = title.length > 34 ? 'cc-title-xs' : title.length > 18 ? 'cc-title-sm' : '';
-  return html`<div class="cc-title ${size}">${words.map(w => ransomTemplate(w))}</div>`;
+  return html`<div class="cc-title ${size}">${ransomTemplate(title)}</div>`;
 }
 
 export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers): TemplateResult {
@@ -62,7 +60,7 @@ export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers):
           ? html`<img src=${d.cover} alt="" @error=${h.onCoverError}>`
           : html`<span class="cc-thumb-ph" aria-hidden="true">?</span>`}</div>
         <div class="cc-film-txt">
-          <h2 class="cc-h">${titleTemplate(title)}<span class="aoa-sr">${title}</span></h2>
+          <h2 class="cc-h">${titleTemplate(title)}<span class="visually-hidden">${title}</span></h2>
           ${meta ? html`<p class="cc-meta">${meta}</p>` : ''}
         </div>
       </div>
@@ -80,5 +78,5 @@ export function callingCardTemplate(d: CallingCardData, h: CallingCardHandlers):
       </div>
     </div>
     <div class="cc-reroll-stars" aria-hidden="true">${starsTemplate(5, 'cc-rstar')}</div>
-    <p class="aoa-sr" aria-live="polite">Film estratto: ${title}</p>`;
+    <p class="visually-hidden" aria-live="polite">Film estratto: ${title}</p>`;
 }

@@ -113,6 +113,11 @@ body::before{
 @media (prefers-reduced-motion: reduce){
   .ransom-l{transition:none}
 }
+/* Testo solo per screen reader (titoli ransom aria-hidden, etichette grafiche, live region) */
+.visually-hidden{
+  position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;
+}
 
 /* =========================
    LOADER
@@ -1005,6 +1010,8 @@ main{
    dissolvenza) e un pointer-events:auto sul figlio vincerebbe sul none del
    backdrop nascosto, intercettando i click sulla pagina. */
 .modal-backdrop.show .modal.in{pointer-events:auto}
+/* Il dialog riceve il focus da script durante il cut-in: niente contorno. */
+.modal:focus{outline:none}
 @keyframes modal-slam{to{opacity:1;transform:none}}
 
 /* Colonna copertina: fondo --hot a righe diagonali, poster in cornice bianca
@@ -1096,11 +1103,6 @@ main{
   line-height:1;
   margin-bottom:1rem;
   padding-right:3.5rem;
-}
-/* Testo accessibile del titolo (le lettere ransom sono aria-hidden) */
-.modal .visually-hidden{
-  position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
-  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;
 }
 /* Meta come tag inclinati alternati bianco/nero */
 .m-tags{display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem}
@@ -1780,7 +1782,7 @@ main{
 .stat-rank-pip{width:9px;height:16px;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--ink-faint);transform:skewX(-14deg)}
 .stat-rank-pip.on{background:var(--hot);box-shadow:inset 0 0 0 1.5px var(--ink)}
 /* Radar "social stats" dei generi */
-.stat-radar{margin:0 auto 1.2rem;max-width:420px}
+.stat-radar{margin:0 auto 1.2rem;max-width:480px}
 .stat-radar svg{display:block;width:100%;height:auto}
 .radar-ring{fill:none;stroke:var(--ink-faint);stroke-width:1}
 .radar-ring:first-child{stroke:var(--ink);stroke-width:2}
@@ -2272,11 +2274,6 @@ main{
 /* Dietro al biglietto i raggi si attenuano e rallentano: leggibilità prima */
 .aoa:has(.card-call)::before{opacity:0.45;animation-duration:16s}
 @keyframes aoa-spin{to{transform:rotate(360deg)}}
-
-.aoa-sr{
-  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
-  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
-}
 
 /* Raffica: stelle burst bianche che scoppiano */
 .aoa-stars,.cc-reroll-stars{position:fixed;inset:0;pointer-events:none}

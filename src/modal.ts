@@ -1,6 +1,6 @@
 import { render } from 'lit';
 import type { Movie } from './parser';
-import { coverUrl } from './utils';
+import { coverUrl, focusablesIn, trapTab } from './utils';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { showToast } from './toast';
 import { modalTemplate, cutinTemplate } from './templates/modal.templates';
@@ -8,6 +8,8 @@ import type { FieldData, ModalData, ModalHandlers } from './templates/modal.temp
 
 const modalEl = document.getElementById('modal')!;
 const modalContent = document.getElementById('modalContent')!;
+// Focusabile da script: durante il cut-in il focus sta sul dialog stesso.
+modalContent.tabIndex = -1;
 
 // Cut-in d'apertura: banda --hot che attraversa lo schermo col titolo, sopra al
 // backdrop (fuori da #modal, così non eredita la dissolvenza in opacità).
@@ -33,16 +35,12 @@ function cancelCutin(): void {
   cutinEl.classList.remove('go');
 }
 
-/** Dossier visibile: parte lo "slam" e il focus entra nel dialog. */
+/** Dossier visibile: parte lo "slam" e il focus va al primo controllo, a meno
+ *  che l'utente non si sia già spostato su un controllo durante il cut-in. */
 function showDossier(): void {
   modalContent.classList.add('in');
-  focusables()[0]?.focus();
-}
-
-function focusables(): HTMLElement[] {
-  return Array.from(
-    modalContent.querySelectorAll<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])'),
-  ).filter(el => !el.hasAttribute('disabled'));
+  const active = document.activeElement;
+  if (active === modalContent || !modalContent.contains(active)) focusablesIn(modalContent)[0]?.focus();
 }
 
 export function openModal(
@@ -123,6 +121,9 @@ export function openModal(
   document.body.style.overflow = 'hidden';
 
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { showDossier(); return; }
+  // Il focus entra subito nel dialog (trap attivo, la card dietro non riceve
+  // più Invio/Spazio); passerà al primo controllo quando il dossier è visibile.
+  modalContent.focus({ preventScroll: true });
   // Cut-in: banda col titolo; a metà corsa il dossier sbatte in posizione.
   render(cutinTemplate(m.title ?? ''), cutinEl);
   void cutinEl.offsetWidth; // riavvia l'animazione anche se era già in corso
@@ -140,18 +141,14 @@ export function closeModal(): void {
 }
 
 // Focus trap: con il dialog aperto, Tab/Shift+Tab restano dentro al modal.
-modalContent.addEventListener('keydown', e => {
-  if (e.key !== 'Tab') return;
-  const items = focusables();
-  if (!items.length) return;
-  const first = items[0];
-  const last = items[items.length - 1];
-  const active = document.activeElement;
-  if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
-  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
-});
+modalContent.addEventListener('keydown', e => { if (e.key === 'Tab') trapTab(modalContent, e); });
 
-modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModal(); });
+// Click sul backdrop = chiudi, ma solo a dossier visibile: durante il cut-in il
+// dossier è pointer-events:none e un doppio click sulla card (o su APRI SCHEDA)
+// finirebbe sul backdrop chiudendo subito la scheda appena aperta.
+modalEl.addEventListener('click', e => {
+  if (e.target === modalEl && modalContent.classList.contains('in')) closeModal();
+});
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || !modalEl.classList.contains('show')) return;
   // Se un popup (FILTRI/RANDOM) è aperto sopra al modal, lascia che gestisca lui
