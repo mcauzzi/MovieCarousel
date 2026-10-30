@@ -35,8 +35,8 @@ main.ts  →  parser.ts       (leaf)
          →  random.ts       →  filters.ts, templates/popup, templates/attack, lit (+ shared types)
          →  filter-popup.ts →  filters.ts, templates/popup, lit (+ shared types)
          →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only), templates/filters, lit
-         →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts   (leaves)
-         →  templates/*.templates.ts   (import only lit, types, utils.ts and other templates — mai moduli con stato)
+         →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts, copy.ts   (leaves)
+         →  templates/*.templates.ts   (import only lit, types, utils.ts, copy.ts and other templates — mai moduli con stato)
          →  style.css
 
 utils.ts (leaf — no imports)
@@ -65,6 +65,7 @@ All mutable application state lives exclusively in `main.ts` (movies, embeddedIm
 | `src/stats.ts` | INTEL view — computes and renders collection statistics (titolo ransom, PROGRESS a tacche, radar SVG dei top generi in scala, barre oblique) |
 | `src/store.ts` | `LocalStorageAdapter` for watch status and ratings (with seed from the `.tc` file); `setItem` wrapped in try/catch; `setOnExternalChange` ri-renderizza su evento `storage` (sync multi-scheda) |
 | `src/themes.ts` | Theme list + `applyTheme`/`getSavedTheme` (persisted in localStorage, `data-theme` on `<html>`) |
+| `src/copy.ts` | Testi "di colore" per tema (`COPY: Record<ThemeId, ThemeCopy>`, `currentCopy()` legge `data-theme`): unità del contatore, etichetta e numero di riga, timbri visto/watchlist, segnaposto copertina, intestazione e toast della scheda, titolo del picker, testi dell'All-Out Attack e del biglietto, intestazione e card INTEL, loader, placeholder ricerca, messaggi di caricamento. Foglia senza import. I nomi funzionali dei controlli (FILTRI, RANDOM, INTEL, VISTA, SEEN/WATCHLIST) e i messaggi d'errore restano uguali in ogni tema |
 | `src/toast.ts` | Toast notifications (`showToast`) |
 | `src/version-check.ts` | `checkForNewVersion` — all'avvio confronta il bundle del documento con l'`index.html` fresco dal server; se differiscono ricarica la pagina una volta (anti cache stantia, no-op in dev e su `file://`) |
 | `src/bgm.ts` | Widget musica di sottofondo nel masthead — `initBgm(masthead, anchorEl, bgmDir?)`. Controller leaf auto-contenuto: discovery tracce (autoindex del server → fallback manifest `bgm/tracks.json`), elemento `<audio loop>`, play/pausa + volume, stato in closure. **Deroga** consapevole all'invariante "stato solo in main.ts": lo stato del player è UI-locale (come `toast.ts`/`transitions.ts`), non stato di dominio. Se non trova tracce non monta nulla |
@@ -121,9 +122,9 @@ Token tematici trasversali: `--on-hot` (colore del testo sopra uno sfondo `--hot
 
 Ogni tema ha un proprio linguaggio visivo, non solo una palette. Le regole di base (e la sezione TEMI coi token) disegnano PHANTOM; MEMENTO e MAYONAKA hanno ciascuno una sezione in fondo a `style.css` ("TEMA MEMENTO (P3)", "TEMA MAYONAKA (P4)") dove **ogni selettore inizia con `[data-theme="pX"]`** — PHANTOM non deve mai dipendere da quelle sezioni. Token privati: `--p3-*` e `--p4-*`.
 - **PHANTOM (P5):** rosso/nero/bianco, lettere ritagliate, poligoni strappati, ombre piene sfalsate, scatti con overshoot. Font Anton + Oswald.
-- **MEMENTO (P3 Reload):** blu notte e ciano, vetro e acqua, luna dell'Ora Buia, parallelogrammi puliti, nessuna rotazione, movimenti fluidi senza rimbalzi; i titoli ransom diventano un logotipo sottile (prima lettera ciano). Font Barlow Condensed. Alcuni testi decorativi sono sostituiti via CSS (`font-size:0` + `content`): MISSION→ARCANA e numero di riga→numero romano (aria-hidden), STOLEN→CLEARED, TARGET→REQUEST (dentro la card, che ha già `aria-label`). `backdrop-filter` solo su modal/popup/biglietto/loader, mai sulle card.
+- **MEMENTO (P3 Reload):** blu notte e ciano, vetro e acqua, luna dell'Ora Buia, parallelogrammi puliti, nessuna rotazione, movimenti fluidi senza rimbalzi; i titoli ransom diventano un logotipo sottile (prima lettera ciano). Font Barlow Condensed. `backdrop-filter` solo su modal/popup/biglietto/loader, mai sulle card.
 - **MAYONAKA (P4):** giallo/nero, Midnight Channel: card e scheda come televisori (antenne, vetro CRT), statico e scanline, pavimento a scacchi e nebbia (`html::before/::after`), nastro giallo/nero, forme arrotondate (clip-path azzerati), bottoni "pressabili", pop giocosi; titoli ransom a tasselli tondi. Font Baloo 2.
-I font di P3/P4 sono bundlati via `@fontsource` ma scaricati dal browser solo quando il tema li usa. Ogni sezione tema ha il proprio blocco `prefers-reduced-motion` (le sue regole sono più specifiche di quelle base).
+Anche i testi seguono il tema (`copy.ts`: Ladri Fantasma in P5, Velvet Room/S.E.E.S. con Arcani in numeri romani in P3, Investigation Team/Midnight Channel in P4): mai sostituirli via CSS `content`, aggiungere la chiave in `ThemeCopy`. Al cambio tema `onThemeChange` in `main.ts` aggiorna i testi statici (elementi `[data-copy="<chiave>"]` di `index.html` + placeholder di `#search`), il contatore, rilascia il picker RANDOM (`refreshRandomPicker`, titolo costruito una volta) e ri-renderizza la vista corrente. I font di P3/P4 sono bundlati via `@fontsource` ma scaricati dal browser solo quando il tema li usa. Ogni sezione tema ha il proprio blocco `prefers-reduced-motion` (le sue regole sono più specifiche di quelle base).
 
 To add a theme: append `{ id, label }` to `THEMES` and add a `[data-theme="id"]` block in `style.css` overriding `--hot`, `--hot-2`, `--hot-deep`, `--bg`, `--bg-2`, `--surface`, `--line` (and `--on-hot` / `--tilt` / `--f-*` if the defaults don't fit); for a distinct visual language add a dedicated "TEMA …" section at the end of `style.css` with every selector scoped to `[data-theme="id"]`.
 
