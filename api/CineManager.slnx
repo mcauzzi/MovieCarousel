@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CineManager.Api.Tests/CineManager.Api.Tests.csproj" />
+  <Project Path="CineManager.Api/CineManager.Api.csproj" />
+</Solution>
