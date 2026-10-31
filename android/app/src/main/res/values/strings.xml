@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
+    <!-- app_name è definito in app/build.gradle.kts (resValue), diverso per debug e release. -->
+    <string name="app_title">CineManager</string>
+
+    <!-- Comuni -->
+    <string name="action_back">Indietro</string>
+    <string name="action_cancel">Annulla</string>
+    <string name="action_continue">Continua</string>
+    <string name="action_retry">Riprova</string>
+    <string name="busy">Operazione in corso</string>
+    <string name="untitled">Senza titolo</string>
+    <string name="poster_of">Locandina di %1$s</string>
+
+    <!-- Sblocco biometrico (§4.2) -->
+    <string name="biometric_title">Sblocca CineManager</string>
+    <string name="biometric_subtitle">Conferma con impronta o PIN: le firme restano attive per 10 minuti.</string>
+    <string name="locked_title">App bloccata</string>
+    <string name="locked_body">È attiva l\'opzione «Chiedi impronta all\'apertura».</string>
+    <string name="locked_action">Sblocca</string>
+
+    <!-- Fotocamera -->
+    <string name="camera_needed">Per leggere i codici serve la fotocamera.</string>
+    <string name="camera_denied">Permesso della fotocamera negato. Puoi concederlo, oppure inserire il codice a mano.</string>
+    <string name="camera_allow">Consenti fotocamera</string>
+    <string name="camera_preview_qr">Anteprima della fotocamera: inquadra il QR di abbinamento</string>
+    <string name="camera_preview_ean">Anteprima della fotocamera: inquadra il codice a barre del DVD</string>
+
+    <!-- 1. Abbinamento -->
+    <string name="pair_title">Abbinamento</string>
+    <string name="pair_heading">Collega questo telefono</string>
+    <string name="pair_intro">Sul sito apri ARRIVI › TELEFONO e premi ABBINA: compare un QR valido 5 minuti. Inquadralo qui sotto.</string>
+    <string name="pair_device_name">Nome del telefono</string>
+    <string name="pair_device_name_help">Lo vedrai nella lista dei dispositivi sul sito.</string>
+    <string name="pair_scan">Scansiona il QR</string>
+    <string name="pair_scan_hint">Inquadra il QR di abbinamento mostrato dal sito.</string>
+    <string name="pair_manual_toggle">Non riesci a inquadrarlo? Incolla il contenuto</string>
+    <string name="pair_manual_label">Contenuto del QR</string>
+    <string name="pair_manual_submit">Abbina</string>
+    <string name="pair_done">Abbinato a %1$s.</string>
+    <string name="pair_error_code">Codice non valido, scaduto o già usato: genera un nuovo QR sul sito.</string>
+    <string name="pair_error_key">Il server ha rifiutato la chiave del telefono. Riprova con un nuovo QR.</string>
+    <string name="pair_error_name">Inserisci un nome per il telefono (al massimo 100 caratteri).</string>
+    <string name="pair_error_generic">Abbinamento non riuscito.</string>
+    <string name="pair_error_keystore">Impossibile creare la chiave sul telefono: %1$s</string>
+    <string name="qr_error_not_cinemanager">Questo non è un QR di abbinamento di CineManager.</string>
+    <string name="qr_error_version">QR di una versione più recente: aggiorna l\'app.</string>
+    <string name="qr_error_api">Il QR contiene un indirizzo del server non valido.</string>
+    <string name="qr_error_http">Il QR punta a un indirizzo non protetto (http): non è ammesso.</string>
+    <string name="qr_error_code">Il QR contiene un codice non valido.</string>
+
+    <!-- Riabbinamento -->
+    <string name="repair_title">Serve un nuovo abbinamento</string>
+    <string name="repair_revoked">Questo telefono è stato scollegato dal sito.</string>
+    <string name="repair_invalidated">Android ha invalidato la chiave del telefono (blocco schermo o impronte cambiati).</string>
+    <string name="repair_missing">La chiave del telefono non c\'è più.</string>
+    <string name="repair_action">Abbina di nuovo</string>
+
+    <!-- Versioni (§11.1) -->
+    <string name="update_required_title">Aggiornamento necessario</string>
+    <string name="update_required_body">Questa versione dell\'app non è più supportata dal server: scarica e installa quella nuova. L\'invio dei film è disattivato.</string>
+    <string name="update_download">Scarica l\'APK</string>
+    <string name="update_install_note">Si apre il browser: accedi al sito, poi apri il file scaricato. La prima volta Android chiede di consentire l\'installazione dal browser.</string>
+    <string name="update_available">Aggiornamento disponibile: %1$s</string>
+
+    <!-- Proprietario non attivo (403) -->
+    <string name="owner_inactive_title">Accedi al sito</string>
+    <string name="owner_inactive_body">Il server non accetta più questo telefono finché il proprietario non accede di nuovo al sito.</string>
+    <string name="owner_inactive_open_site">Apri il sito</string>
+
+    <!-- 2. Scansione -->
+    <string name="scan_title">Scansiona</string>
+    <string name="scan_hint">Inquadra il codice a barre sul retro della custodia.</string>
+    <string name="scan_manual_label">EAN a mano</string>
+    <string name="scan_manual_submit">Cerca</string>
+    <string name="scan_invalid_ean">Codice non valido: servono da 8 a 14 cifre.</string>
+
+    <!-- 3. Scelta -->
+    <string name="choose_title">Quale film?</string>
+    <string name="choose_ean">EAN %1$s</string>
+    <string name="choose_product">Prodotto: %1$s</string>
+    <string name="choose_pick">Scegli il film</string>
+    <string name="choose_search_heading">Cerca a mano</string>
+    <string name="choose_query">Titolo</string>
+    <string name="choose_year">Anno (facoltativo)</string>
+    <string name="choose_search">Cerca su TMDb</string>
+    <string name="choose_manual">Compila a mano</string>
+    <string name="choose_unknown_ean">EAN sconosciuto: cerca il titolo a mano.</string>
+    <string name="choose_no_match">Nessun film trovato per questo prodotto: cerca a mano.</string>
+    <string name="choose_no_results">Nessun risultato.</string>
+    <string name="choose_tmdb_unavailable">TMDb non disponibile: dati solo dal nome del prodotto.</string>
+    <string name="duplicates_title">Forse ce l\'hai già</string>
+
+    <!-- 4. Modulo -->
+    <string name="form_title">Controlla e invia</string>
+    <string name="form_no_tmdb">Senza collegamento a TMDb: nessuna copertina.</string>
+    <string name="form_wrong_movie">Film sbagliato? Torna alla scelta</string>
+    <string name="form_submit">Invia</string>
+    <string name="form_fix_errors">Correggi i campi segnati.</string>
+    <string name="form_server_errors">Il server ha rifiutato alcuni campi.</string>
+    <string name="form_none">(nessuno)</string>
+    <string name="form_date_placeholder">AAAA-MM-GG</string>
+    <string name="form_add">Aggiungi</string>
+    <string name="form_add_value">Aggiungi a %1$s</string>
+    <string name="form_remove_value">Rimuovi %1$s</string>
+    <string name="form_actor">Attore</string>
+    <string name="form_role">Ruolo</string>
+    <string name="form_row">Riga %1$d</string>
+    <string name="form_cells_help">Separa le colonne con ::</string>
+    <string name="form_add_row">Aggiungi riga</string>
+    <string name="form_remove_row">Rimuovi la riga %1$d</string>
+
+    <!-- 5. Esito -->
+    <string name="result_title">Esito</string>
+    <string name="result_added_title">Aggiunto</string>
+    <string name="result_added_body">«%1$s» è nella collezione.</string>
+    <string name="result_exists_title">Già presente</string>
+    <string name="result_exists_body">Questo EAN è già nella collezione: «%1$s».</string>
+    <string name="result_exists_body_untitled">Questo EAN è già nella collezione.</string>
+    <string name="result_duplicate_title">Possibile doppione</string>
+    <string name="result_duplicate_body">Nella collezione c\'è già un film con lo stesso titolo e anno, o lo stesso film TMDb.</string>
+    <string name="result_duplicate_confirm">Aggiungi comunque</string>
+    <string name="result_duplicate_edit">Torna al modulo</string>
+    <string name="result_next">Scansiona il prossimo</string>
+
+    <!-- 6. Impostazioni -->
+    <string name="settings_title">Impostazioni</string>
+    <string name="settings_pairing">Abbinamento</string>
+    <string name="settings_server">Server</string>
+    <string name="settings_user">Utente</string>
+    <string name="settings_device">Telefono</string>
+    <string name="settings_open_site">Apri il sito</string>
+    <string name="settings_security">Sicurezza</string>
+    <string name="settings_biometric">Chiedi impronta all\'apertura</string>
+    <string name="settings_biometric_help">Impronta o PIN all\'apertura; le firme restano attive per 10 minuti.</string>
+    <string name="settings_biometric_unavailable">Serve un blocco schermo con PIN, sequenza, password o impronta.</string>
+    <string name="settings_biometric_on_title">Attivare l\'impronta?</string>
+    <string name="settings_biometric_off_title">Disattivare l\'impronta?</string>
+    <string name="settings_biometric_repair">La protezione è legata alla chiave del telefono: cambiarla scollega questo telefono e richiede un nuovo abbinamento con il QR del sito.</string>
+    <string name="settings_biometric_repair_done">Impostazione salvata: abbina di nuovo il telefono.</string>
+    <string name="settings_unpair">Scollega</string>
+    <string name="settings_unpair_title">Scollegare il telefono?</string>
+    <string name="settings_unpair_body">Il telefono viene revocato sul server e la sua chiave cancellata. Per usarlo di nuovo servirà un nuovo QR.</string>
+    <string name="settings_unpair_offline_title">Server non raggiungibile</string>
+    <string name="settings_unpair_offline_body">Se scolleghi ora, sul server il dispositivo resta attivo finché non lo revochi dal sito (ARRIVI › TELEFONO).</string>
+    <string name="settings_unpair_anyway">Scollega comunque</string>
+    <string name="settings_unpaired">Telefono scollegato.</string>
+    <string name="settings_unpaired_offline">Telefono scollegato solo qui: revocalo anche dal sito.</string>
+    <string name="settings_about">Informazioni</string>
+    <string name="settings_version">Versione dell\'app</string>
+    <string name="tmdb_attribution">This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+
+    <!-- Errori -->
+    <string name="error_network">Server non raggiungibile: controlla la connessione.</string>
+    <string name="error_clock">Richiesta rifiutata per l\'orario: controlla data e ora del telefono.</string>
+    <string name="error_unauthorized">Richiesta rifiutata dal server (%1$s).</string>
+    <string name="error_forbidden">Operazione non permessa.</string>
+    <string name="error_validation">Dati non validi.</string>
+    <string name="error_not_found">Non trovato.</string>
+    <string name="error_rate_limited">Troppe richieste: riprova tra poco.</string>
+    <plurals name="error_rate_limited_s">
+        <item quantity="one">Troppe richieste: riprova tra %1$d secondo.</item>
+        <item quantity="many">Troppe richieste: riprova tra %1$d secondi.</item>
+        <item quantity="other">Troppe richieste: riprova tra %1$d secondi.</item>
+    </plurals>
+    <string name="error_too_large">Dati troppo grandi.</string>
+    <string name="error_tmdb_not_configured">Ricerca su TMDb non configurata sul server.</string>
+    <string name="error_tmdb_down">TMDb non risponde: riprova più tardi o compila a mano.</string>
+    <string name="error_server">Errore del server (%1$d).</string>
+    <string name="error_auth_required">Serve lo sblocco con impronta o PIN.</string>
+    <string name="error_device_locked">Sblocca il telefono e riprova.</string>
+    <string name="error_unexpected">Errore imprevisto: %1$s</string>
+</resources>

@@ -11,7 +11,8 @@ Stack Komodo definito da [`compose.yml`](compose.yml): quattro container sulla s
 | `backup` | `postgres:17-alpine` | `pg_dump` notturno con rotazione ([`backup.sh`](backup.sh)) |
 
 Le immagini vengono pubblicate da `.github/workflows/deploy.yml` a ogni push su `master` (prima l'API,
-con i test, poi il sito); Komodo aggiorna lo stack quando escono. Design completo:
+con i test, poi il sito con l'APK Android, vedi [App Android](#app-android-apk-firmato)); Komodo
+aggiorna lo stack quando escono. Design completo:
 `docs/scanner-dvd.md` §4.1 e §12.
 
 ## Segreti (file env sul NAS)
@@ -76,6 +77,50 @@ openssl pkcs12 -export -inkey dp.key -in dp.crt -out dp.pfx -passout pass:<passw
 base64 -w0 dp.pfx          # → DataProtection__CertificateBase64 in api.env (<password> → DataProtection__CertificatePassword)
 shred -u dp.key            # dp.pfx va conservato fuori dal NAS insieme alla password
 ```
+
+## App Android (APK firmato)
+
+Il job `android` di `.github/workflows/deploy.yml` compila l'app (`android/`), la firma con la
+keystore di release e scrive `version.json`; il job `image` li copia in `/app/` dell'immagine del
+sito (`/app/cinemanager.apk`, `/app/version.json`, servito anche come `/api/app/version`). Sito,
+API e app escono così dallo stesso commit (`docs/scanner-dvd.md` §11.1).
+
+**Secret del repository** (GitHub › Settings › Secrets and variables › Actions), mai nel repo:
+
+| Secret | Contenuto |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | la keystore `.jks` in base64 (`base64 -w0 release.jks`) |
+| `ANDROID_KEYSTORE_PASSWORD` | password della keystore |
+| `ANDROID_KEY_ALIAS` | alias della chiave |
+| `ANDROID_KEY_PASSWORD` | password della chiave |
+
+Keystore (una sola per tutta la vita dell'app: con un'altra chiave gli aggiornamenti non si
+installano sopra la versione esistente). Generala fuori dal repo e conservane una copia con le
+password fuori da GitHub (es. password manager):
+
+```bash
+keytool -genkeypair -keystore release.jks -alias cinemanager -keyalg RSA -keysize 4096 \
+  -validity 10000 -dname "CN=CineManager"
+base64 -w0 release.jks          # → ANDROID_KEYSTORE_BASE64
+```
+
+Comportamento del deploy:
+
+- **secret assenti**: il job `android` non compila nulla (avviso nel log) e l'immagine del sito
+  viene pubblicata senza APK. `/app/version.json` e `/api/app/version` rispondono 404: il pannello
+  ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426.
+- **secret presenti**: test, `assembleRelease` firmato, `apksigner verify`, SHA-256 e
+  `version.json`; se qualcosa fallisce il deploy si ferma (nessuna immagine con un APK vecchio).
+
+**Pubblicare una nuova versione dell'app**: aggiorna `versionName` in `android/version.properties`
+(e `minSupportedCode` solo se l'API è cambiata in modo incompatibile con le app precedenti), fai
+merge su `master`. Al deploy successivo il sito offre il nuovo APK; le app installate mostrano
+"Aggiornamento disponibile", o la schermata bloccante se sono sotto `minSupportedCode`.
+L'installazione è manuale: il telefono scarica l'APK dal sito (dietro il login) e Android chiede
+conferma; la prima volta va consentita l'installazione dal browser.
+
+Build locale dell'immagine (`docker build .`): senza `--build-context android-app=<cartella>`
+l'immagine non contiene l'APK.
 
 ## Authelia e Caddy (fuori dal repo)
 

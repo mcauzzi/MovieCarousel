@@ -633,6 +633,18 @@ Entrambi i QR sono generati dall'API come SVG (QRCoder): quello di abbinamento a
 - **Offline** (opzionale): coda locale delle scansioni confermate, inviate con WorkManager quando torna la rete.
 - **Distribuzione**: APK firmato costruito dalla CI e **incluso nell'immagine del sito**, scaricabile dal pannello ARRIVI (§10.1); dettagli in §11.1.
 
+**Implementazione (fase 5, `android/`)** — differenze e precisazioni rispetto a quanto sopra:
+
+- Due moduli Gradle: `core` (Kotlin/JVM senza Android: JWT e prova di possesso, QR, client OkHttp, mappatura degli errori, modulo) con test JUnit, e `app` (Compose, Keystore, CameraX). Navigazione con uno stato nel ViewModel, senza libreria di navigazione. Build e test: `android/README.md`.
+- La firma avviene in un *network interceptor* di OkHttp (ogni tentativo di connessione ha un `jti` nuovo); redirect disattivati. Il JSON dell'header è scritto da kotlinx.serialization: rispetto a `sign-request` cambia solo l'escape di `+` (`cm-req+jwt` contro `cm-req\u002Bjwt` di System.Text.Json), stesso JSON per il server.
+- Il campo codice a barre della collezione (`Tellico__BarcodeField`) non compare nel modulo: `GET /api/app/fields` lo esclude (l'EAN viaggia in `ean`; dentro `movie` verrebbe rifiutato).
+- Abbinamento: oltre alla scansione del QR si può incollarne il contenuto (telefono senza fotocamera funzionante, emulatore); nome del dispositivo modificabile, di default produttore + modello. Le build di debug accettano indirizzi `http://` (API locale), la release solo `https://`.
+- Scansione: EAN-13/EAN-8/UPC-A/UPC-E con cifra di controllo verificata, vibrazione (haptic `CONFIRM`), EAN anche a mano.
+- Modulo: le tabelle diverse da `cast` si modificano come righe con le celle separate da `::`; il supporto propone gli `allowed` del campo `medium` (vincolanti se il campo è `choice`) o DVD/Blu-ray/4K come suggerimenti.
+- "Chiedi impronta all'apertura": prompt all'avvio e al ritorno in primo piano dopo almeno 10 minuti, oltre che quando la chiave chiede di nuovo l'autenticazione (`UserNotAuthenticatedException`); se il telefono non ha un blocco schermo sicuro l'opzione è disattivata.
+- 403 `owner_inactive` → schermata con "Apri il sito" e Riprova; altri 401 (es. `expired` per l'orologio) → messaggio, senza riabbinamento.
+- Non implementati (facoltativi): coda offline, aggiornamento integrato (§11.1 livello 2), correzione/eliminazione degli arrivi dall'app (restano nel pannello ARRIVI).
+
 ### 11.1 Distribuzione e aggiornamenti
 
 **Dove sta l'APK.** Dentro l'immagine del sito, in `/app/`:
@@ -655,6 +667,7 @@ Facoltativo: la CI pubblica lo stesso APK anche come release GitHub (`android-v1
 - `versionName` e `versionCode` vengono da `android/version.properties` (unica fonte, modificata a mano a ogni rilascio dell'app); `versionCode = major*10000 + minor*100 + patch`.
 - `minSupportedCode` sta nello stesso file e si alza solo quando l'API introduce una modifica incompatibile con le app precedenti.
 - La CI scrive `version.json` (con lo SHA-256 calcolato sull'APK firmato) e lo copia nell'immagine insieme all'APK.
+- Gradle legge la keystore da variabili d'ambiente (`CM_RELEASE_KEYSTORE`, `CM_RELEASE_KEYSTORE_PASSWORD`, `CM_RELEASE_KEY_ALIAS`, `CM_RELEASE_KEY_PASSWORD`), valorizzate in CI dai secret qui sotto; senza, `assembleRelease` produce un APK non firmato. La release usa R8 e solo le librerie native ARM (circa 15 MB).
 
 **Endpoint della versione.** `GET /api/app/version` è servito da **nginx** come file statico: è lo stesso `version.json` dell'immagine del sito, esposto sotto `/api/app/` perché quel percorso non passa dal forward auth (§12), così anche un'app non abbinata o troppo vecchia lo legge. L'API, che sta in un'altra immagine, legge `minSupportedCode` per il controllo `426` da `http://web/app/version.json` sulla rete dello stack (cache di 5 minuti; se il file non è raggiungibile il controllo viene saltato e registrato nei log). Lo schema è uno solo, quello di `version.json`; l'URL di download è sempre `/app/cinemanager.apk` relativo all'indirizzo del server salvato all'abbinamento.
 
@@ -839,8 +852,8 @@ Una route in più **prima** del forward auth, per l'app:
 - `.dockerignore`: aggiungere `api/`, `android/` e `docs/`, perché il `Dockerfile` del sito fa `COPY . .` (e simmetricamente un `.dockerignore` per l'API).
 - Android (fase 5):
   - **CI**: workflow separato `android-ci.yml` (lint, test, `assembleDebug`) con filtro `paths: [android/**]`. I filtri `paths` di GitHub valgono per l'intero workflow, non per il singolo job, quindi non si può mettere in `ci.yml` come job condizionato senza un'azione di filtro;
-  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo copia in `/app/` (Dockerfile con uno stage che accetta la cartella dell'APK come build context aggiuntivo). Il job è obbligatorio a ogni deploy (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK mancante o vecchio;
-  - opzionale: pubblicazione della release GitHub `android-v<versione>` quando cambia `version.properties`.
+  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo copia in `/app/` (Dockerfile con uno stage che accetta la cartella dell'APK come build context aggiuntivo). Il build context si chiama `android-app`; nel Dockerfile uno stage vuoto con lo stesso nome fa da default, così `docker build .` funziona anche senza APK. Con i secret della keystore il job è obbligatorio (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK vecchio. **Senza i secret** (scelta dell'implementazione) il job non compila nulla e il sito viene pubblicato lo stesso, senza APK: `version.json` risponde 404, il pannello ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426. Secret e procedura: `deploy/README.md`;
+  - opzionale (non implementato): pubblicazione della release GitHub `android-v<versione>` quando cambia `version.properties`.
 
 ### Backup e ripristino
 

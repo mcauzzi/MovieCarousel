@@ -4,10 +4,12 @@ using System.Text.Json;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
 using CineManager.Api.Import;
+using CineManager.Api.Infrastructure;
 using CineManager.Api.Lookup;
 using CineManager.Api.Movies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace CineManager.Api.Endpoints;
 
@@ -39,10 +41,12 @@ public static class AppEndpoints
             return Results.NoContent();
         });
 
-        // Campi del modulo (inclusi i personalizzati), stessa forma di CollectionField.
-        g.MapGet("/fields", async (CinemaDbContext db, CancellationToken ct) =>
+        // Campi del modulo (inclusi i personalizzati), stessa forma di CollectionField. Escluso il
+        // campo codice a barre: l'app lo invia in "ean" (nel corpo di movies verrebbe rifiutato).
+        g.MapGet("/fields", async (CinemaDbContext db, IOptions<TellicoOptions> tellico, CancellationToken ct) =>
             (await FieldCatalog.LoadAsync(db, ct))
-                .Where(f => f.InForm && f.Type is not (FieldTypes.Image or FieldTypes.Dependent))
+                .Where(f => f.InForm && f.Type is not (FieldTypes.Image or FieldTypes.Dependent) &&
+                            f.Name != tellico.Value.BarcodeField)
                 .Select(FieldEndpoints.ToDto).ToList());
 
         g.MapGet("/lookup", async (string? ean, MovieLookupService lookup, CancellationToken ct) =>

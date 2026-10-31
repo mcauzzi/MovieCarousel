@@ -1,0 +1,52 @@
+name: Android CI
+
+# Solo per modifiche all'app (docs/scanner-dvd.md §12): i filtri paths valgono per l'intero
+# workflow, per questo è separato da ci.yml.
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-ci.yml"
+  push:
+    branches-ignore: [master]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-ci.yml"
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Verifica il gradle-wrapper.jar e mette in cache dipendenze e build.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # L'SDK Android è già installato sui runner ubuntu-latest (ANDROID_HOME).
+      - name: Build, test e lint
+        run: ./gradlew assembleDebug testDebugUnitTest lint --console=plain
+
+      - name: Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            android/app/build/reports/
+            android/core/build/reports/
+          retention-days: 7

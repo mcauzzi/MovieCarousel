@@ -48,7 +48,7 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 | POST | `/api/app/pair` | anonimo | abbinamento del telefono → `{ deviceId, user: { name } }` |
 | GET | `/api/app/me` | dispositivo | `{ deviceId, deviceName, user: { name } }` |
 | DELETE | `/api/app/me` | dispositivo | il dispositivo si revoca da solo ("Scollega") → 204 |
-| GET | `/api/app/fields` | dispositivo | campi del modulo (`inForm`, esclusi `image`/`dependent`) → `[Field]` |
+| GET | `/api/app/fields` | dispositivo | campi del modulo (`inForm`, esclusi `image`/`dependent` e il campo codice a barre `Tellico__BarcodeField`, che si invia in `ean`) → `[Field]` |
 | GET | `/api/app/lookup?ean=` | dispositivo | ricerca da codice a barre (§7) |
 | GET | `/api/app/search?q=&year=` | dispositivo | ricerca manuale su TMDb → `{ candidates }` |
 | GET | `/api/app/tmdb/{tmdbId}` | dispositivo | bozza completa di un candidato |

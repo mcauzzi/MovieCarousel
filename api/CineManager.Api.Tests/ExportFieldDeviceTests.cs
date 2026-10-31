@@ -241,6 +241,23 @@ public class ExportFieldDeviceTests(AppFixture fx) : IClassFixture<AppFixture>, 
         Assert.Equal(["Title", "Edizione", "EAN"], [header[0], header[^2], header[^1]]);
     }
 
+    [DbFact]
+    public async Task Campo_codice_a_barre_escluso_dal_modulo_dell_app()
+    {
+        // Il codice a barre si invia in "ean": nel corpo di movies verrebbe rifiutato.
+        using var admin = F.Client("root", "user,admin");
+        Assert.Equal(HttpStatusCode.Created,
+            (await admin.PostAsJsonAsync("/api/fields", new { name = "ean", title = "EAN", type = "line" })).StatusCode);
+        Assert.Contains(JsonNode.Parse(await admin.GetStringAsync("/api/fields"))!.AsArray(),
+            f => f!["name"]!.GetValue<string>() == "ean");
+
+        using var dev = await F.PairAsync("alice");
+        using var c = F.AppClient();
+        var fields = JsonNode.Parse(await (await c.SendAsync(dev.Request(HttpMethod.Get, "/api/app/fields"))).Content.ReadAsStringAsync())!.AsArray();
+        Assert.Contains(fields, f => f!["name"]!.GetValue<string>() == "title");
+        Assert.DoesNotContain(fields, f => f!["name"]!.GetValue<string>() == "ean");
+    }
+
     // --- dispositivi ---------------------------------------------------------------------------
 
     [DbFact]

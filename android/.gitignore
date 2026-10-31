@@ -1,0 +1,21 @@
+# Build e cache di Gradle
+.gradle/
+build/
+.kotlin/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Configurazione locale (percorso dell'SDK) e IDE
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Keystore e file di firma: MAI nel repo (vedi android/README.md)
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties

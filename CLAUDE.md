@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guida per Claude Code in questo repo. Tre parti: **sito** (Vite + TS, `src/`), **API** (.NET 10 + Postgres, `api/`), **deploy** (`deploy/`, `.github/workflows/`). Design completo della collezione su DB e dello scanner Android: `docs/scanner-dvd.md`; contratto dell'API (autoritativo): `docs/api.md`.
+Guida per Claude Code in questo repo. Quattro parti: **sito** (Vite + TS, `src/`), **API** (.NET 10 + Postgres, `api/`), **app Android** (Kotlin/Compose, `android/`), **deploy** (`deploy/`, `.github/workflows/`). Design completo della collezione su DB e dello scanner Android: `docs/scanner-dvd.md`; contratto dell'API (autoritativo): `docs/api.md`.
 
 Repo **pubblico**: niente host, IP, domini, email o segreti reali nei file; usa segnaposto (`<host-sito>`, `<host-auth>`…).
 
@@ -20,6 +20,7 @@ cd api && CINEMA_TEST_CONNECTION="Host=localhost;Username=cinema;Password=cinema
 ```
 
 - `npm run a11y -- --themes p5,sh2 --states arrivi --strict` (anche `--file x.tc`, `--screenshots`, `--url`). Serve Chromium di Playwright. I test d'integrazione dell'API creano e distruggono un DB `cm_test_<guid>` per classe.
+- App Android: `cd android && ./gradlew assembleDebug testDebugUnitTest lint` (serve `ANDROID_HOME`; dettagli, firma e test end-to-end in `android/README.md`). Il modulo `core` è Kotlin puro (firma delle richieste, QR, client API) con test JVM; `app` è UI Compose + Keystore + CameraX/ML Kit.
 - Prettier c'è ma **non** è imposto: il codice ha allineamenti manuali voluti, niente mass-reformat.
 - Per la modalità DB in locale: API avviata + `public/config.json` con `"apiBase": "./api/"`.
 
@@ -103,7 +104,8 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
 ## CI e deploy
 
 - **`ci.yml`** (PR e push non-`master`): job `check` (install, typecheck, lint, build) e job `api` (build + test con un servizio Postgres).
-- **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/`).
+- **`android-ci.yml`** (modifiche ad `android/**`): build, test e lint dell'app.
+- **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/` e, se ci sono i secret `ANDROID_*` della keystore, APK firmato + `version.json` in `/app/`).
 - **Stack Komodo `cinemalometti`** (`deploy/compose.yml`, separato da homelab-stack), quattro servizi:
   - `web`: container `cinemalometti`, porta `PORT` (8091). Serve il bundle; il resto viene dalla cartella dati del NAS (`WEB_ROOT`, montata ro su `/srv/data`). Inoltra `/api/` all'API e serve `/app/` (APK e `version.json`).
   - `api`: l'API .NET.
