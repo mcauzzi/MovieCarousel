@@ -1,233 +1,333 @@
 # Deploy dello stack `cinemalometti`
 
-Stack Komodo definito da [`compose.yml`](compose.yml): quattro container sulla stessa rete Docker
-(subnet fissa), una sola porta pubblicata.
+Guida passo passo per mettere in piedi sul NAS lo stack Komodo con sito, API, database e backup.
+I segreti si generano da Windows (PowerShell), i comandi sul NAS si lanciano via SSH.
 
-| Servizio | Immagine | Ruolo |
-|---|---|---|
-| `web` (container `cinemalometti`) | `ghcr.io/mcauzzi/moviecarousel` | nginx: sito, dati del NAS, proxy `/api/` → `api`, `/app/` e `/api/app/version` dall'immagine |
-| `api` | `ghcr.io/mcauzzi/moviecarousel-api` | API CineManager (.NET), applica le migrazioni all'avvio |
-| `db` | `postgres:17-alpine` | database |
-| `backup` | `postgres:17-alpine` | `pg_dump` notturno con rotazione ([`backup.sh`](backup.sh)) |
+Lo stack ([`compose.yml`](compose.yml)) ha quattro container; solo `web` pubblica una porta:
 
-Le immagini vengono pubblicate da `.github/workflows/deploy.yml` a ogni push su `master` (prima l'API,
-con i test, poi il sito con l'APK Android, vedi [App Android](#app-android-apk-firmato)); Komodo
-aggiorna lo stack quando escono. Design completo:
-`docs/scanner-dvd.md` §4.1 e §12.
+| Container | Cosa fa |
+|---|---|
+| `cinemalometti` (servizio `web`) | nginx: il sito, i dati del NAS, inoltra `/api/` all'API, serve l'APK in `/app/` |
+| `cinemalometti-api` | l'API .NET; all'avvio crea o aggiorna le tabelle del DB |
+| `cinemalometti-db` | Postgres 17 |
+| `cinemalometti-backup` | dump notturno del DB, tiene gli ultimi 14 |
 
-## Segreti
+Le immagini le pubblica GitHub Actions a ogni push su `master`; Komodo aggiorna lo stack quando escono.
 
-Due sorgenti, entrambe facoltative e usabili insieme (a parità di nome vince il file in `SECRETS_DIR`).
-In tutti e due i casi i valori arrivano ai container con `env_file`, così come sono.
+---
 
-| Variabile | Servizi | File |
-|---|---|---|
-| `POSTGRES_PASSWORD` | db, backup, api | `db.env` |
-| `Oidc__ClientSecret` | api | `api.env` |
-| `DataProtection__CertificateBase64`, `DataProtection__CertificatePassword` | api | `api.env` |
-| `Tmdb__ApiToken` | api | `api.env` |
-| `Lookup__UpcItemDbKey` (facoltativo) | api | `api.env` |
+## Primo deploy
 
-### 1. Secret di Komodo
+### 1. Cartelle sul NAS
 
-Crea i Secret in Komodo (Settings → Variables, flag *secret*) e richiamali nell'Environment dello
-stack, insieme alle variabili normali:
-
-```ini
-POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'
-Oidc__ClientSecret = '[[CINEMA_OIDC_SECRET]]'
-DataProtection__CertificateBase64 = '[[CINEMA_DP_CERT]]'
-DataProtection__CertificatePassword = '[[CINEMA_DP_CERT_PASSWORD]]'
-Tmdb__ApiToken = '[[CINEMA_TMDB_TOKEN]]'
-```
-
-Komodo scrive l'Environment in `.env` nella run directory dello stack e i servizi `api`, `db` e
-`backup` lo caricano. Per questo la **run directory deve essere `deploy`** (file `compose.yml`).
-Gli apici singoli evitano che Compose interpreti `$`; il valore non può contenere `'` (in quel caso
-usa i file env). Nota: con questa via ogni servizio che carica `.env` riceve tutto l'Environment,
-quindi anche `db` e `backup` vedono i segreti dell'API.
-
-### 2. File env sul NAS
-
-Imposta `SECRETS_DIR` nell'Environment con una cartella fuori dal repo:
+Via SSH sul NAS. Sostituisci i percorsi con i tuoi; `WEB_ROOT` è la cartella che usi già oggi per il sito.
 
 ```sh
-install -d -m 700 /percorso/segreti
-install -m 600 /dev/null /percorso/segreti/db.env
-install -m 600 /dev/null /percorso/segreti/api.env
+WEB_ROOT=/percorso/cinemalometti                  # quella di oggi, con config.json e assets/
+sudo mkdir -p /percorso/cinemalometti-db /percorso/cinemalometti-backup
+sudo chown -R 1654:1654 "$WEB_ROOT/assets/covers"   # l'API ci scrive le copertine (utente 1654)
 ```
 
-`db.env` (letto da `db`, `backup` e `api`):
+- La cartella del DB deve stare su un disco locale del NAS, non su una condivisione di rete.
+- In `WEB_ROOT/config.json` aggiungi `"apiBase": "./api/"`: il sito legge la collezione dal DB invece
+  che dal `.tc` (esempio in [`config.example.json`](../config.example.json)).
 
-```ini
-POSTGRES_PASSWORD='la-password'
+### 2. Genera i segreti (Windows, PowerShell)
+
+Apri **PowerShell** (va bene quella di Windows) e incolla questo blocco: definisce una funzione
+che genera una stringa casuale di 64 caratteri esadecimali.
+
+```powershell
+function New-Secret {
+    $b = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+    -join ($b | ForEach-Object { $_.ToString('x2') })
+}
 ```
 
-`api.env` (letto da `api`):
+Poi, nella stessa finestra, genera i valori uno alla volta. Ognuno va salvato come Secret in Komodo
+(passo 5) con il nome indicato.
 
-```ini
-Oidc__ClientSecret='segreto-in-chiaro-del-client'
-DataProtection__CertificateBase64='MIIK...'
-DataProtection__CertificatePassword='password-del-pfx'
-Tmdb__ApiToken='eyJ...'
-# Lookup__UpcItemDbKey='...'          facoltativo
+**Password del database**: lancia il comando e salva l'output come `CINEMA_DB_PASSWORD`.
+
+```powershell
+New-Secret
 ```
 
-Anche qui valori tra **apici singoli**. Con questa via `db` e `backup` vedono solo `db.env`.
+**Segreto del client OIDC**: lancia il comando e salva l'output come `CINEMA_OIDC_SECRET`. Ti serve
+anche al passo 3.
 
-### Note comuni
-
-- `env_file` con `required: false` richiede Docker Compose ≥ 2.24. Se un segreto manca del tutto,
-  Postgres non parte senza password e l'API lo segnala nei log all'avvio.
-- L'API usa `POSTGRES_PASSWORD` come password del DB inserendola nella connection string in codice:
-  nessun vincolo sui caratteri.
-- Postgres legge la password solo al primo avvio (quando crea il DB): per cambiarla dopo serve anche
-  `ALTER ROLE cinema PASSWORD '...'`.
-
-## Variabili dell'Environment Komodo
-
-Variabili normali (i segreti sono nella sezione sopra). L'elenco completo, con i default, è nel commento in testa a `compose.yml`.
-
-- Obbligatorie: `WEB_ROOT`, `DB_DIR`, `BACKUP_DIR`, `PUBLIC_BASE_URL`, `PROXY_IP`,
-  `OIDC_AUTHORITY`, `OIDC_CLIENT_ID`, `OIDC_ADMIN_GROUP`.
-- Facoltative: `SECRETS_DIR` (solo con i file env), `PORT` (8091), `STACK_SUBNET` (172.31.91.0/24), `OIDC_USER_GROUP`,
-  `DEVICE_MAX_OWNER_INACTIVE_DAYS` (90), `LOOKUP_PROVIDERS` (upcitemdb),
-  `TELLICO_BARCODE_FIELD` (ean), `BACKUP_KEEP` (14), `BACKUP_AT` (03:30), `BACKUP_NOW` (0), `TZ` (Europe/Rome).
-
-Note:
-
-- `STACK_SUBNET` deve essere libera sul NAS (nessun'altra rete Docker sovrapposta).
-- `PROXY_IP` è l'indirizzo con cui Caddy arriva al NAS: serve all'API per leggere l'IP reale del
-  client dal `X-Forwarded-For` (rate limit e log), non per l'autenticazione.
-
-## Certificato Data Protection
-
-Cifra le chiavi che firmano il cookie di sessione (salvate nel DB): senza, chi ha un dump potrebbe
-forgiare sessioni. Perderlo non perde dati, fa solo rifare il login a tutti. Conservalo con gli
-altri secret.
-
-```bash
-openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -subj "/CN=cinemanager-dp" \
-  -keyout dp.key -out dp.crt
-openssl pkcs12 -export -inkey dp.key -in dp.crt -out dp.pfx -passout pass:<password>
-base64 -w0 dp.pfx          # → DataProtection__CertificateBase64 (<password> → DataProtection__CertificatePassword)
-shred -u dp.key            # dp.pfx va conservato fuori dal NAS insieme alla password
+```powershell
+New-Secret
 ```
 
-## App Android (APK firmato)
+**Certificato Data Protection**: cifra le chiavi del cookie di login salvate nel DB. Se lo perdi
+non perdi dati, devi solo rifare il login.
 
-Il job `android` di `.github/workflows/deploy.yml` compila l'app (`android/`), la firma con la
-keystore di release e scrive `version.json`; il job `image` li copia in `/app/` dell'immagine del
-sito (`/app/cinemanager.apk`, `/app/version.json`, servito anche come `/api/app/version`). Sito,
-API e app escono così dallo stesso commit (`docs/scanner-dvd.md` §11.1).
+```powershell
+$certPassword = New-Secret
+$cert = New-SelfSignedCertificate -Subject 'CN=cinemanager-dp' -KeyAlgorithm RSA -KeyLength 3072 `
+    -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(10) -CertStoreLocation Cert:\CurrentUser\My
+Export-PfxCertificate -Cert $cert -FilePath "$HOME\cinemanager-dp.pfx" `
+    -Password (ConvertTo-SecureString $certPassword -AsPlainText -Force) | Out-Null
+Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\cinemanager-dp.pfx")) | Set-Clipboard
+```
 
-**Secret del repository** (GitHub › Settings › Secrets and variables › Actions), mai nel repo:
+- Ora negli appunti c'è il certificato: incollalo come `CINEMA_DP_CERT` (è lungo qualche migliaio di
+  caratteri, è normale).
+- Poi scrivi `$certPassword` e salva l'output come `CINEMA_DP_CERT_PASSWORD`.
+- Tieni `cinemanager-dp.pfx` (nella tua cartella utente) e la sua password in un posto sicuro, per
+  esempio nel password manager.
 
-| Secret | Contenuto |
+**Token TMDb**: non si genera. Dal tuo account su themoviedb.org, *Impostazioni → API*, copia il
+token "API Read Access Token" (inizia con `eyJ`) e salvalo come `CINEMA_TMDB_TOKEN`.
+
+### 3. Client OIDC in Authelia
+
+Authelia vuole l'**hash** del segreto OIDC, non il segreto. Sul NAS, via SSH (sostituisci
+`SEGRETO` con il valore di `CINEMA_OIDC_SECRET`):
+
+```sh
+docker run --rm authelia/authelia:latest \
+  authelia crypto hash generate pbkdf2 --variant sha512 --password 'SEGRETO'
+```
+
+La riga `Digest: $pbkdf2-sha512$...` è il valore di `client_secret`. Nella configurazione di Authelia
+aggiungi il client:
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: '<client-id>'                  # lo stesso che metti in OIDC_CLIENT_ID
+        client_name: 'CineManager'
+        client_secret: '$pbkdf2-sha512$...'       # il Digest di sopra
+        public: false
+        authorization_policy: '<policy>'
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - 'https://<host-sito>/api/auth/callback'
+        scopes: [openid, profile, groups]
+        response_types: [code]
+        grant_types: [authorization_code]
+        token_endpoint_auth_method: client_secret_post
+```
+
+Riavvia Authelia. Chi può entrare e chi è amministratore lo decidono i gruppi di LLDAP
+(`OIDC_USER_GROUP`, `OIDC_ADMIN_GROUP` al passo 5).
+
+### 4. Caddy
+
+L'app Android firma da sé le sue richieste, quindi `/api/app/*` deve arrivare al NAS **senza**
+passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La route va messa
+**prima** di quella con `forward_auth`:
+
+```caddy
+<host-sito> {
+    handle /api/app/* {
+        reverse_proxy <ip-nas>:8091
+    }
+    handle {
+        forward_auth <authelia> { ... }       # come oggi
+        reverse_proxy <ip-nas>:8091
+    }
+}
+```
+
+### 5. Stack in Komodo
+
+**Secret.** In *Settings → Variables* crea una variabile per ogni valore del passo 2, con il flag
+**Secret** attivo: `CINEMA_DB_PASSWORD`, `CINEMA_OIDC_SECRET`, `CINEMA_DP_CERT`,
+`CINEMA_DP_CERT_PASSWORD`, `CINEMA_TMDB_TOKEN`.
+
+**Stack.** Modifica lo stack `cinemalometti` esistente:
+
+| Campo | Valore |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | la keystore `.jks` in base64 (`base64 -w0 release.jks`) |
-| `ANDROID_KEYSTORE_PASSWORD` | password della keystore |
-| `ANDROID_KEY_ALIAS` | alias della chiave |
-| `ANDROID_KEY_PASSWORD` | password della chiave |
+| Repo / Branch | `mcauzzi/MovieCarousel` / `master` |
+| Run Directory | `deploy` |
+| File Paths | `compose.yml` |
+| Auto Update | attivo (aggiorna quando escono immagini nuove) |
 
-Keystore (una sola per tutta la vita dell'app: con un'altra chiave gli aggiornamenti non si
-installano sopra la versione esistente). Generala fuori dal repo e conservane una copia con le
-password fuori da GitHub (es. password manager):
+**Environment.** Sostituiscilo con questo, completando i valori tra `< >`:
 
-```bash
-keytool -genkeypair -keystore release.jks -alias cinemanager -keyalg RSA -keysize 4096 \
-  -validity 10000 -dname "CN=CineManager"
-base64 -w0 release.jks          # → ANDROID_KEYSTORE_BASE64
+```ini
+# Cartelle sul NAS (passo 1)
+WEB_ROOT = /percorso/cinemalometti
+DB_DIR = /percorso/cinemalometti-db
+BACKUP_DIR = /percorso/cinemalometti-backup
+
+# Indirizzi
+PUBLIC_BASE_URL = https://<host-sito>
+PROXY_IP = <ip da cui Caddy raggiunge il NAS>
+OIDC_AUTHORITY = https://<host-auth>
+OIDC_CLIENT_ID = <client-id>
+OIDC_USER_GROUP = <gruppo-utenti>
+OIDC_ADMIN_GROUP = <gruppo-admin>
+
+# Segreti: rimandano ai Secret creati sopra
+POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]
+Oidc__ClientSecret = [[CINEMA_OIDC_SECRET]]
+DataProtection__CertificateBase64 = [[CINEMA_DP_CERT]]
+DataProtection__CertificatePassword = [[CINEMA_DP_CERT_PASSWORD]]
+Tmdb__ApiToken = [[CINEMA_TMDB_TOKEN]]
 ```
 
-Comportamento del deploy:
+Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#riferimento-variabili).
 
-- **secret assenti**: il job `android` non compila nulla (avviso nel log) e l'immagine del sito
-  viene pubblicata senza APK. `/app/version.json` e `/api/app/version` rispondono 404: il pannello
-  ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426.
-- **secret presenti**: test, `assembleRelease` firmato, `apksigner verify`, SHA-256 e
-  `version.json`; se qualcosa fallisce il deploy si ferma (nessuna immagine con un APK vecchio).
+> La Run Directory deve essere `deploy`: Komodo scrive l'Environment in `deploy/.env` e i container
+> leggono i segreti da lì. Se `OIDC_USER_GROUP` resta vuoto, entra chiunque abbia un account Authelia.
 
-**Pubblicare una nuova versione dell'app**: aggiorna `versionName` in `android/version.properties`
-(e `minSupportedCode` solo se l'API è cambiata in modo incompatibile con le app precedenti), fai
-merge su `master`. Al deploy successivo il sito offre il nuovo APK; le app installate mostrano
-"Aggiornamento disponibile", o la schermata bloccante se sono sotto `minSupportedCode`.
-L'installazione è manuale: il telefono scarica l'APK dal sito (dietro il login) e Android chiede
-conferma; la prima volta va consentita l'installazione dal browser.
+### 6. Deploy
 
-Build locale dell'immagine (`docker build .`): senza `--build-context android-app=<cartella>`
-l'immagine non contiene l'APK.
+1. **Destroy** dello stack, poi **Deploy**. Solo la prima volta: il vecchio servizio si chiamava
+   `cinemalometti` e ora si chiama `web`, quindi il vecchio container va tolto prima.
+2. Nei log:
+   - `cinemalometti-api` deve applicare le migrazioni e restare acceso;
+   - `cinemalometti-backup` scrive `avvio: dump ogni giorno alle 03:30`.
+3. Prova dal NAS:
+   - `curl -s http://localhost:8091/api/health` deve rispondere con lo stato del DB;
+   - `curl -si http://localhost:8091/api/me` deve rispondere `401`.
+4. Apri il sito, fai login, e da **ARRIVI → IMPORTA** (serve essere amministratore) carica il `.tc` di
+   Tellico per riempire il DB.
 
-## Authelia e Caddy (fuori dal repo)
+Se l'API si ferma subito, il log dice quale segreto manca o è sbagliato.
 
-- **Client OIDC** in Authelia come in `docs/scanner-dvd.md` §4.1: client confidenziale,
-  `token_endpoint_auth_method: client_secret_post`, PKCE S256, scope `openid profile groups`,
-  `redirect_uris: [<PUBLIC_BASE_URL>/api/auth/callback]`, `consent_mode: implicit`. In Authelia va
-  l'hash del segreto (`authelia crypto hash generate pbkdf2`), nello stack il segreto in chiaro
-  (segreto `Oidc__ClientSecret`). `OIDC_AUTHORITY` è l'URL pubblico di Authelia.
-- **Caddy**: una route `/api/app/*` **prima** del forward auth, senza `forward_auth` (l'app firma le
-  richieste da sé e `/api/app/version` è pubblico); tutto il resto resta dietro Authelia come oggi.
-  Schema in `docs/scanner-dvd.md` §12.
+---
 
-## Cartelle sul NAS
+## App Android
 
-- `WEB_ROOT`: come oggi (`config.json`, `assets/<collezione>.tc`, `assets/covers/`, `assets/bgm/`).
-  Per la modalità DB aggiungi `"apiBase": "./api/"` a `config.json` (vedi `config.example.json`).
-- `WEB_ROOT/assets/covers/` è l'unico mount in scrittura (copertine scritte dall'API) e deve
-  coincidere con `imgDir` di `config.json`. L'API gira come utente non-root dell'immagine .NET
-  (UID/GID 1654, `$APP_UID`):
+GitHub Actions compila e firma l'APK e lo mette nell'immagine del sito: si scarica da
+**ARRIVI → TELEFONO**. Senza i secret qui sotto il sito funziona lo stesso, ma senza APK ("App non
+disponibile").
 
-  ```bash
-  sudo chown -R 1654:1654 "$WEB_ROOT/assets/covers"     # oppure un ACL di scrittura per l'UID 1654
-  ```
+### Keystore di firma (una volta sola)
 
-- `DB_DIR`: disco locale del NAS (mai NFS/SMB). Vuota al primo avvio: Postgres crea il ruolo e il
-  database `cinema` da `POSTGRES_USER`/`POSTGRES_DB`, poi l'API applica le migrazioni.
-- `BACKUP_DIR`: i dump `cinema-AAAAMMGG-HHMM.dump`; includila nei backup del NAS.
+Serve una sola keystore per tutta la vita dell'app: se la perdi, gli aggiornamenti non si
+installano sopra l'app esistente. In PowerShell, con Android Studio installato:
 
-## Primo avvio (migrazione dallo stack con il solo nginx)
+```powershell
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -genkeypair -keystore release.jks `
+    -alias cinemanager -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=CineManager"
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path release.jks))) | Set-Clipboard
+```
 
-1. Crea `DB_DIR` e `BACKUP_DIR`, sistema i permessi di `assets/covers/`, imposta le variabili.
-2. Il servizio si chiama ora `web` ma tiene `container_name: cinemalometti`: il vecchio container
-   (servizio `cinemalometti`) va rimosso prima, altrimenti il nome è già in uso. In Komodo: **Destroy**
-   dello stack, poi **Deploy**.
-3. Controlla i log: `cinemalometti-api` deve applicare le migrazioni e restare su;
-   `cinemalometti-backup` scrive `avvio: dump ogni giorno alle …`.
-4. Verifica: `curl -s http://<nas>:<PORT>/api/health` → stato del DB; `/api/me` senza cookie → 401.
-5. Login dal sito, poi IMPORTA DA TELLICO (amministratore) per popolare il DB.
+keytool chiede una password: usa quella anche come password della chiave. Conserva `release.jks` e la
+password nel password manager.
+
+### Secret su GitHub
+
+Nel repository, *Settings → Secrets and variables → Actions → New repository secret*:
+
+| Secret | Valore |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | quello che è negli appunti dopo il comando sopra |
+| `ANDROID_KEYSTORE_PASSWORD` | la password scelta |
+| `ANDROID_KEY_ALIAS` | `cinemanager` |
+| `ANDROID_KEY_PASSWORD` | la stessa password |
+
+### Nuova versione dell'app
+
+1. In `android/version.properties` aumenta `versionName`. Aumenta `minSupportedCode` solo se le
+   versioni vecchie non funzionano più con l'API.
+2. Merge su `master`.
+
+Dopo il deploy le app installate mostrano "Aggiornamento disponibile" (o una schermata bloccante se
+sono sotto `minSupportedCode`). L'aggiornamento si installa a mano: il telefono scarica l'APK dal
+sito e Android chiede conferma.
+
+---
 
 ## Backup e ripristino
 
-`backup.sh` fa ogni giorno alle `BACKUP_AT` (ora di `TZ`) un `pg_dump -Fc` su file temporaneo, lo
-verifica con `pg_restore --list`, lo rinomina e tiene gli ultimi `BACKUP_KEEP`. Gli errori finiscono
-nei log del container e il ciclo continua. Con `BACKUP_NOW=1` nell'Environment fa un dump anche a
-ogni avvio del container (utile per provare); un dump manuale al volo (fuori dalla rotazione):
+Ogni notte alle 03:30 `backup.sh` salva un dump in `BACKUP_DIR` (`cinema-AAAAMMGG-HHMM.dump`), lo
+verifica e tiene gli ultimi 14. Includi `BACKUP_DIR` nei backup del NAS. Le copertine sono già in
+`assets/covers/`.
 
-```bash
+Dump manuale (fuori dalla rotazione):
+
+```sh
 docker exec cinemalometti-backup pg_dump -Fc -f /backup/manuale.dump
 ```
 
-Ripristino (il container `backup` ha già host, utente e password nell'environment):
+Ripristino:
 
-```bash
+```sh
 docker stop cinemalometti-api
 docker exec cinemalometti-backup pg_restore --clean --if-exists --no-owner -d cinema \
   /backup/cinema-AAAAMMGG-HHMM.dump
 docker start cinemalometti-api
 ```
 
-Le copertine stanno già in `assets/covers/` sul NAS; il `.tc` di Tellico resta un backup
-indipendente della collezione.
+---
 
-## Avvio manuale (senza Komodo)
+## Riferimento variabili
 
-```bash
-cd deploy
-docker compose -p cinemalometti --env-file /percorso/sicuro/stack.env up -d
+**Obbligatorie**
+
+| Variabile | Cosa |
+|---|---|
+| `WEB_ROOT` | cartella del sito sul NAS (`config.json`, `assets/`) |
+| `DB_DIR` | dati di Postgres, disco locale |
+| `BACKUP_DIR` | dump notturni |
+| `PUBLIC_BASE_URL` | indirizzo pubblico del sito (`https://<host-sito>`) |
+| `PROXY_IP` | IP da cui Caddy raggiunge il NAS (serve all'API per l'IP reale dei client) |
+| `OIDC_AUTHORITY` | indirizzo pubblico di Authelia |
+| `OIDC_CLIENT_ID` | client creato in Authelia |
+| `OIDC_ADMIN_GROUP` | gruppo LLDAP degli amministratori |
+
+**Segreti**
+
+| Variabile | Cosa |
+|---|---|
+| `POSTGRES_PASSWORD` | password del DB (qualsiasi carattere) |
+| `Oidc__ClientSecret` | segreto OIDC in chiaro (in Authelia va l'hash) |
+| `DataProtection__CertificateBase64` | certificato PFX in base64 |
+| `DataProtection__CertificatePassword` | password del PFX |
+| `Tmdb__ApiToken` | token TMDb |
+| `Lookup__UpcItemDbKey` | facoltativo, chiave a pagamento di UPCitemdb |
+
+**Facoltative** (default tra parentesi)
+
+| Variabile | Cosa |
+|---|---|
+| `PORT` (8091) | porta sul NAS a cui punta Caddy |
+| `OIDC_USER_GROUP` (vuoto) | gruppo LLDAP di chi può entrare; vuoto = tutti |
+| `STACK_SUBNET` (172.31.91.0/24) | subnet della rete dello stack; deve essere libera sul NAS |
+| `DEVICE_MAX_OWNER_INACTIVE_DAYS` (90) | dopo quanti giorni senza login i telefoni di un utente si bloccano |
+| `LOOKUP_PROVIDERS` (upcitemdb) | servizi per cercare l'EAN |
+| `TELLICO_BARCODE_FIELD` (ean) | nome del campo codice a barre in Tellico |
+| `BACKUP_AT` (03:30), `BACKUP_KEEP` (14), `TZ` (Europe/Rome) | ora del backup, quanti tenerne, fuso orario |
+| `BACKUP_NOW` (0) | 1 = fa un backup anche a ogni avvio (per provare) |
+| `SECRETS_DIR` | solo per l'alternativa sotto |
+
+### Alternativa: segreti in file sul NAS
+
+Invece dei Secret di Komodo puoi mettere i segreti in due file in una cartella del NAS, e indicarla
+con `SECRETS_DIR` nell'Environment. Se un segreto c'è in tutti e due i posti, vince il file.
+
+```sh
+sudo install -d -m 700 /percorso/segreti
+sudo install -m 600 /dev/null /percorso/segreti/db.env
+sudo install -m 600 /dev/null /percorso/segreti/api.env
 ```
 
-`stack.env` contiene le variabili normali e `SECRETS_DIR`; i segreti stanno nei file env di quella
-cartella. In alternativa metti tutto in `deploy/.env` (gitignorato, chmod 600): Compose lo usa sia per
-le variabili sia, tramite `env_file`, come sorgente dei segreti.
+- `db.env`: `POSTGRES_PASSWORD='...'`
+- `api.env`: una riga per ognuno degli altri segreti, es. `Tmdb__ApiToken='...'`
 
-`backup.sh` viene montato dalla stessa cartella del compose: il compose va eseguito dal clone del repo.
+Scrivi i valori sempre tra apici singoli.
+
+### Note
+
+- Serve Docker Compose 2.24 o successivo.
+- Postgres legge la password solo quando crea il DB. Per cambiarla dopo: aggiorna il Secret e lancia
+  `docker exec cinemalometti-db psql -U cinema -c "ALTER ROLE cinema PASSWORD 'nuova'"`.
+- Con i Secret di Komodo anche `db` e `backup` ricevono tutto l'Environment, segreti dell'API compresi.
+  Con i file env vedono solo `db.env`.
+- Senza Komodo: dal clone del repo, `cd deploy`, metti tutte le variabili in `deploy/.env` (è
+  ignorato da git) e lancia `docker compose -p cinemalometti up -d`.
+- Build locale dell'immagine del sito (`docker build .`): senza l'APK passato dalla CI l'immagine non
+  contiene l'app.

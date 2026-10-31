@@ -775,7 +775,7 @@ Note:
 
 **Segreti** (mai nel repo), da una delle due sorgenti o da entrambe (a parità di nome vince il file):
 
-- **Secret di Komodo** richiamati nell'Environment dello stack (`POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'`). Komodo scrive l'Environment in `.env` nella run directory (`deploy/`), che i servizi caricano con `env_file`.
+- **Secret di Komodo** richiamati nell'Environment dello stack (`POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]`). Komodo scrive l'Environment in `.env` nella run directory (`deploy/`), che i servizi caricano con `env_file`.
 - **File env** in `SECRETS_DIR` sul NAS: `db.env` (`POSTGRES_PASSWORD`, per db, backup, api) e `api.env` (`Oidc__ClientSecret`, `DataProtection__CertificateBase64`, `DataProtection__CertificatePassword`, `Tmdb__ApiToken`, facoltativo `Lookup__UpcItemDbKey`).
 
 Passando da `env_file` i valori arrivano ai container così come sono; la password del DB non sta nella connection string ma viene inserita in codice, quindi nessun vincolo sui caratteri. Guida operativa: `deploy/README.md`.

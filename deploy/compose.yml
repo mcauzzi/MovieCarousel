@@ -3,7 +3,7 @@
 #
 # SEGRETI: due modi, anche insieme (a parità di nome vince il file in SECRETS_DIR).
 #   1. Komodo: nell'Environment dello stack, di solito come Secret interpolati, es.
-#        POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'
+#        POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]
 #      Komodo scrive l'Environment in .env nella run directory (che deve essere deploy/) e i
 #      servizi qui sotto lo caricano con env_file.
 #   2. File env sul NAS, nella cartella SECRETS_DIR (fuori dal repo, chmod 600): db.env e api.env.
