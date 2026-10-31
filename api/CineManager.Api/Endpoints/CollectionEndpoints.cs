@@ -2,6 +2,8 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
+using CineManager.Api.Movies;
+using CineManager.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace CineManager.Api.Endpoints;
@@ -35,7 +37,7 @@ public static class CollectionEndpoints
 
         app.MapGet("/api/me", (ClaimsPrincipal user) =>
         {
-            var sub = user.FindFirst(CmClaims.Sub)!.Value;
+            var sub = user.Sub();
             var name = user.FindFirst(CmClaims.Name)?.Value ?? user.FindFirst(CmClaims.Username)?.Value ?? sub;
             // Solo ruoli noti, nell'ordine del contratto: ["user"] | ["user","admin"] (o [] senza ruolo).
             var roles = new[] { Roles.User, Roles.Admin }.Where(user.IsInRole).ToArray();
@@ -52,11 +54,8 @@ public static class CollectionEndpoints
                 obj["id"] = r.Id;
                 return obj;
             }).ToList();
-            var fields = await db.CollectionFields.AsNoTracking()
-                .OrderBy(f => f.Ordinal).ThenBy(f => f.Name)
-                .Select(f => new CollectionFieldDto(f.Name, f.Title, f.Type, f.Multiple, f.Allowed, f.Origin,
-                    f.Groupable, f.GroupMinSize, f.InForm, f.Ordinal))
-                .ToListAsync(ct);
+            // Stesso catalogo di /api/fields (campi standard prima del primo import).
+            var fields = (await FieldCatalog.LoadAsync(db, ct)).Select(FieldEndpoints.ToDto).ToList();
             return new CollectionResponse(movies, fields);
         }).RequireAuthorization(Policies.User);
     }

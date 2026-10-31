@@ -1,5 +1,6 @@
 using CineManager.Api.Auth;
 using CineManager.Api.Import;
+using CineManager.Api.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CineManager.Api.Endpoints;
@@ -27,6 +28,5 @@ public static class ImportEndpoints
         }).WithMetadata(new RequestSizeLimitAttribute(MaxImportBody));
     }
 
-    private static IResult Bad(string detail) =>
-        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "Import non valido", detail: detail);
+    private static IResult Bad(string detail) => ApiResults.Bad(detail, "Import non valido");
 }

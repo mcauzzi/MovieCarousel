@@ -268,4 +268,153 @@ public class ImporterTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLif
         await Assert.ThrowsAsync<ImportValidationException>(() => Import(new JsonObject { ["title"] = "Senza id" }));
         Assert.Single(await Movies());
     }
+
+    // --- correzioni della code review -----------------------------------------------------------
+
+    [DbFact]
+    public async Task EAN_spostato_tra_entry_non_scambia_i_film()
+    {
+        await Import(Entry(1, "Alien", 1979, "2020-01-01", ean: "8000000000001"), Entry(2, "Brazil", 1985, "2020-01-02"));
+        // In Tellico l'EAN passa da Alien (1) a Brazil (2), che ora viene prima nel file.
+        var r = await Import(Entry(2, "Brazil", 1985, "2020-01-02", ean: "8000000000001"), Entry(1, "Alien", 1979, "2020-01-01"));
+
+        Assert.Equal((0, 0), (r.Inserted, r.Linked));
+        var ms = await Movies();
+        Assert.Equal([1, 2], ms.Select(m => m.Id)); // nessun film reinserito
+        Assert.Equal("Alien", DataOf(ms[0])["title"]!.GetValue<string>());
+        Assert.Equal("Brazil", DataOf(ms[1])["title"]!.GetValue<string>());
+        Assert.Equal((1, 2), (ms[0].TellicoId!.Value, ms[1].TellicoId!.Value));
+        // L'EAN è stato liberato dal vecchio film: colonna e data coerenti.
+        Assert.Null(ms[0].Ean);
+        Assert.False(DataOf(ms[0]).ContainsKey("ean"));
+        Assert.Equal("8000000000001", ms[1].Ean);
+        Assert.Equal("8000000000001", DataOf(ms[1])["ean"]!.GetValue<string>());
+    }
+
+    [DbFact]
+    public async Task EAN_spostato_con_entry_vecchia_prima_nel_file()
+    {
+        await Import(Entry(1, "Alien", 1979, ean: "8000000000001"), Entry(2, "Brazil", 1985));
+        await Import(Entry(1, "Alien", 1979), Entry(2, "Brazil", 1985, ean: "8000000000001"));
+
+        var ms = await Movies();
+        Assert.Null(ms[0].Ean);
+        Assert.False(DataOf(ms[0]).ContainsKey("ean"));
+        Assert.Equal("8000000000001", ms[1].Ean);
+        Assert.Equal("8000000000001", DataOf(ms[1])["ean"]!.GetValue<string>());
+    }
+
+    [DbFact]
+    public async Task EAN_passa_a_un_film_nuovo_e_lascia_il_vecchio()
+    {
+        await Import(Entry(1, "Alien", 1979, ean: "8000000000001"));
+        var r = await Import(Entry(1, "Alien", 1979), Entry(2, "Brazil", 1985, ean: "8000000000001"));
+
+        Assert.Equal((1, 1), (r.Inserted, r.Unchanged + r.Updated));
+        var ms = await Movies();
+        Assert.Equal((1, null), (ms[0].Id, ms[0].Ean));
+        Assert.Equal((2, "8000000000001"), (ms[1].Id, ms[1].Ean));
+    }
+
+    [DbFact]
+    public async Task EAN_di_un_film_collegato_a_un_id_sparito_abbina_ancora()
+    {
+        // Il film era l'entry 9, che in Tellico è stata ricreata come entry 15 con lo stesso EAN.
+        await Import(Entry(9, "Heat", 1995, ean: "8000000000009"));
+        var r = await Import(Entry(15, "Heat - La sfida", 1995, ean: "8000000000009"));
+
+        Assert.Equal((0, 1), (r.Inserted, r.Linked));
+        var m = Assert.Single(await Movies());
+        Assert.Equal((9, 15), (m.Id, m.TellicoId!.Value));
+    }
+
+    [DbFact]
+    public async Task Titolo_e_anno_non_fondono_edizioni_con_EAN_diverso()
+    {
+        // Arrivo DVD dall'app; in Tellico c'è il Blu-ray dello stesso film con un altro EAN.
+        await AddMovie(1_000_000, new JsonObject { ["title"] = "Blade Runner", ["year"] = 1982 }, ean: "8000000000111");
+        var r = await Import(Entry(40, "Blade Runner", 1982, ean: "8000000000222"));
+
+        Assert.Equal((1, 0), (r.Inserted, r.Linked));
+        var ms = await Movies();
+        Assert.Null(ms.Single(m => m.Id == 1_000_000).TellicoId);
+        Assert.Equal("8000000000111", ms.Single(m => m.Id == 1_000_000).Ean);
+        Assert.Equal("8000000000222", ms.Single(m => m.Id == 40).Ean);
+    }
+
+    [DbFact]
+    public async Task EAN_non_validi_ignorati_con_avviso()
+    {
+        var r = await Import(Entry(1, "Uno", 2001, ean: "123"), Entry(2, "Due", 2002, ean: "abc"),
+            Entry(3, "Tre", 2003, ean: "123456789012345678"), Entry(4, "Quattro", 2004, ean: "8000000000004"),
+            Entry(5, "Cinque", 2005, ean: "8000000000004"));
+
+        Assert.Equal(5, r.Inserted);
+        var ms = await Movies();
+        Assert.All(ms.Where(m => m.Id != 4), m => Assert.Null(m.Ean));
+        Assert.Equal("8000000000004", ms.Single(m => m.Id == 4).Ean);
+        Assert.False(DataOf(ms.Single(m => m.Id == 1)).ContainsKey("ean"));
+        Assert.Equal(4, r.Warnings.Count);
+        Assert.Contains(r.Warnings, w => w.StartsWith("Entry 1:", StringComparison.Ordinal));
+        Assert.Contains(r.Warnings, w => w.StartsWith("Entry 5:", StringComparison.Ordinal) && w.Contains("entry 4"));
+    }
+
+    [DbFact]
+    public async Task Id_Tellico_oltre_un_milione_non_blocca_la_sequenza_degli_arrivi()
+    {
+        await Import(Entry(1_000_000, "Grande", 2001), Entry(1_000_001, "Grande 2", 2002));
+        var next = await F.WithDbAsync(db => db.NextMovieIdAsync());
+        Assert.True(next > 1_000_001, $"la sequenza riparte da {next}");
+    }
+
+    [DbFact]
+    public async Task Import_rifiuta_NUL_e_chiavi_duplicate()
+    {
+        var nul = await Assert.ThrowsAsync<ImportValidationException>(() => Import(Entry(1, "Con\u0000NUL", 2001)));
+        Assert.Contains("NUL", nul.Message);
+        var nulKey = new JsonObject { ["id"] = 2, ["ti\u0000tle"] = "x" };
+        await Assert.ThrowsAsync<ImportValidationException>(() => Import(nulKey));
+        var fields = BaseFields.Append(new TellicoField { Name = "x", Title = "X\u0000", Type = "1" }).ToList();
+        await Assert.ThrowsAsync<ImportValidationException>(() => Import(fields, Entry(3, "Ok", 2001)));
+        Assert.Empty(await Movies());
+    }
+
+    [DbFact]
+    public async Task Import_aspetta_le_scritture_dei_film_in_corso()
+    {
+        // Una scrittura di un film (lock condiviso) in corso: l'import aspetta che finisca.
+        await using var conn = new Npgsql.NpgsqlConnection(F.ConnectionString);
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+        await using (var cmd = new Npgsql.NpgsqlCommand($"SELECT pg_advisory_xact_lock_shared({CineManager.Api.Infrastructure.CollectionLock.Key})", conn, tx))
+            await cmd.ExecuteNonQueryAsync();
+
+        var import = Import(Entry(1, "Uno", 2001));
+        await Task.Delay(400);
+        Assert.False(import.IsCompleted);
+        await tx.CommitAsync();
+        Assert.Equal(1, (await import.WaitAsync(TimeSpan.FromSeconds(10))).Inserted);
+    }
+
+    [DbFact]
+    public async Task DuplicateFinder_pre_filtro_SQL_stessi_risultati()
+    {
+        await AddMovie(1, new JsonObject { ["title"] = "Il Padrino", ["year"] = 1972 }, MovieSources.Tellico, tellicoId: 1);
+        await AddMovie(2, new JsonObject { ["title"] = "il padrino!", ["year"] = " 1972 " }, MovieSources.Tellico, tellicoId: 2);
+        await AddMovie(3, new JsonObject { ["title"] = "Il padrino", ["year"] = 1972.0 }, MovieSources.Tellico, tellicoId: 3);
+        await AddMovie(4, new JsonObject { ["title"] = "Il padrino", ["year"] = 1974 }, MovieSources.Tellico, tellicoId: 4);
+        await AddMovie(5, new JsonObject { ["title"] = "Il padrino" }, MovieSources.Tellico, tellicoId: 5);
+        await AddMovie(6, new JsonObject { ["title"] = "Altro", ["year"] = 1990 }, ean: "8000000000006");
+        await F.WithDbAsync(db => db.Movies.Where(m => m.Id == 4).ExecuteUpdateAsync(u => u.SetProperty(m => m.TmdbId, 238)));
+
+        async Task<int[]> Find(JsonObject draft, int? tmdb = null, string? ean = null) =>
+            (await F.WithDbAsync(db => CineManager.Api.Movies.DuplicateFinder.FindAsync(db, draft, tmdb, ean, default)))
+                .Select(c => c.Id).ToArray();
+
+        Assert.Equal(new[] { 1, 2, 3 }, await Find(new JsonObject { ["title"] = "IL PADRINO", ["year"] = "1972" }));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, await Find(new JsonObject { ["title"] = "Il padrino", ["year"] = 1972 }, tmdb: 238));
+        Assert.Equal(new[] { 5 }, await Find(new JsonObject { ["title"] = "Il padrino" }));
+        Assert.Equal(new[] { 6 }, await Find(new JsonObject(), ean: "8000000000006"));
+        Assert.Empty(await Find(new JsonObject()));
+    }
 }

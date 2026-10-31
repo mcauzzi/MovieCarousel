@@ -6,3 +6,5 @@ CineManager.Api.Tests
 Dockerfile
 .dockerignore
 .gitignore
+.env
+*.env

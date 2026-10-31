@@ -80,9 +80,10 @@ public static class HostingSetup
     /// Rate limit (§6, Limiti), tutti come limitatore globale a catena, sull'IP reale:
     /// generale <c>RateLimit__PerMinute</c> (300) per IP; <c>/api/app/pair</c> anche 10/min per IP
     /// (<c>RateLimit__PairPerIp</c>) e 30/min in totale (<c>RateLimit__PairGlobal</c>);
-    /// <c>/api/app/lookup</c> e <c>/api/app/search</c> 60/min per dispositivo (<c>RateLimit__LookupPerDevice</c>).
-    /// Il dispositivo è il <c>kid</c> letto dal token senza verificarlo: serve solo da chiave del
-    /// secchio, la firma la controlla l'autenticazione (e il limite per IP resta comunque).
+    /// <c>/api/app/lookup</c> e <c>/api/app/search</c> 60/min per dispositivo e IP (<c>RateLimit__LookupPerDevice</c>).
+    /// Il dispositivo è il <c>kid</c> letto dal token senza verificarlo (il limitatore gira prima
+    /// dell'autenticazione): per questo il secchio è IP + <c>kid</c>, così chi conosce un deviceId
+    /// da un altro indirizzo non può esaurire il budget del telefono vero.
     /// </summary>
     public static void AddCineRateLimiter(this WebApplicationBuilder builder)
     {
@@ -116,7 +117,7 @@ public static class HostingSetup
                     ? RateLimitPartition.GetFixedWindowLimiter("pair", _ => PerMinute(pairGlobal))
                     : RateLimitPartition.GetNoLimiter("")),
                 PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsLookup(ctx)
-                    ? RateLimitPartition.GetFixedWindowLimiter("lookup:" + (UnverifiedDeviceKey(ctx) ?? "ip:" + Ip(ctx)),
+                    ? RateLimitPartition.GetFixedWindowLimiter("lookup:" + Ip(ctx) + "|" + (UnverifiedDeviceKey(ctx) ?? "-"),
                         _ => PerMinute(lookupPerDevice))
                     : RateLimitPartition.GetNoLimiter("")));
             o.OnRejected = async (ctx, ct) =>

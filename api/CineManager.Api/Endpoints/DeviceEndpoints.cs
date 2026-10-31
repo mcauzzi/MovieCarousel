@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
+using CineManager.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace CineManager.Api.Endpoints;
@@ -19,7 +20,7 @@ public static class DeviceEndpoints
         {
             var everyone = all == true;
             if (everyone && !user.IsInRole(Roles.Admin)) return Results.Forbid();
-            var sub = user.FindFirst(CmClaims.Sub)!.Value;
+            var sub = user.Sub();
             var q = db.Devices.AsNoTracking();
             if (!everyone) q = q.Where(d => d.UserSub == sub);
             // Join esplicito ordinato prima della proiezione (traducibile da EF Core).
@@ -39,7 +40,7 @@ public static class DeviceEndpoints
         {
             var device = await db.Devices.FirstOrDefaultAsync(d => d.Id == id, ct);
             if (device is null) return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Dispositivo inesistente");
-            if (device.UserSub != user.FindFirst(CmClaims.Sub)!.Value && !user.IsInRole(Roles.Admin)) return Results.Forbid();
+            if (device.UserSub != user.Sub() && !user.IsInRole(Roles.Admin)) return Results.Forbid();
             device.RevokedAt ??= clock.GetUtcNow();
             await db.SaveChangesAsync(ct);
             return Results.NoContent();

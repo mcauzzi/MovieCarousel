@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using CineManager.Api.Data;
 using CineManager.Api.Infrastructure;
+using CineManager.Api.Movies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -19,8 +20,8 @@ public sealed class TellicoImporter(
     };
     private const int FallbackGroupMinSize = 3;
 
-    /// <summary>Campi di sistema di Tellico che il modulo dell'app non deve proporre.</summary>
-    private static readonly HashSet<string> SystemFields = ["id", "cdate", "mdate"];
+    /// <summary>Al massimo tanti avvisi nel riepilogo (gli altri solo contati).</summary>
+    private const int MaxWarnings = 50;
 
     private sealed class Tracked(Movie movie)
     {
@@ -28,6 +29,11 @@ public sealed class TellicoImporter(
         public bool Claimed { get; set; }
         private JsonObject? _data;
         public JsonObject Data => _data ??= JsonNode.Parse(Movie.Data) as JsonObject ?? new JsonObject();
+        public void SetData(JsonObject data)
+        {
+            Movie.Data = data.ToJsonString();
+            _data = null;
+        }
     }
 
     public async Task<TellicoImportResult> ImportAsync(TellicoImportRequest req, CancellationToken ct)
@@ -39,10 +45,15 @@ public sealed class TellicoImporter(
 
         var barcodeField = tellico.Value.BarcodeField;
         var now = clock.GetUtcNow();
+        var warnings = new List<string>();
+        // EAN finale di ogni entry (validato, unico nel .tc) e, al contrario, entry che lo possiede.
+        var entryEan = ResolveEans(parsed, barcodeField, warnings);
+        var eanOwner = entryEan.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Value!, kv => kv.Key, StringComparer.Ordinal);
+        var tidsInFile = parsed.Select(p => p.Tid).ToHashSet();
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        // Un import alla volta (il lock si rilascia con la transazione).
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(7243100)", ct);
+        // Esclusivo: nessun arrivo, PATCH o DELETE in parallelo (prendono lo stesso lock condiviso).
+        await CollectionLock.ExclusiveAsync(db, ct);
 
         // --- Campi ---------------------------------------------------------------------------
         var existingFields = await db.CollectionFields.ToDictionaryAsync(f => f.Name, ct);
@@ -60,15 +71,32 @@ public sealed class TellicoImporter(
         var byEan = all.Where(t => t.Movie.Ean is not null).ToDictionary(t => t.Movie.Ean!, StringComparer.Ordinal);
         Dictionary<string, List<Tracked>>? byTitleYear = null; // costruito solo se serve
 
+        // Toglie l'EAN (colonna e data) al film che lo tiene, se non è `keep`: il .tc lo assegna altrove.
+        async Task ReleaseEanAsync(string ean, Tracked? keep, int tid)
+        {
+            if (!byEan.TryGetValue(ean, out var holder) || holder == keep) return;
+            log.LogInformation("EAN {Ean} passa dal film {From} all'entry {Tid}", ean, holder.Movie.Id, tid);
+            byEan.Remove(ean);
+            holder.Movie.Ean = null;
+            var d = holder.Data.DeepClone().AsObject();
+            if (d.Remove(barcodeField)) holder.SetData(d);
+            holder.Movie.UpdatedAt = now;
+            await db.SaveChangesAsync(ct); // libera subito il valore (vincolo unique)
+        }
+
         int inserted = 0, updated = 0, linked = 0, unchanged = 0;
 
         foreach (var (tid, entry) in parsed)
         {
-            var ean = EanNormalizer.Normalize(TitleNormalizer.AsString(entry[barcodeField]));
+            var ean = entryEan[tid];
             Tracked? match = null;
 
-            // 1. EAN
-            if (ean is not null && byEan.TryGetValue(ean, out var e) && !e.Claimed) match = e;
+            // 1. EAN: solo arrivi non collegati, il film già di questa entry o uno collegato a un id
+            //    sparito dal .tc. Un film collegato a un'altra entry presente non si "ruba": l'EAN è
+            //    stato spostato in Tellico e lo riceverà l'entry giusta (sotto).
+            if (ean is not null && byEan.TryGetValue(ean, out var e) && !e.Claimed &&
+                (e.Movie.TellicoId is not { } eTid || eTid == tid || !tidsInFile.Contains(eTid)))
+                match = e;
 
             // 2. tellico_id, con controllo di identità su cdate (id riusato da Tellico)
             if (match is null && byTellico.TryGetValue(tid, out var t) && !t.Claimed)
@@ -84,12 +112,14 @@ public sealed class TellicoImporter(
                 else match = t;
             }
 
-            // 3. titolo + anno, solo tra gli arrivi dall'app non collegati
+            // 3. titolo + anno, solo tra gli arrivi dall'app non collegati e senza un EAN diverso
+            //    (stesso film in un'altra edizione, es. DVD e Blu-ray, resta distinto)
             if (match is null && TitleNormalizer.Key(entry) is { } key)
             {
                 byTitleYear ??= BuildTitleIndex(all);
                 if (byTitleYear.TryGetValue(key, out var list))
-                    match = list.Where(c => !c.Claimed && c.Movie.Source == MovieSources.App && c.Movie.TellicoId is null)
+                    match = list.Where(c => !c.Claimed && c.Movie.Source == MovieSources.App && c.Movie.TellicoId is null &&
+                                            (c.Movie.Ean is null || (ean is null && !eanOwner.ContainsKey(c.Movie.Ean))))
                         .OrderBy(c => c.Movie.Id).FirstOrDefault();
             }
 
@@ -100,23 +130,20 @@ public sealed class TellicoImporter(
             if (match is null)
             {
                 if (byTellico.TryGetValue(tid, out var holder)) await SetTellicoIdAsync(holder, null, byTellico, ct);
+                if (ean is not null) await ReleaseEanAsync(ean, null, tid);
                 var id = tid;
                 while (byId.ContainsKey(id)) id = await db.NextMovieIdAsync(ct);
+                SetBarcode(newData, barcodeField, ean);
                 var movie = new Movie
                 {
-                    Id = id, TellicoId = tid, Source = MovieSources.Tellico,
+                    Id = id, TellicoId = tid, Source = MovieSources.Tellico, Ean = ean,
                     Data = newData.ToJsonString(), CreatedAt = now, UpdatedAt = now,
                 };
-                if (ean is not null)
-                {
-                    if (!byEan.ContainsKey(ean)) movie.Ean = ean;
-                    else log.LogWarning("EAN {Ean} dell'entry {Tid} già usato da un altro film del .tc: ignorato", ean, tid);
-                }
                 db.Movies.Add(movie);
                 var tr = new Tracked(movie) { Claimed = true };
                 byId[id] = tr;
                 byTellico[tid] = tr;
-                if (movie.Ean is not null) byEan[movie.Ean] = tr;
+                if (ean is not null) byEan[ean] = tr;
                 all.Add(tr);
                 inserted++;
                 continue;
@@ -127,7 +154,7 @@ public sealed class TellicoImporter(
             var m = match.Movie;
             var old = match.Data;
 
-            if (IsEmpty(newData["cover"]) && !IsEmpty(old["cover"]))
+            if (MovieValidator.IsEmptyValue(newData["cover"]) && !MovieValidator.IsEmptyValue(old["cover"]))
                 newData["cover"] = old["cover"]!.DeepClone();
             foreach (var name in preservedLocal)
                 if (!newData.ContainsKey(name) && old.TryGetPropertyValue(name, out var v))
@@ -142,23 +169,22 @@ public sealed class TellicoImporter(
                 await SetTellicoIdAsync(match, tid, byTellico, ct);
                 changed = true;
             }
-            if (ean is not null && m.Ean != ean)
+            // EAN: quello dell'entry; senza, resta il precedente purché il .tc non l'abbia dato a un'altra entry.
+            var targetEan = ean ?? (m.Ean is not null && !eanOwner.ContainsKey(m.Ean) ? m.Ean : null);
+            if (targetEan != m.Ean)
             {
-                if (byEan.TryGetValue(ean, out var other) && other != match)
-                    log.LogWarning("EAN {Ean} dell'entry {Tid} già usato da un altro film del .tc: ignorato", ean, tid);
-                else
-                {
-                    if (m.Ean is not null) byEan.Remove(m.Ean);
-                    m.Ean = ean;
-                    byEan[ean] = match;
-                    await db.SaveChangesAsync(ct); // libera subito il vecchio EAN (vincolo unique)
-                    changed = true;
-                }
+                if (targetEan is not null) await ReleaseEanAsync(targetEan, match, tid);
+                if (m.Ean is not null && byEan.TryGetValue(m.Ean, out var cur) && cur == match) byEan.Remove(m.Ean);
+                m.Ean = targetEan;
+                if (targetEan is not null) byEan[targetEan] = match;
+                await db.SaveChangesAsync(ct); // libera subito il vecchio EAN (vincolo unique)
+                changed = true;
             }
+            SetBarcode(newData, barcodeField, m.Ean);
             if (m.Source != MovieSources.Tellico) { m.Source = MovieSources.Tellico; changed = true; }
             if (!JsonNode.DeepEquals(old, newData))
             {
-                m.Data = newData.ToJsonString();
+                match.SetData(newData);
                 changed = true;
             }
 
@@ -169,6 +195,12 @@ public sealed class TellicoImporter(
         }
 
         await db.SaveChangesAsync(ct);
+        // Un id Tellico ≥ 1 000 000 non deve poi scontrarsi con la sequenza degli arrivi.
+        await db.Database.ExecuteSqlRawAsync($"""
+            SELECT setval('{CinemaDbContext.MovieIdSequence}', GREATEST(
+                (SELECT COALESCE(MAX(id), 0) FROM movies),
+                (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM {CinemaDbContext.MovieIdSequence})))
+            """, ct);
         await tx.CommitAsync(ct);
 
         var missing = all
@@ -177,10 +209,51 @@ public sealed class TellicoImporter(
             .Select(t => new MissingMovie(t.Movie.Id, TitleNormalizer.AsString(t.Data["title"])))
             .ToList();
 
+        if (warnings.Count > MaxWarnings)
+            warnings = [.. warnings.Take(MaxWarnings), $"… e altri {warnings.Count - MaxWarnings} avvisi."];
         log.LogInformation(
-            "Import Tellico: {Inserted} nuovi, {Updated} aggiornati, {Linked} collegati, {Unchanged} invariati, {Missing} mancanti, {Fields} campi",
-            inserted, updated, linked, unchanged, missing.Count, fieldsUpdated);
-        return new TellicoImportResult(inserted, updated, linked, unchanged, missing, fieldsUpdated);
+            "Import Tellico: {Inserted} nuovi, {Updated} aggiornati, {Linked} collegati, {Unchanged} invariati, {Missing} mancanti, {Fields} campi, {Warnings} avvisi",
+            inserted, updated, linked, unchanged, missing.Count, fieldsUpdated, warnings.Count);
+        return new TellicoImportResult(inserted, updated, linked, unchanged, missing, fieldsUpdated, warnings);
+    }
+
+    /// <summary>
+    /// EAN di ogni entry: normalizzato e validato come negli arrivi (8–14 cifre); un valore non
+    /// valido o già usato da un'entry precedente del .tc viene ignorato con un avviso.
+    /// </summary>
+    private Dictionary<int, string?> ResolveEans(List<(int Tid, JsonObject Entry)> parsed, string barcodeField, List<string> warnings)
+    {
+        var result = new Dictionary<int, string?>();
+        var firstByEan = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (tid, entry) in parsed)
+        {
+            string? ean = null;
+            var raw = TitleNormalizer.AsString(entry[barcodeField]);
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                var n = EanNormalizer.Normalize(raw);
+                var shown = raw.Length <= 40 ? raw : raw[..40] + "…";
+                if (n is null || !MovieValidator.IsValidEan(n))
+                    warnings.Add($"Entry {tid}: codice a barre \"{shown}\" non valido (servono 8–14 cifre), ignorato.");
+                else if (firstByEan.TryGetValue(n, out var first))
+                    warnings.Add($"Entry {tid}: EAN {n} già usato dall'entry {first}, ignorato.");
+                else
+                {
+                    firstByEan[n] = tid;
+                    ean = n;
+                }
+            }
+            result[tid] = ean;
+        }
+        foreach (var w in warnings) log.LogWarning("Import Tellico: {Warning}", w);
+        return result;
+    }
+
+    /// <summary><c>data.&lt;campo codice a barre&gt;</c> coerente con la colonna <c>ean</c>.</summary>
+    private static void SetBarcode(JsonObject data, string barcodeField, string? ean)
+    {
+        if (ean is null) data.Remove(barcodeField);
+        else data[barcodeField] = ean;
     }
 
     /// <summary>
@@ -208,9 +281,6 @@ public sealed class TellicoImporter(
         }
         return idx;
     }
-
-    private static bool IsEmpty(JsonNode? n) =>
-        n is null || (n is JsonValue v && v.TryGetValue<string>(out var s) && string.IsNullOrWhiteSpace(s));
 
     /// <summary>
     /// Aggiorna <c>collection_fields</c> (§5): titolo, tipo, multiplo e valori ammessi da Tellico;
@@ -246,7 +316,7 @@ public sealed class TellicoImporter(
 
             var groupable = f.Groupable ?? (f.Flags & TellicoFieldTypes.FlagAllowGrouped) != 0;
             var inForm = type is not (FieldTypes.Dependent or FieldTypes.Image) &&
-                         (f.Flags & TellicoFieldTypes.FlagNoEdit) == 0 && !SystemFields.Contains(f.Name);
+                         (f.Flags & TellicoFieldTypes.FlagNoEdit) == 0 && !FieldCatalog.SystemFields.Contains(f.Name);
             db.CollectionFields.Add(new CollectionField
             {
                 Name = f.Name, Title = title, Type = type, Multiple = multiple, Allowed = allowed,
@@ -273,6 +343,8 @@ public sealed class TellicoImporter(
         for (var i = 0; i < entries.Count; i++)
         {
             var e = entries[i] ?? throw new ImportValidationException($"movies[{i}]: valore nullo.");
+            if (JsonSafety.Problem(e) is { } problem)
+                throw new ImportValidationException($"movies[{i}]: {problem}");
             if (e["id"] is not JsonValue idv || !idv.TryGetValue<int>(out var id) || id <= 0)
                 throw new ImportValidationException($"movies[{i}]: 'id' mancante o non intero positivo.");
             if (!seen.Add(id))
@@ -291,6 +363,9 @@ public sealed class TellicoImporter(
                 throw new ImportValidationException("Campo con 'name' mancante o troppo lungo.");
             if (!names.Add(f.Name))
                 throw new ImportValidationException($"Campo '{f.Name}' duplicato.");
+            if (JsonSafety.HasNul(f.Name) || JsonSafety.HasNul(f.Title) || JsonSafety.HasNul(f.Type) ||
+                f.Allowed?.Any(JsonSafety.HasNul) == true)
+                throw new ImportValidationException($"Campo '{f.Name.Replace("\0", "")}': {JsonSafety.NulMessage}");
         }
     }
 }

@@ -383,8 +383,8 @@ Tutte le risposte sono JSON salvo dove indicato. Errori: `application/problem+js
 | GET | `/api/arrivals?scope=new\|app` | film dall'app: `new` mai esportati, `app` tutti quelli non ancora collegati a Tellico (stessa semantica di §9) |
 | PATCH | `/api/movies/{id}` | correzione di un arrivo (solo `source = app`) |
 | DELETE | `/api/movies/{id}` | elimina un arrivo sbagliato (solo `source = app`) |
-| POST | `/api/export/csv` | `{ scope: new\|app\|all }` → `text/csv` (§9); header `X-CM-Movie-Ids` con gli id inclusi |
-| POST | `/api/export/mark` | `{ ids }`: segna come esportati i film del CSV appena scaricato (§9) |
+| GET | `/api/export/csv?scope=new\|app\|all` | `text/csv` (§9); header `X-CM-Export-Cutoff` (istante della lettura) e `X-CM-Export-Count` (arrivi inclusi) |
+| POST | `/api/export/mark` | `{ scope: new\|app, cutoff }`: segna come esportati gli arrivi creati fino al cutoff (§9) |
 | POST | `/api/pairing` | nuovo codice di abbinamento → `{ code, expiresAt, qrSvg }`; il QR si ottiene solo qui (il DB conserva l'hash) |
 | GET | `/api/app-download-qr.svg` | QR con l'URL assoluto dell'APK (`PublicBaseUrl` + `/app/cinemanager.apk`), per §10.1 |
 | GET | `/api/devices` | dispositivi dell'utente |
@@ -520,7 +520,7 @@ Tutto in **una transazione**: o l'import va a buon fine per intero o il DB resta
 - **Intestazioni = titoli dei campi** in `collection_fields` (quelli della propria collezione, quindi l'abbinamento delle colonne nell'import CSV di Tellico è automatico). Senza un import precedente: titoli inglesi standard di Tellico.
 - Colonne: titolo, anno, regista, cast, genere, nazionalità, lingua, durata, trama, supporto, **codice a barre** e tutti i **campi personalizzati** di `collection_fields` (esclusi `image` e `dependent`). Il tipo `bool` esce come `true`/vuoto, `date` come `AAAA-MM-GG`.
 - Formato: UTF-8 senza BOM, separatore `,`, quoting RFC 4180; valori multipli separati da `; `; tabella cast come `Attore::Ruolo; Attore::Ruolo`.
-- L'export **non** modifica nulla: il server non può sapere se il download è andato a buon fine. La risposta porta gli id inclusi (header `X-CM-Movie-Ids`); quando il browser ha ricevuto il file completo, il sito chiama `POST /api/export/mark { ids }`, che imposta `exported_at`. Se il download fallisce, i film restano "nuovi".
+- L'export **non** modifica nulla: il server non può sapere se il download è andato a buon fine. La risposta porta l'istante della lettura (header `X-CM-Export-Cutoff`) e il numero di arrivi inclusi (`X-CM-Export-Count`); quando il browser ha ricevuto il file completo, il sito chiama `POST /api/export/mark { scope, cutoff }`, che imposta `exported_at` sugli arrivi dello scope creati fino a quell'istante (lo scope `all` non si marca). Niente elenco di id nell'header, che con centinaia di arrivi supererebbe i limiti del proxy. Se il download fallisce, i film restano "nuovi".
 - Le copertine non viaggiano nel CSV (Tellico non le importa): restano nel DB e, grazie alla regola di §8, non vengono perse al successivo IMPORTA DA TELLICO.
 
 **Prerequisito in Tellico**: aggiungere alla collezione un campo testo per il codice a barre (es. nome `ean`, titolo "EAN"). Senza, l'abbinamento al re-import ripiega su titolo + anno. Il nome è configurabile (`Tellico__BarcodeField`).

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CineManager.Api.Data;
 using CineManager.Api.Import;
+using CineManager.Api.Infrastructure;
 
 namespace CineManager.Api.Movies;
 
@@ -94,7 +95,8 @@ public sealed class MovieValidator
 
     public static bool IsValidEan(string ean) => ean.Length is >= 8 and <= 14 && ean.All(char.IsAsciiDigit);
 
-    private static bool IsEmptyValue(JsonNode? node) => node switch
+    /// <summary>Valore vuoto: null, testo vuoto o di soli spazi, elenco vuoto.</summary>
+    public static bool IsEmptyValue(JsonNode? node) => node switch
     {
         null => true,
         JsonValue v when v.TryGetValue<string>(out var s) => string.IsNullOrWhiteSpace(s),
@@ -129,6 +131,7 @@ public sealed class MovieValidator
         if (node is not JsonValue v) return (null, "Valore non valido.");
         var kind = v.GetValueKind();
         string? str = kind == JsonValueKind.String ? v.GetValue<string>().Trim() : null;
+        if (JsonSafety.HasNul(str)) return (null, JsonSafety.NulMessage); // Postgres jsonb non lo accetta
 
         switch (field.Type)
         {

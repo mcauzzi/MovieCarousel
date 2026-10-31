@@ -49,20 +49,14 @@ public sealed partial class CoverStore(IOptions<CoversOptions> options, IWebHost
             ct.ThrowIfCancellationRequested();
             var dest = Path.Combine(root, name);
             if (File.Exists(dest)) { skipped++; continue; }
-            var tmp = Path.Combine(root, $".tmp-{Guid.NewGuid():N}");
             try
             {
-                await File.WriteAllBytesAsync(tmp, bytes, ct);
-                File.Move(tmp, dest, overwrite: false);
+                await WriteViaTempAsync(root, dest, bytes, overwrite: false, ct);
                 written++;
             }
             catch (IOException) when (File.Exists(dest))
             {
                 skipped++; // scritto nel frattempo da un'altra richiesta
-            }
-            finally
-            {
-                if (File.Exists(tmp)) File.Delete(tmp);
             }
         }
         log.LogInformation("Import immagini: {Written} scritte, {Skipped} già presenti", written, skipped);
@@ -77,11 +71,17 @@ public sealed partial class CoverStore(IOptions<CoversOptions> options, IWebHost
         if (!IsSafeName(name)) throw new ArgumentException("Nome file non valido.", nameof(name));
         var root = Root;
         Directory.CreateDirectory(root);
+        await WriteViaTempAsync(root, Path.Combine(root, name), bytes, overwrite: true, ct);
+    }
+
+    /// <summary>File temporaneo nella stessa cartella + rename: chi legge non vede mai un file a metà.</summary>
+    private static async Task WriteViaTempAsync(string root, string dest, ReadOnlyMemory<byte> bytes, bool overwrite, CancellationToken ct)
+    {
         var tmp = Path.Combine(root, $".tmp-{Guid.NewGuid():N}");
         try
         {
-            await File.WriteAllBytesAsync(tmp, bytes.ToArray(), ct);
-            File.Move(tmp, Path.Combine(root, name), overwrite: true);
+            await File.WriteAllBytesAsync(tmp, bytes, ct);
+            File.Move(tmp, dest, overwrite);
         }
         finally
         {

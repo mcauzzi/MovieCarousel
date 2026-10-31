@@ -28,8 +28,10 @@ public sealed class TellicoImportRequest
 
 public sealed record MissingMovie(int Id, string? Title);
 
+/// <summary>Riepilogo dell'import; <c>Warnings</c>: valori ignorati (es. codici a barre non validi o ripetuti).</summary>
 public sealed record TellicoImportResult(
-    int Inserted, int Updated, int Linked, int Unchanged, IReadOnlyList<MissingMovie> Missing, int FieldsUpdated);
+    int Inserted, int Updated, int Linked, int Unchanged, IReadOnlyList<MissingMovie> Missing, int FieldsUpdated,
+    IReadOnlyList<string> Warnings);
 
 public sealed class ImagesImportRequest
 {

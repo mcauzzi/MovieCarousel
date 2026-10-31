@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
+using CineManager.Api.Infrastructure;
 using CineManager.Api.Movies;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,9 +35,9 @@ public static partial class FieldEndpoints
 
     public static void MapFieldEndpoints(this IEndpointRouteBuilder app)
     {
+        // Catalogo completo: prima di ogni import anche i campi standard di Tellico (FieldCatalog).
         app.MapGet("/api/fields", async (CinemaDbContext db, CancellationToken ct) =>
-            (await db.CollectionFields.AsNoTracking().OrderBy(f => f.Ordinal).ThenBy(f => f.Name).ToListAsync(ct))
-                .Select(ToDto).ToList())
+            (await FieldCatalog.LoadAsync(db, ct)).Select(ToDto).ToList())
             .RequireAuthorization(Policies.User);
 
         var admin = app.MapGroup("/api/fields").RequireAuthorization(Policies.Admin);
@@ -73,10 +74,24 @@ public static partial class FieldEndpoints
 
         admin.MapPatch("/{name}", async (string name, JsonElement body, CinemaDbContext db, CancellationToken ct) =>
         {
-            var field = await db.CollectionFields.FirstOrDefaultAsync(f => f.Name == name, ct);
-            if (field is null) return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Campo inesistente");
             if (body.ValueKind != JsonValueKind.Object) return Bad("Il corpo deve essere un oggetto JSON.");
             if (UnknownKey(body, PatchKeys) is { } unknown) return Bad($"Proprietà non modificabile: '{unknown}'.");
+            var field = await db.CollectionFields.FirstOrDefaultAsync(f => f.Name == name, ct);
+            if (field is null && FieldCatalog.Defaults.Any(f => f.Name == name) &&
+                !await db.CollectionFields.AnyAsync(f => f.Origin == FieldOrigins.Tellico, ct))
+            {
+                // Campo standard prima del primo import: si salvano tutti gli standard mancanti (non
+                // solo questo, altrimenti il catalogo smetterebbe di completare gli altri). Il primo
+                // import li aggiorna o li rimuove come qualsiasi campo di Tellico.
+                var present = await db.CollectionFields.Select(f => f.Name).ToListAsync(ct);
+                foreach (var d in FieldCatalog.Defaults.Where(d => !present.Contains(d.Name)))
+                {
+                    var row = Copy(d);
+                    db.CollectionFields.Add(row);
+                    if (row.Name == name) field = row;
+                }
+            }
+            if (field is null) return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Campo inesistente");
             if (Apply(body, field, creating: false) is { } error) return Bad(error);
             await db.SaveChangesAsync(ct);
             return Results.Ok(ToDto(field));
@@ -86,12 +101,14 @@ public static partial class FieldEndpoints
         admin.MapDelete("/{name}", async (string name, bool? purge, CinemaDbContext db, CancellationToken ct) =>
         {
             var field = await db.CollectionFields.FirstOrDefaultAsync(f => f.Name == name, ct);
-            if (field is null) return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Campo inesistente");
-            if (field.Origin != FieldOrigins.Local)
+            var standard = field is null && (await FieldCatalog.LoadAsync(db, ct)).Any(f => f.Name == name);
+            if (field is null && !standard)
+                return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Campo inesistente");
+            if (standard || field!.Origin != FieldOrigins.Local)
                 return Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Campo di Tellico",
                     detail: "I campi di Tellico si eliminano in Tellico e spariscono al successivo import.");
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            db.CollectionFields.Remove(field);
+            db.CollectionFields.Remove(field!);
             await db.SaveChangesAsync(ct);
             if (purge == true)
                 await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE movies SET data = data - {name} WHERE data ? {name}", ct);
@@ -141,8 +158,9 @@ public static partial class FieldEndpoints
                     var list = new List<string>();
                     foreach (var item in v.EnumerateArray())
                     {
-                        if (item.ValueKind != JsonValueKind.String || item.GetString()!.Trim() is not { Length: > 0 and <= MovieValidator.MaxLine } s)
-                            return "'allowed': testi non vuoti.";
+                        if (item.ValueKind != JsonValueKind.String || item.GetString()!.Trim() is not { Length: > 0 and <= MovieValidator.MaxLine } s ||
+                            s.Any(char.IsControl))
+                            return "'allowed': testi non vuoti, senza caratteri di controllo.";
                         if (!list.Contains(s)) list.Add(s);
                     }
                     if (list.Count > MaxAllowed) return $"'allowed': al massimo {MaxAllowed} valori.";
@@ -155,12 +173,17 @@ public static partial class FieldEndpoints
         return null;
     }
 
+    private static CollectionField Copy(CollectionField f) => new()
+    {
+        Name = f.Name, Title = f.Title, Type = f.Type, Multiple = f.Multiple, Allowed = f.Allowed?.ToList(),
+        Origin = f.Origin, Groupable = f.Groupable, GroupMinSize = f.GroupMinSize, InForm = f.InForm, Ordinal = f.Ordinal,
+    };
+
     private static string? UnknownKey(JsonElement body, HashSet<string> allowed) =>
         body.EnumerateObject().Select(p => p.Name).FirstOrDefault(n => !allowed.Contains(n));
 
     private static string? Str(JsonElement body, string name) =>
         body.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
-    private static IResult Bad(string detail) =>
-        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "Campo non valido", detail: detail);
+    private static IResult Bad(string detail) => ApiResults.Bad(detail, "Campo non valido");
 }

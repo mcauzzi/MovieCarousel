@@ -39,11 +39,18 @@ public sealed class ArrivalService(
 {
     private static readonly HashSet<string> CreateKeys = ["ean", "tmdbId", "posterPath", "movie", "confirmDuplicate"];
 
+    /// <summary>Tempo massimo per scaricare la copertina, indipendente dalla richiesta dell'app.</summary>
+    public static readonly TimeSpan CoverTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>Tentativi di inserimento se l'id della sequenza è già occupato (id Tellico ≥ 1 000 000).</summary>
+    private const int MaxIdAttempts = 5;
+
     private string BarcodeField => tellico.Value.BarcodeField;
 
     public async Task<ArrivalOutcome> CreateAsync(JsonElement body, string ownerSub, Guid deviceId, CancellationToken ct)
     {
         if (body.ValueKind != JsonValueKind.Object) return new ArrivalOutcome.Invalid("Il corpo deve essere un oggetto JSON.");
+        if (JsonSafety.Problem(body) is { } unsafeJson) return new ArrivalOutcome.Invalid(unsafeJson);
         foreach (var p in body.EnumerateObject())
             if (!CreateKeys.Contains(p.Name)) return new ArrivalOutcome.Invalid($"Proprietà sconosciuta: '{p.Name}'.");
 
@@ -98,50 +105,86 @@ public sealed class ArrivalService(
         if (TitleOf(data) is null)
             return new ArrivalOutcome.Invalid("Campi non validi.", new() { ["title"] = ["Il titolo è obbligatorio."] });
 
-        if (ean is not null && await EanHolderAsync(ean, null, ct) is { } holder)
-            return new ArrivalOutcome.EanConflict(holder.Id, holder.Title);
-        if (!confirm)
+        Movie movie;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            var dups = await DuplicateFinder.FindAsync(db, data, tmdbId, null, ct);
-            if (dups.Count > 0) return new ArrivalOutcome.PossibleDuplicate(dups);
-        }
-
-        // cdate = data di inserimento: il film compare tra le novità come quelli di Tellico.
-        data["cdate"] = clock.GetLocalNow().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        if (ean is not null) data[BarcodeField] = ean;
-
-        var now = clock.GetUtcNow();
-        var movie = new Movie
-        {
-            Id = await db.NextMovieIdAsync(ct), Ean = ean, Source = MovieSources.App, TmdbId = tmdbId,
-            CreatedAt = now, UpdatedAt = now, CreatedBy = ownerSub, CreatedByDevice = deviceId,
-            Data = data.ToJsonString(),
-        };
-        db.Movies.Add(movie);
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (ean is not null && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-        {
-            // Stesso EAN inserito nel frattempo da un'altra richiesta.
-            db.ChangeTracker.Clear();
-            if (await EanHolderAsync(ean, null, ct) is { } h) return new ArrivalOutcome.EanConflict(h.Id, h.Title);
-            throw;
-        }
-
-        if (posterPath is not null)
-        {
-            var cover = await downloader.DownloadAsync(movie.Id, posterPath, ct);
-            if (cover is not null)
+            // Condiviso: niente arrivi a metà di un import o di un export (che lo prendono esclusivo).
+            await CollectionLock.SharedAsync(db, ct);
+            if (ean is not null && await EanHolderAsync(ean, null, ct) is { } holder)
+                return new ArrivalOutcome.EanConflict(holder.Id, holder.Title);
+            if (!confirm)
             {
-                data["cover"] = cover;
-                movie.Data = data.ToJsonString();
-                await db.SaveChangesAsync(ct);
+                var dups = await DuplicateFinder.FindAsync(db, data, tmdbId, null, ct);
+                if (dups.Count > 0) return new ArrivalOutcome.PossibleDuplicate(dups);
             }
+
+            // cdate = data di inserimento: il film compare tra le novità come quelli di Tellico.
+            data["cdate"] = clock.GetLocalNow().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            if (ean is not null) data[BarcodeField] = ean;
+
+            // created_at letto dopo il lock: il cutoff dell'export (preso con il lock esclusivo) lo separa con certezza.
+            var now = clock.GetUtcNow();
+            movie = new Movie
+            {
+                Id = await db.NextMovieIdAsync(ct), Ean = ean, Source = MovieSources.App, TmdbId = tmdbId,
+                CreatedAt = now, UpdatedAt = now, CreatedBy = ownerSub, CreatedByDevice = deviceId,
+                Data = data.ToJsonString(),
+            };
+            db.Movies.Add(movie);
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await db.SaveChangesAsync(ct); // in una transazione EF usa un savepoint: si può riprovare
+                    break;
+                }
+                catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                    { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "pk_movies" } && attempt < MaxIdAttempts)
+                {
+                    // Id già preso (es. un id Tellico importato prima dell'allineamento della sequenza).
+                    log.LogWarning("Id {Id} già occupato: nuovo valore dalla sequenza", movie.Id);
+                    db.Entry(movie).State = EntityState.Detached;
+                    movie.Id = await db.NextMovieIdAsync(ct);
+                    db.Movies.Add(movie);
+                }
+                catch (DbUpdateException ex) when (ean is not null && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+                {
+                    // Stesso EAN inserito nel frattempo da un'altra richiesta.
+                    db.ChangeTracker.Clear();
+                    if (await EanHolderAsync(ean, null, ct) is { } h) return new ArrivalOutcome.EanConflict(h.Id, h.Title);
+                    throw;
+                }
+            }
+            await tx.CommitAsync(ct);
         }
         log.LogInformation("Arrivo {Id} dall'app (dispositivo {Device}, utente {Sub})", movie.Id, deviceId, ownerSub);
+
+        // Il film è salvato: da qui in poi niente può più far fallire la richiesta (ritentando l'app
+        // riceverebbe 409). La copertina ha un timeout suo e non segue l'annullamento della richiesta.
+        if (posterPath is not null) await AttachCoverAsync(movie.Id, posterPath);
         return new ArrivalOutcome.Created(movie.Id);
+    }
+
+    /// <summary>Scarica la copertina e la scrive in <c>data.cover</c>; ogni errore lascia il film senza copertina.</summary>
+    private async Task AttachCoverAsync(int movieId, string posterPath)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(CoverTimeout);
+            var cover = await downloader.DownloadAsync(movieId, posterPath, cts.Token);
+            if (cover is null) return;
+            await using var tx = await db.Database.BeginTransactionAsync(CancellationToken.None);
+            await CollectionLock.SharedAsync(db, CancellationToken.None);
+            // Solo la chiave cover, in un'unica istruzione: non sovrascrive modifiche arrivate nel frattempo.
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE movies SET data = jsonb_set(data, '{{cover}}', to_jsonb({cover}::text)) WHERE id = {movieId}",
+                CancellationToken.None);
+            await tx.CommitAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Copertina del film {Id} non salvata: il film resta senza copertina", movieId);
+        }
     }
 
     public async Task<List<ArrivalDto>> ListAsync(string scope, string sub, bool isAdmin, CancellationToken ct)
@@ -156,10 +199,13 @@ public sealed class ArrivalService(
 
     public async Task<ArrivalOutcome> PatchAsync(int id, JsonElement body, string sub, bool isAdmin, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await CollectionLock.SharedAsync(db, ct);
         var movie = await db.Movies.FirstOrDefaultAsync(m => m.Id == id, ct);
         if (CheckAccess(movie, sub, isAdmin) is { } denied) return denied;
 
         if (body.ValueKind != JsonValueKind.Object) return new ArrivalOutcome.Invalid("Il corpo deve essere un oggetto JSON.");
+        if (JsonSafety.Problem(body) is { } unsafeJson) return new ArrivalOutcome.Invalid(unsafeJson);
         foreach (var p in body.EnumerateObject())
             if (p.Name != "movie") return new ArrivalOutcome.Invalid($"Proprietà sconosciuta: '{p.Name}'.");
         if (!body.TryGetProperty("movie", out var movieEl) || movieEl.ValueKind != JsonValueKind.Object)
@@ -204,28 +250,35 @@ public sealed class ArrivalService(
                 return new ArrivalOutcome.EanConflict(h.Id, h.Title);
             throw;
         }
+        await tx.CommitAsync(ct);
         var names = await UserNamesAsync([movie.CreatedBy], ct);
         return new ArrivalOutcome.Updated(ToDto(movie, names));
     }
 
     public async Task<ArrivalOutcome> DeleteAsync(int id, string sub, bool isAdmin, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await CollectionLock.SharedAsync(db, ct);
         var movie = await db.Movies.FirstOrDefaultAsync(m => m.Id == id, ct);
         if (CheckAccess(movie, sub, isAdmin) is { } denied) return denied;
         // Lo stato visto/voto collegato sparisce con il film (FK con ON DELETE CASCADE).
         db.Movies.Remove(movie!);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         covers.DeleteAppCovers(id);
         log.LogInformation("Arrivo {Id} eliminato da {Sub}", id, sub);
         return new ArrivalOutcome.Deleted();
     }
 
-    /// <summary>Esiste, è dell'utente (o l'utente è admin), è un arrivo dall'app.</summary>
+    /// <summary>
+    /// Esiste, è un arrivo dall'app, è dell'utente (o l'utente è admin). La sorgente si controlla
+    /// prima del proprietario: un film di Tellico dà 409 a chiunque, come da contratto.
+    /// </summary>
     private static ArrivalOutcome? CheckAccess(Movie? movie, string sub, bool isAdmin)
     {
         if (movie is null) return new ArrivalOutcome.NotFound();
-        if (!isAdmin && movie.CreatedBy != sub) return new ArrivalOutcome.Forbidden();
         if (movie.Source != MovieSources.App) return new ArrivalOutcome.NotAnArrival();
+        if (!isAdmin && movie.CreatedBy != sub) return new ArrivalOutcome.Forbidden();
         return null;
     }
 

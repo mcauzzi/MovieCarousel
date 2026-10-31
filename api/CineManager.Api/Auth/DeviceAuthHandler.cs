@@ -84,7 +84,7 @@ public sealed class DeviceAuthHandler(
             return Reject("bh_mismatch");
 
         // 4. jti monouso (registrato solo dopo la firma: un token falso non può "bruciare" un jti)
-        if (!replay.TryRegister(device.Id, token.Jti)) return Reject("replay");
+        if (!replay.TryRegister(device.Id, token.Jti, token.Exp)) return Reject("replay");
 
         // 5. proprietario ancora autorizzato (§4.3)
         var owner = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Sub == device.UserSub, ct);

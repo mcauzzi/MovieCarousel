@@ -5,7 +5,9 @@ using System.Text.Json.Nodes;
 using CineManager.Api.Auth;
 using CineManager.Api.Endpoints;
 using CineManager.Api.Tests.Support;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CineManager.Api.Tests;
 
@@ -365,6 +367,71 @@ public class PairRateLimitTests : IDisposable
     public void Dispose() => _f?.Dispose();
 }
 
+/// <summary>Rate limit di lookup/search per dispositivo: il secchio è IP + kid (host dedicato).</summary>
+public class LookupRateLimitTests : IDisposable
+{
+    private sealed class IpFactory : AppFactory
+    {
+        public const string IpHeader = "X-Test-Ip";
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.ConfigureServices(s => s.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, IpFilter>());
+        }
+
+        /// <summary>IP del client da un header di test (TestServer non ne ha uno).</summary>
+        private sealed class IpFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+        {
+            public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+            {
+                app.Use(async (Microsoft.AspNetCore.Http.HttpContext ctx, Func<Task> n) =>
+                {
+                    if (ctx.Request.Headers.TryGetValue(IpHeader, out var ip)) ctx.Connection.RemoteIpAddress = IPAddress.Parse(ip.ToString());
+                    await n();
+                });
+                next(app);
+            };
+        }
+    }
+
+    private readonly IpFactory? _f;
+
+    public LookupRateLimitTests()
+    {
+        if (TestDb.BaseConnection is null) return;
+        _f = new IpFactory();
+        _f.Settings["RateLimit:LookupPerDevice"] = "2";
+    }
+
+    [DbFact]
+    public async Task Chi_conosce_il_kid_da_un_altro_IP_non_esaurisce_il_budget_del_telefono()
+    {
+        using var dev = await _f!.PairAsync();
+        using var c = _f.AppClient();
+        const string path = "/api/app/lookup?ean=8012345678901";
+
+        HttpRequestMessage From(string ip, HttpRequestMessage req)
+        {
+            req.Headers.Add(IpFactory.IpHeader, ip);
+            return req;
+        }
+
+        // Attaccante: token falsi con il kid del telefono, da un altro IP.
+        for (var i = 0; i < 3; i++)
+            await c.SendAsync(From("10.0.0.66", dev.Request(HttpMethod.Get, path, sign: _ => new byte[64])));
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await c.SendAsync(From("10.0.0.66", dev.Request(HttpMethod.Get, path, sign: _ => new byte[64])))).StatusCode);
+
+        // Il telefono vero ha ancora il suo budget, che poi si esaurisce normalmente.
+        Assert.Equal(HttpStatusCode.OK, (await c.SendAsync(From("10.0.0.1", dev.Request(HttpMethod.Get, path)))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await c.SendAsync(From("10.0.0.1", dev.Request(HttpMethod.Get, path)))).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await c.SendAsync(From("10.0.0.1", dev.Request(HttpMethod.Get, path)))).StatusCode);
+    }
+
+    public void Dispose() => _f?.Dispose();
+}
+
 /// <summary>Formato del token, senza host.</summary>
 public class DeviceTokenUnitTests
 {
@@ -398,16 +465,34 @@ public class DeviceTokenUnitTests
     }
 
     [Fact]
-    public void ReplayCache_scade_dopo_due_minuti()
+    public void ReplayCache_scade_dopo_la_validita_del_token()
     {
-        var clock = new ManualClock(DateTimeOffset.UtcNow);
+        var clock = new ManualClock(DateTimeOffset.FromUnixTimeSeconds(1_800_000_000));
         var cache = new ReplayCache(clock);
         var id = Guid.NewGuid();
-        Assert.True(cache.TryRegister(id, "jti-0123456789abcdef"));
-        Assert.False(cache.TryRegister(id, "jti-0123456789abcdef"));
-        Assert.True(cache.TryRegister(Guid.NewGuid(), "jti-0123456789abcdef"));
-        clock.Advance(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(1));
-        Assert.True(cache.TryRegister(id, "jti-0123456789abcdef"));
+        var exp = clock.GetUtcNow().ToUnixTimeSeconds() + 60;
+        Assert.True(cache.TryRegister(id, "jti-0123456789abcdef", exp));
+        Assert.False(cache.TryRegister(id, "jti-0123456789abcdef", exp));
+        Assert.True(cache.TryRegister(Guid.NewGuid(), "jti-0123456789abcdef", exp));
+        clock.Advance(TimeSpan.FromSeconds(60 + DeviceAuthHandler.ClockSkewSeconds + 1) + ReplayCache.Margin + TimeSpan.FromSeconds(1));
+        Assert.True(cache.TryRegister(id, "jti-0123456789abcdef", exp));
+    }
+
+    [Fact]
+    public void ReplayCache_nessun_replay_al_confine_della_finestra()
+    {
+        // Token con iat al limite della tolleranza nel futuro (now + 30) e durata massima (60 s):
+        // l'API lo accetta fino a now + 120 s compreso (exp ≥ floor(now) - 30).
+        var t0 = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000).AddMilliseconds(100);
+        var clock = new ManualClock(t0);
+        var cache = new ReplayCache(clock);
+        var id = Guid.NewGuid();
+        var exp = t0.ToUnixTimeSeconds() + DeviceAuthHandler.ClockSkewSeconds + DeviceAuthHandler.MaxLifetimeSeconds;
+        Assert.True(cache.TryRegister(id, "jti-confine-0123456789", exp));
+
+        clock.Advance(TimeSpan.FromSeconds(120.5)); // ancora accettabile: floor(now) - 30 = exp
+        Assert.True(exp >= clock.GetUtcNow().ToUnixTimeSeconds() - DeviceAuthHandler.ClockSkewSeconds);
+        Assert.False(cache.TryRegister(id, "jti-confine-0123456789", exp));
     }
 
     [Fact]

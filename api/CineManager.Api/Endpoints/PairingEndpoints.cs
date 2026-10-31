@@ -42,7 +42,7 @@ public static class PairingEndpoints
             var expires = now + CodeLifetime;
             db.PairingCodes.Add(new PairingCode
             {
-                CodeHash = Hash(code), UserSub = user.FindFirst(CmClaims.Sub)!.Value, ExpiresAt = expires,
+                CodeHash = Hash(code), UserSub = user.Sub(), ExpiresAt = expires,
             });
             await db.SaveChangesAsync(ct);
 
@@ -75,13 +75,14 @@ public static class PairingEndpoints
             var hash = Hash(req.Code);
             var now = clock.GetUtcNow();
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            // Consumo atomico: un codice vale una sola volta anche con richieste simultanee.
-            var used = await db.PairingCodes
-                .Where(p => p.CodeHash == hash && p.UsedAt == null && p.ExpiresAt > now)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.UsedAt, now), ct);
-            if (used == 0) return Bad("invalid_code", "Codice di abbinamento non valido, scaduto o già usato.");
-
-            var sub = await db.PairingCodes.Where(p => p.CodeHash == hash).Select(p => p.UserSub).SingleAsync(ct);
+            // Consumo atomico (un codice vale una sola volta anche con richieste simultanee) che
+            // restituisce anche l'utente, senza una seconda lettura.
+            var sub = (await db.Database.SqlQuery<string>($"""
+                UPDATE pairing_codes SET used_at = {now}
+                WHERE code_hash = {hash} AND used_at IS NULL AND expires_at > {now}
+                RETURNING user_sub AS "Value"
+                """).ToListAsync(ct)).SingleOrDefault();
+            if (sub is null) return Bad("invalid_code", "Codice di abbinamento non valido, scaduto o già usato.");
             var device = new Device
             {
                 Id = Guid.CreateVersion7(), UserSub = sub, Name = name, PublicKey = spki!, CreatedAt = now,

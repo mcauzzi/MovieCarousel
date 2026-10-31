@@ -10,6 +10,7 @@ using CineManager.Api.Movies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using static CineManager.Api.Infrastructure.ApiResults;
 
 namespace CineManager.Api.Endpoints;
 
@@ -80,12 +81,7 @@ public static class AppEndpoints
         });
 
         g.MapPost("/movies", async (JsonElement body, ClaimsPrincipal user, ArrivalService arrivals, CancellationToken ct) =>
-        {
-            var outcome = await arrivals.CreateAsync(body, user.FindFirst(CmClaims.Sub)!.Value, DeviceId(user), ct);
-            return outcome is ArrivalOutcome.Created c
-                ? Results.Created($"/api/movies/{c.Id}", new { id = c.Id })
-                : ArrivalEndpoints.ToResult(outcome);
-        });
+            ArrivalEndpoints.ToResult(await arrivals.CreateAsync(body, user.Sub(), DeviceId(user), ct)));
     }
 
     private static Guid DeviceId(ClaimsPrincipal user) => Guid.Parse(user.FindFirst(CmClaims.Device)!.Value);
@@ -103,7 +99,4 @@ public static class AppEndpoints
             return Results.Problem(statusCode: StatusCodes.Status502BadGateway, title: "TMDb non disponibile", detail: ex.Message);
         }
     }
-
-    private static IResult Bad(string detail) =>
-        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "Richiesta non valida", detail: detail);
 }

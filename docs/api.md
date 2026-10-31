@@ -12,8 +12,10 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 - **Rate limit** (→ **429** con `Retry-After`; `/api/health` escluso), tutti sull'IP reale salvo dove indicato:
   - generale 300/min per IP (`RateLimit__PerMinute`);
   - `POST /api/app/pair` in più 10/min per IP (`RateLimit__PairPerIp`) e 30/min in totale (`RateLimit__PairGlobal`);
-  - `GET /api/app/lookup` e `/api/app/search` in più 60/min per dispositivo (`RateLimit__LookupPerDevice`; chiave = `kid` del token).
+  - `GET /api/app/lookup` e `/api/app/search` in più 60/min per dispositivo e IP (`RateLimit__LookupPerDevice`; chiave = IP + `kid` del token, letto prima dell'autenticazione: chi conosce un `deviceId` da un altro indirizzo non consuma il budget del telefono).
 - **Corpo massimo**: 1 MB; 256 KB per `/api/app/*` (oltre → **413**); 32 MB per i due endpoint di import.
+- **Testi**: il carattere NUL (`\u0000`) non è ammesso in nessuna stringa né chiave salvata (film, campi, import) → **400**; chiavi duplicate nello stesso oggetto JSON di un film → **400**.
+- **Concorrenza**: import da Tellico ed export CSV prendono un advisory lock di transazione esclusivo sulla collezione; inserimento, correzione ed eliminazione di un arrivo lo prendono condiviso. Durante un import queste scritture aspettano (niente modifiche perse né 500).
 
 ## Endpoint
 
@@ -39,9 +41,9 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 | GET | `/api/arrivals?scope=new\|app` | user | arrivi dall'app (utente: i propri; admin: tutti) → `[Arrival]` |
 | PATCH | `/api/movies/{id}` | user | `{ movie: {…} }` correzione di un arrivo proprio (admin: qualsiasi) → `Arrival` |
 | DELETE | `/api/movies/{id}` | user | elimina un arrivo proprio (admin: qualsiasi) → 204 |
-| POST | `/api/export/csv` | admin | `{ scope: "new"\|"app"\|"all" }` → `text/csv` (§9) |
-| POST | `/api/export/mark` | admin | `{ ids: [..] }` → `{ marked }` |
-| GET | `/api/fields` | user | definizioni dei campi (come `fields` di `/api/collection`) |
+| GET | `/api/export/csv?scope=new\|app\|all` | admin | `text/csv` + `X-CM-Export-Cutoff`, `X-CM-Export-Count` (§9) |
+| POST | `/api/export/mark` | admin | `{ scope: "new"\|"app", cutoff }` → `{ marked }` |
+| GET | `/api/fields` | user | definizioni dei campi (come `fields` di `/api/collection`; prima di ogni import i campi standard di Tellico + quelli `local`) |
 | POST | `/api/fields` | admin | nuovo campo `local` → 201 `Field` |
 | PATCH | `/api/fields/{name}` | admin | `title`, `groupable`, `groupMinSize`, `inForm`, `ordinal`, `allowed` → `Field` |
 | DELETE | `/api/fields/{name}?purge=` | admin | elimina un campo `local` → 204 |
@@ -64,15 +66,15 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 }
 ```
 
-Ogni film è il contenuto di `movies.data` più `id` (id del DB: per gli importati è l'id Tellico, salvo collisioni). I campi sono ordinati per `ordinal`, poi `name`. `type` ∈ `line, para, number, bool, date, choice, url, rating, table, image, dependent`; `origin` ∈ `tellico, local`.
+Ogni film è il contenuto di `movies.data` più `id` (id del DB: per gli importati è l'id Tellico, salvo collisioni). I campi sono ordinati per `ordinal`, poi `name`; prima del primo import sono i campi standard della collezione video di Tellico (titoli inglesi, `origin: "tellico"`) più quelli creati dal sito, come in `/api/fields`. `type` ∈ `line, para, number, bool, date, choice, url, rating, table, image, dependent`; `origin` ∈ `tellico, local`.
 
 ### `PUT /api/state/{movieId}`
 
-Conta la **presenza** della chiave: `{"status":"seen"}` imposta lo stato senza toccare il voto, `{"status":null}` lo toglie; idem `rating` (intero 1–5 o `null`). Entrambe le chiavi nello stesso corpo sono ammesse. Quando stato e voto sono entrambi null la riga viene cancellata. 400 per corpo senza chiavi o valori non validi, 404 se il film non esiste.
+Conta la **presenza** della chiave: `{"status":"seen"}` imposta lo stato senza toccare il voto, `{"status":null}` lo toglie; idem `rating` (intero 1–5 o `null`). Entrambe le chiavi nello stesso corpo sono ammesse. Quando stato e voto sono entrambi null la riga viene cancellata. Scrittura atomica (`INSERT … ON CONFLICT DO UPDATE`, oppure `DELETE`/`UPDATE` per gli azzeramenti): richieste simultanee sullo stesso film non danno errori, vince l'ultima. 400 per corpo senza chiavi o valori non validi, 404 se il film non esiste.
 
 ### `POST /api/state/migrate`
 
-Scrive ogni valore solo se l'utente non ne ha già uno **per quel campo** (stato e voto valutati separatamente). Ignora id inesistenti o non numerici, valori `null` e valori non validi. `imported` = numero di valori scritti (uno stato e un voto dello stesso film contano 2). Idempotente.
+Scrive ogni valore solo se l'utente non ne ha già uno **per quel campo** (stato e voto valutati separatamente). Ignora id inesistenti o non numerici, valori `null` e valori non validi. `imported` = numero di valori scritti (uno stato e un voto dello stesso film contano 2). Idempotente; un'unica istruzione `INSERT … ON CONFLICT`, sicura con richieste simultanee (in quel caso `imported` può contare due volte lo stesso valore, il dato salvato resta uno).
 
 ### `POST /api/import/tellico/images`
 
@@ -85,15 +87,24 @@ Nomi ammessi: `[A-Za-z0-9._-]{1,200}`, senza punto iniziale. Un nome non valido 
   "movies": [ { "id": 12, "title": "…", "cdate": "2024-01-15", "ean": "8012345678901" } ] }
 ```
 
-Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], fieldsUpdated }`.
+Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], fieldsUpdated, warnings: ["…"] }` (`warnings`: valori ignorati, al massimo 50 righe più una di riepilogo).
 
 - `type` è il codice Tellico (stringa; accettato anche numero): 1 line, 2 para, 3 choice, 4 bool, 6 number, 7 url, 8 table, 10 image, 12 date, 14 rating; 11 o flag `0x20` → dependent; altri → line. `multiple`/`groupable` se assenti si ricavano dai bit `0x01`/`0x02` di `flags`.
-- Abbinamento di ogni entry (§8): EAN (campo `Tellico__BarcodeField`, normalizzato) → `tellico_id` (scartato se entrambe le `cdate` ci sono e differiscono: id riusato) → titolo + anno normalizzati tra gli arrivi `source = app` non collegati → nuovo film (id = id Tellico se libero, altrimenti sequenza da 1 000 000). Un `tellico_id` già assegnato a un altro film viene prima azzerato.
-- Aggiornamento: `data` sostituito da quello del `.tc` (senza `id`), tranne `cover` se l'entry non ne ha; valori dei campi `local` assenti dal `.tc` conservati; `ean` aggiornato solo se presente; `source` → `tellico`.
+- EAN dell'entry (campo `Tellico__BarcodeField`): normalizzato e validato come negli arrivi (8–14 cifre dopo la normalizzazione). Un valore non valido, o già usato da un'entry precedente dello stesso `.tc`, viene ignorato con un avviso in `warnings` (e nei log).
+- Abbinamento di ogni entry (§8), nell'ordine:
+  1. EAN, ma solo verso un film non collegato (`tellico_id` nullo: arrivi dall'app), già collegato a questa entry o collegato a un id che non è più nel `.tc`. Un film collegato a un'altra entry presente non viene "rubato" (EAN spostato in Tellico da un'entry all'altra);
+  2. `tellico_id` (scartato se entrambe le `cdate` ci sono e differiscono: id riusato);
+  3. titolo + anno normalizzati tra gli arrivi `source = app` non collegati, esclusi quelli con un EAN diverso da quello dell'entry (altra edizione, es. DVD e Blu-ray) o assegnato a un'altra entry;
+  4. nuovo film (id = id Tellico se libero, altrimenti sequenza da 1 000 000).
+
+  Un `tellico_id` già assegnato a un altro film viene prima azzerato.
+- EAN: il `.tc` decide. Se l'EAN di un'entry è tenuto da un altro film (EAN spostato), quel film lo perde (colonna `ean` e `data.<campo codice a barre>`); un'entry senza EAN lascia al film quello che aveva, purché il `.tc` non lo dia a un'altra entry. Colonna `ean` e `data.<Tellico__BarcodeField>` sono sempre coerenti (valore normalizzato, o entrambi assenti).
+- Aggiornamento: `data` sostituito da quello del `.tc` (senza `id`), tranne `cover` se l'entry non ne ha; valori dei campi `local` assenti dal `.tc` conservati; `source` → `tellico`.
 - `linked` = film collegati a un id Tellico diverso da prima; `updated` = già collegati e modificati; `unchanged` = nulla di diverso.
 - `missing` = film `source = tellico` non presenti nel `.tc` (compresi quelli scollegati da un id riusato o in conflitto); non vengono cancellati.
 - `collection_fields`: titolo, tipo, `multiple`, `allowed` e `origin = tellico` aggiornati; `groupable`, `group_min_size`, `in_form`, `ordinal` impostati solo alla creazione (`group_min_size`: genre 3, director 3, nationality 4, language 5, studio 5, altri 3; `in_form` falso per image, dependent, flag "non modificabile" `0x10`, `cdate`/`mdate`). I campi `tellico` assenti dal `.tc` vengono rimossi; il campo `id` è ignorato. `fieldsUpdated` = campi creati, modificati o rimossi.
-- Tutto in una transazione (gli import sono serializzati con un advisory lock). 400 per id mancanti, non interi o duplicati.
+- Tutto in una transazione con il lock esclusivo sulla collezione (import serializzati tra loro e con arrivi, correzioni ed eliminazioni). Alla fine la sequenza `movies_app_id_seq` viene portata oltre l'id massimo, così un id Tellico ≥ 1 000 000 non si scontra con gli arrivi successivi (che comunque, se trovano l'id occupato, ne prendono un altro).
+- 400 per id mancanti, non interi o duplicati, per chiavi duplicate in un'entry e per il carattere NUL in qualunque valore o chiave (anche nei campi: `name`, `title`, `type`, `allowed`). Niente viene modificato.
 
 ### Abbinamento del telefono (§4.2)
 
@@ -121,7 +132,7 @@ firma  : ES256 su "<header>.<payload>", formato R||S (64 byte)
 
 - `htu` = percorso + query esattamente come arrivano all'API (request-target); `htm` il metodo in maiuscolo.
 - `bh` obbligatorio se il corpo non è vuoto (hash dei byte inviati); `av` = `versionCode` dell'app (intero).
-- Controlli, in quest'ordine: dispositivo esistente e non revocato → firma (algoritmo fisso `ES256`: `none`, `HS256`, `ES384`… rifiutati; nessun header `crit`) → `exp > iat`, `exp - iat ≤ 60`, `iat ≤ now + 30 s`, `exp ≥ now - 30 s` → `htm`, `htu`, `bh` → `jti` mai visto per quel dispositivo (cache in memoria di 2 minuti) → proprietario autorizzato → `av ≥ minSupportedCode` → aggiornamento di `last_seen_at`.
+- Controlli, in quest'ordine: dispositivo esistente e non revocato → firma (algoritmo fisso `ES256`: `none`, `HS256`, `ES384`… rifiutati; nessun header `crit`) → `exp > iat`, `exp - iat ≤ 60`, `iat ≤ now + 30 s`, `exp ≥ now - 30 s` → `htm`, `htu`, `bh` → `jti` mai visto per quel dispositivo (cache in memoria; ogni voce vive fino a `exp` + 30 s di tolleranza + 1 s + 10 s di margine, cioè oltre l'ultimo istante in cui il token sarebbe accettato) → proprietario autorizzato → `av ≥ minSupportedCode` → aggiornamento di `last_seen_at`.
 - Esiti (problem+json con `reason`):
   - **401** (`WWW-Authenticate: CM-Device`): `missing_token`, `invalid_token`, `unsupported_alg`, `device_revoked` (anche dispositivo sconosciuto), `bad_signature`, `bad_lifetime`, `expired`, `htm_mismatch`, `htu_mismatch`, `bh_missing`, `bh_mismatch`, `replay`. L'app torna alla schermata di abbinamento solo per `device_revoked`; per gli altri il problema è nella richiesta (es. orologio).
   - **403** `owner_inactive`: il proprietario non ha fatto login sul sito negli ultimi `Devices__MaxOwnerInactiveDays` giorni (default 90) oppure, con `Oidc__UserGroup` impostato, al suo ultimo login non aveva quel gruppo.
@@ -167,10 +178,12 @@ firma  : ES256 su "<header>.<payload>", formato R||S (64 byte)
 - **409** `{ "reason": "ean", "existingId": 12, "title": "…" }` se l'EAN esiste già (anche con `confirmDuplicate`).
 - **409** `{ "reason": "possible_duplicate", "candidates": [{ id, title, year }] }` se c'è un film con lo stesso `tmdb_id` o titolo + anno normalizzati, a meno di `"confirmDuplicate": true`. I due 409 sono JSON semplice, non problem.
 - **400** validation problem (`errors: { "<campo>": ["…"] }`) — validazione contro `collection_fields` (prima di ogni import: campi standard di Tellico + campi `local`):
+  - corpo con chiavi duplicate o con il carattere NUL (`\u0000`) in una stringa o chiave → 400;
   - campi sconosciuti rifiutati; non scrivibili `id`, `cdate`, `mdate`, `cover`, i campi `image` e `dependent`; il codice a barre si invia solo in `ean`;
   - `line` ≤ 500 caratteri senza caratteri di controllo, `para` ≤ 20 000, `number` intero (`year` 1870…anno corrente + 5, `running-time` 1–2000), `rating` 1–10, `bool` → `"true"` (false = assente), `date` `AAAA-MM-GG`, `url` http(s) assoluto, `choice` tra gli `allowed` (senza distinzione di maiuscole, salvato nella forma ammessa), `table` come righe di celle (`cast`: `[{ actor, role }]`);
   - campi multipli: valore singolo o elenco (max 100, duplicati tolti); un campo singolo non accetta elenchi; valori vuoti ignorati.
-- Copertina: `posterPath` deve rispettare `^/[A-Za-z0-9_-]+\.(jpg|jpeg|png)$` (altrimenti 400). L'API scarica `https://image.tmdb.org/t/p/w500<posterPath>` senza redirect automatici, accetta solo risposta 200 con content-type `image/jpeg`/`image/png`, contenuto coerente e ≤ 5 MB, e la salva come `cm-<id>.jpg|png` in `Covers__Path` (file temporaneo + rename); `data.cover` = nome del file. Se il download fallisce il film resta salvato senza copertina (avviso nei log).
+- Copertina: `posterPath` deve rispettare `^/[A-Za-z0-9_-]+\.(jpg|jpeg|png)$` (altrimenti 400). L'API scarica `https://image.tmdb.org/t/p/w500<posterPath>` senza redirect automatici, accetta solo risposta 200 con content-type `image/jpeg`/`image/png`, contenuto coerente e ≤ 5 MB, e la salva come `cm-<id>.jpg|png` in `Covers__Path` (file temporaneo + rename); `data.cover` = nome del file. Il download parte dopo il commit del film, con un timeout proprio di 30 s e senza seguire l'annullamento della richiesta: se fallisce per qualsiasi motivo il film resta salvato senza copertina (avviso nei log) e la risposta è comunque 201.
+- Id: se quello della sequenza è già occupato (id Tellico importato prima dell'allineamento della sequenza) se ne prende un altro, fino a 5 tentativi.
 
 ### Dispositivi
 
@@ -183,21 +196,31 @@ firma  : ES256 su "<header>.<payload>", formato R||S (64 byte)
 - `GET /api/arrivals?scope=new` (default): film `source = app` mai esportati; `scope=app`: tutti i `source = app` (cioè non ancora collegati a Tellico). Ordinati dal più recente. Altri scope → 400.
 - `PATCH /api/movies/{id}` `{ "movie": { … } }`: solo i campi da cambiare, con la stessa validazione di `POST /api/app/movies`; `null` o `""` svuota un campo singolo, `[]` uno multiplo; il titolo non può restare vuoto. Qui il campo codice a barre (`Tellico__BarcodeField`) è ammesso e aggiorna anche `ean` (409 `{ reason: "ean", existingId, title }` se già usato). → `Arrival` aggiornato.
 - `DELETE /api/movies/{id}` → 204: cancella il film, lo stato visto/voto collegato e i file `cm-<id>.*`.
-- Per entrambi: 404 film inesistente, 403 arrivo di un altro utente (non admin), 409 film non `source = app` (anche per l'admin).
+- Per entrambi, in quest'ordine: 404 film inesistente, 409 film non `source = app` (per chiunque, admin compreso), 403 arrivo di un altro utente (non admin). Durante un import aspettano che finisca.
 
 ### ESPORTA CSV
 
-`POST /api/export/csv` `{ "scope": "new" }` (default `new`; `app`, `all`) → `200 text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="cinemanager-<scope>-AAAAMMGG-HHMM.csv"`, `X-CM-Movie-Ids: 1000000,1000001` (esposto con `Access-Control-Expose-Headers`; per `all` contiene solo gli arrivi dall'app, gli unici per cui `mark` ha senso).
+`GET /api/export/csv?scope=new` (default `new`; `app`, `all`; altri → 400) → `200 text/csv; charset=utf-8` con:
 
-- Colonne: i campi di `collection_fields` in ordine (`ordinal`, nome) con il loro **titolo** come intestazione (prima di ogni import: i titoli inglesi di Tellico), esclusi `image`, `dependent`, `id`, `cdate`, `mdate`; in coda la colonna del codice a barre (`Tellico__BarcodeField`, titolo `EAN` se il campo non esiste), riempita da `movies.ean`.
+- `Content-Disposition: attachment; filename="cinemanager-<scope>-AAAAMMGG-HHMM.csv"`;
+- `X-CM-Export-Cutoff: 2026-10-31T10:15:30.123456Z` — istante UTC, ISO 8601 con 6 decimali (microsecondi, la precisione di Postgres), preso nella stessa transazione della lettura, con il lock esclusivo sulla collezione: ogni arrivo incluso ha `created_at` ≤ cutoff, ogni arrivo non incluso perché salvato dopo ha `created_at` > cutoff;
+- `X-CM-Export-Count: 2` — numero di righe `source = app` nel file (per `all` le righe di Tellico non contano);
+- `Access-Control-Expose-Headers: X-CM-Export-Cutoff, X-CM-Export-Count, Content-Disposition`.
+
+Gli header hanno dimensione costante (niente elenco di id, che con qualche centinaio di arrivi superava i buffer di nginx). Scope: `new` = arrivi `source = app` mai esportati; `app` = tutti gli arrivi `source = app`; `all` = tutta la collezione.
+
+- Colonne: i campi della collezione (come `/api/fields`) in ordine (`ordinal`, nome) con il loro **titolo** come intestazione (prima di ogni import: i titoli inglesi di Tellico), esclusi `image`, `dependent`, `id`, `cdate`, `mdate`; in coda la colonna del codice a barre (`Tellico__BarcodeField`, titolo `EAN` se il campo non esiste), riempita da `movies.ean`.
 - Valori: multipli separati da `; `, tabelle come `a::b; c::d` (cast `Attore::Ruolo`), bool `true`/vuoto, date `AAAA-MM-GG`. UTF-8 senza BOM, separatore `,`, righe CRLF, quoting RFC 4180; nessun escape anti formula injection.
-- Nessun effetto collaterale: dopo aver ricevuto il file il sito chiama `POST /api/export/mark` `{ "ids": [..] }` → `{ "marked": n }` (imposta `exported_at`; id inesistenti ignorati, duplicati contati una volta).
+- Nessun effetto collaterale. Dopo aver salvato il file il sito chiama **`POST /api/export/mark`** `{ "scope": "new", "cutoff": "<X-CM-Export-Cutoff>" }` → `{ "marked": n }`: imposta `exported_at = now` sugli arrivi `source = app` con `created_at ≤ cutoff`; per `scope: "new"` solo quelli con `exported_at` nullo, per `"app"` tutti (anche già esportati, che ricevono la nuova data). Gli arrivi creati dopo l'export restano da esportare.
+- **Lo scope `all` non si marca**: `mark` con `"all"` → 400 (il sito chiama `mark` solo dopo un export `new` o `app`).
+- Validazione di `mark` (→ 400): corpo oggetto con solo `scope` e `cutoff`; `scope` `new` o `app`; `cutoff` stringa ISO 8601 con ora e fuso (`Z` o `±hh:mm`, fino a 7 decimali), non nel futuro.
 
 ### Campi (`/api/fields`)
 
 - `POST` `{ name, title, type, multiple?, allowed?, groupable?, groupMinSize?, inForm?, ordinal? }`: `name` `^[a-z][a-z0-9-]{0,40}$`, non riservato (`id`, `cdate`, `mdate`, `cover`); `type` tra `line, para, number, bool, date, choice, url, rating, table`; `allowed` solo per `choice` (max 200 valori); default `inForm: true`, `groupMinSize: 3`, `ordinal` in coda. Proprietà sconosciute → 400; nome già usato → 409.
-- `PATCH` solo `title`, `groupable`, `groupMinSize` (1–1000), `inForm`, `ordinal` (0–100000), `allowed`; vale anche per i campi `tellico` (le preferenze del sito non vengono sovrascritte dall'import; titolo e `allowed` sì).
-- `DELETE /api/fields/{name}`: solo campi `local` (i `tellico` → 409); i valori restano in `movies.data`, con `?purge=true` vengono rimossi da tutti i film.
+- `GET` restituisce lo stesso catalogo usato da validazione, modulo dell'app e CSV: prima del primo import i campi standard di Tellico (`origin: "tellico"`) più quelli `local`.
+- `PATCH` solo `title`, `groupable`, `groupMinSize` (1–1000), `inForm`, `ordinal` (0–100000), `allowed` (testi senza caratteri di controllo); vale anche per i campi `tellico` (le preferenze del sito non vengono sovrascritte dall'import; titolo e `allowed` sì). Su un campo standard prima del primo import vengono salvati in `collection_fields` tutti i campi standard mancanti (così il catalogo resta completo); il primo import li aggiorna o li rimuove come gli altri campi `tellico`.
+- `DELETE /api/fields/{name}`: solo campi `local` (i `tellico`, compresi gli standard prima del primo import → 409); i valori restano in `movies.data`, con `?purge=true` vengono rimossi da tutti i film.
 
 ## Avvio in locale
 
@@ -229,7 +252,8 @@ Fase 3 (facoltative):
 | `Lookup__UpcItemDbKey` | vuoto | chiave UPCitemdb a pagamento; senza si usa l'endpoint di prova (quota giornaliera per IP) |
 | `App__VersionUrl` | vuoto | `version.json` dell'app per il controllo 426 (nello stack `http://web/app/version.json`); vuoto ⇒ nessun controllo |
 | `Devices__MaxOwnerInactiveDays` | `90` | giorni dall'ultimo login sul sito oltre i quali i telefoni del proprietario ricevono 403 |
-| `RateLimit__PairPerIp`, `RateLimit__PairGlobal`, `RateLimit__LookupPerDevice` | `10`, `30`, `60` | al minuto |
+| `RateLimit__PairPerIp`, `RateLimit__PairGlobal`, `RateLimit__LookupPerDevice` | `10`, `30`, `60` | al minuto (`LookupPerDevice` per IP + dispositivo) |
+| `Auth__StampCacheSeconds` | `60` | vale anche in produzione (non solo con l'autenticazione di sviluppo): per quanti secondi il timbro di sicurezza dell'utente resta in cache invece di essere riletto dal DB a ogni richiesta del sito. `DELETE /api/users/{sub}/sessions` svuota subito la cache; un timbro cambiato direttamente nel DB vale entro questo tempo. `0` = nessuna cache |
 
 `PublicBaseUrl` serve anche per i QR (abbinamento e download dell'APK); in Development, se manca, si usa l'origine della richiesta.
 

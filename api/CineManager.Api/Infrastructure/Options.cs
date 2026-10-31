@@ -18,14 +18,20 @@ public sealed class OidcOptions
         !string.IsNullOrWhiteSpace(ClientSecret);
 }
 
-/// <summary>Sezione <c>Auth</c>: autenticazione finta per lo sviluppo locale (§10.2).</summary>
+/// <summary>
+/// Sezione <c>Auth</c>: autenticazione finta per lo sviluppo locale (§10.2) e, valida anche in
+/// produzione, la durata della cache del timbro di sicurezza.
+/// </summary>
 public sealed class DevAuthOptions
 {
     public const string Section = "Auth";
     public string? DevUser { get; set; }
     /// <summary>Ruoli separati da virgola, es. <c>user,admin</c>.</summary>
     public string? DevRoles { get; set; }
-    /// <summary>Durata della cache del timbro di sicurezza (secondi).</summary>
+    /// <summary>
+    /// Durata della cache del timbro di sicurezza (secondi; <c>Auth__StampCacheSeconds</c>). Vale in
+    /// ogni ambiente, non solo con <see cref="DevUser"/>; 0 = rilettura dal DB a ogni richiesta.
+    /// </summary>
     public int StampCacheSeconds { get; set; } = 60;
 }
 

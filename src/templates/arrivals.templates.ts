@@ -79,6 +79,11 @@ function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult 
           <summary>Nel database ma non nel file (${s.missing.length}): non vengono cancellati</summary>
           <ul>${s.missing.map(m => html`<li><span class="arrivals-missing-id">#${m.id}</span> ${m.title || '(senza titolo)'}</li>`)}</ul>
         </details>` : nothing}
+      ${s.warnings?.length ? html`
+        <details class="arrivals-missing">
+          <summary>Avvisi dell'import (${s.warnings.length})</summary>
+          <ul>${s.warnings.map(w => html`<li>${w}</li>`)}</ul>
+        </details>` : nothing}
     </div>`;
 }
 

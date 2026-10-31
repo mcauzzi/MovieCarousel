@@ -372,4 +372,106 @@ public class ArrivalTests(AppFixture fx) : IClassFixture<AppFixture>, IAsyncLife
         Assert.False(File.Exists(Path.Combine(F.CoversPath, $"cm-{id}.jpg")));
         Assert.Equal(HttpStatusCode.NotFound, (await alice.DeleteAsync($"/api/movies/{id}")).StatusCode);
     }
+
+    // --- correzioni della code review -----------------------------------------------------------
+
+    private async Task<HttpResponseMessage> PostRaw(string json)
+    {
+        using var c = F.AppClient();
+        return await c.SendAsync(_dev.Request(HttpMethod.Post, "/api/app/movies", json));
+    }
+
+    [DbFact]
+    public async Task Non_admin_su_film_di_Tellico_409_non_403()
+    {
+        await ImportTellico("[]", """[{"id":9,"title":"Da Tellico"}]""");
+        using var bob = F.Client("bob");
+        Assert.Equal(HttpStatusCode.Conflict, (await bob.PatchAsync("/api/movies/9", Json("""{"movie":{"title":"Z"}}"""))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await bob.DeleteAsync("/api/movies/9")).StatusCode);
+    }
+
+    [DbFact]
+    public async Task Carattere_NUL_400_in_inserimento_e_patch()
+    {
+        foreach (var json in new[]
+        {
+            """{"movie":{"title":"Ok","plot":"a\u0000b"}}""",
+            """{"movie":{"title":"Ok","medium":"DVD\u0000"}}""",
+            """{"movie":{"title":"Ok","cast":[{"actor":"x\u0000","role":""}]}}""",
+            """{"movie":{"title":"Ok","ti\u0000tle":"x"}}""",
+        })
+        {
+            var res = await PostRaw(json);
+            Assert.True(res.StatusCode == HttpStatusCode.BadRequest, json + " → " + res.StatusCode);
+        }
+        var id = await Create();
+        using var alice = F.Client("alice");
+        var patch = await alice.PatchAsync($"/api/movies/{id}", Json("""{"movie":{"plot":"a\u0000b"}}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, patch.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Chiavi_duplicate_400_in_inserimento_e_patch()
+    {
+        var res = await PostRaw("""{"movie":{"title":"A","title":"B"}}""");
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("duplicata", await res.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, (await PostRaw("""{"ean":"8012345678901","ean":"8012345678902","movie":{"title":"A"}}""")).StatusCode);
+        var id = await Create();
+        using var alice = F.Client("alice");
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await alice.PatchAsync($"/api/movies/{id}", Json("""{"movie":{"plot":"x","plot":"y"}}"""))).StatusCode);
+    }
+
+    [DbFact]
+    public async Task Id_della_sequenza_gia_occupato_si_riprova()
+    {
+        // Film con id 1 000 000 inserito senza passare dalla sequenza (es. id Tellico importato da una versione vecchia).
+        await F.WithDbAsync(async db =>
+        {
+            db.Movies.Add(new Movie
+            {
+                Id = CinemaDbContext.MovieIdSequenceStart, TellicoId = CinemaDbContext.MovieIdSequenceStart,
+                Source = MovieSources.Tellico, Data = """{"title":"Grande"}""",
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        });
+        var id = await Create();
+        Assert.Equal(CinemaDbContext.MovieIdSequenceStart + 1, id);
+    }
+
+    [DbFact]
+    public async Task Errore_imprevisto_della_copertina_dopo_il_salvataggio_201_senza_copertina()
+    {
+        F.Covers.Responder = _ => throw new InvalidOperationException("guasto imprevisto");
+        var id = await Create(posterPath: "/padrino.jpg");
+        Assert.Null(JsonNode.Parse((await Load(id)).Data)!["cover"]);
+    }
+
+    [DbFact]
+    public async Task Scritture_dei_film_aspettano_un_import_in_corso()
+    {
+        var id = await Create();
+        var id2 = await Create("Da cancellare", 2000);
+        await using var conn = new Npgsql.NpgsqlConnection(F.ConnectionString);
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+        await using (var cmd = new Npgsql.NpgsqlCommand($"SELECT pg_advisory_xact_lock({Api.Infrastructure.CollectionLock.Key})", conn, tx))
+            await cmd.ExecuteNonQueryAsync();
+
+        using var alice = F.Client("alice");
+        using var c = F.AppClient();
+        var patch = alice.PatchAsync($"/api/movies/{id}", Json("""{"movie":{"title":"Nuovo"}}"""));
+        var post = c.SendAsync(_dev.Request(HttpMethod.Post, "/api/app/movies", """{"movie":{"title":"Altro"}}"""));
+        var del = alice.DeleteAsync($"/api/movies/{id2}");
+        await Task.Delay(400);
+        Assert.False(patch.IsCompleted);
+        Assert.False(post.IsCompleted);
+        Assert.False(del.IsCompleted);
+        await tx.CommitAsync();
+        Assert.Equal(HttpStatusCode.OK, (await patch.WaitAsync(TimeSpan.FromSeconds(10))).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await post.WaitAsync(TimeSpan.FromSeconds(10))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await del.WaitAsync(TimeSpan.FromSeconds(10))).StatusCode);
+    }
 }

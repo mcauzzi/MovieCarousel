@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using CineManager.Api.Data;
 using CineManager.Api.Import;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace CineManager.Api.Movies;
 
@@ -29,11 +30,39 @@ public static class DuplicateFinder
         var key = TitleNormalizer.Key(draft);
         if (key is null && tmdbId is null && ean is null) return [];
 
-        var rows = await db.Database.SqlQuery<Row>($"""
+        // Pre-filtro in SQL (superinsieme dei risultati, poi il confronto esatto qui sotto): stesso
+        // tmdb_id, stesso EAN o, per titolo + anno, un anno che contiene le cifre di quello cercato
+        // (YearOf ne prende la parte intera). Senza anno serve leggere tutti i titoli.
+        var conditions = new List<string>();
+        var parameters = new List<object>();
+        if (tmdbId is not null)
+        {
+            conditions.Add("tmdb_id = @tmdb");
+            parameters.Add(new NpgsqlParameter("tmdb", tmdbId.Value));
+        }
+        if (ean is not null)
+        {
+            conditions.Add("ean = @ean");
+            parameters.Add(new NpgsqlParameter("ean", ean));
+        }
+        if (key is not null)
+        {
+            var year = TitleNormalizer.YearOf(draft);
+            if (year.Length == 0) conditions.Add("TRUE");
+            else
+            {
+                conditions.Add("strpos(COALESCE(data->>'year', ''), @year) > 0");
+                parameters.Add(new NpgsqlParameter("year", year));
+            }
+        }
+        // Solo condizioni costanti scritte qui sopra; i valori viaggiano come parametri.
+        var sql = """
             SELECT id AS "Id", tmdb_id AS "TmdbId", ean AS "Ean",
                    data->>'title' AS "Title", data->>'year' AS "Year"
             FROM movies
-            """).ToListAsync(ct);
+            WHERE 
+            """ + string.Join(" OR ", conditions);
+        var rows = await db.Database.SqlQueryRaw<Row>(sql, [.. parameters]).ToListAsync(ct);
 
         var result = new List<DuplicateCandidate>();
         foreach (var r in rows)

@@ -47,6 +47,8 @@ export interface ImportResponse {
   unchanged: number;
   missing: { id: number; title: string }[];
   fieldsUpdated: number;
+  /** Avvisi dell'import (es. EAN non validi ignorati), al più ~50 righe. */
+  warnings?: string[];
 }
 
 /** Errore HTTP dell'API. `status` 0 = errore di rete. */

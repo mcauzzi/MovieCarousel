@@ -178,6 +178,37 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
         Assert.Equal(0, (await ReadObj(res))["imported"]!.GetValue<int>());
     }
 
+    [DbFact]
+    public async Task Put_state_simultanei_sullo_stesso_film_senza_500()
+    {
+        await SeedMovies(1, 2);
+        using var c = F.Client("eva");
+        await c.GetAsync("/api/state"); // utente già registrato: si misura solo lo stato
+
+        for (var round = 0; round < 3; round++)
+        {
+            var bodies = Enumerable.Range(0, 20).Select(i => (i % 4) switch
+            {
+                0 => """{"status":"seen"}""",
+                1 => """{"rating":3}""",
+                2 => """{"status":null}""",
+                _ => """{"status":"watchlist","rating":null}""",
+            });
+            var results = await Task.WhenAll(bodies.Select(b => c.PutAsync("/api/state/1", Json(b))));
+            Assert.All(results, r => Assert.Equal(HttpStatusCode.NoContent, r.StatusCode));
+            await c.PutAsync("/api/state/1", Json("""{"status":null,"rating":null}"""));
+        }
+        Assert.Equal(0, await F.WithDbAsync(db => db.UserMovieStates.CountAsync(x => x.UserSub == "eva")));
+
+        // Stessa garanzia per la migrazione.
+        var migrations = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
+            c.PostAsync("/api/state/migrate", Json("""{ "status": { "2": "seen" }, "rating": { "2": 4 } }"""))));
+        Assert.All(migrations, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        var s = await ReadObj(await c.GetAsync("/api/state"));
+        Assert.Equal("seen", s["status"]!["2"]!.GetValue<string>());
+        Assert.Equal(4, s["rating"]!["2"]!.GetValue<int>());
+    }
+
     // --- permessi e CSRF ----------------------------------------------------------------------
 
     [DbTheory]

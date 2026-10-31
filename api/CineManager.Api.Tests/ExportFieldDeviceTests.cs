@@ -95,6 +95,18 @@ public class ExportFieldDeviceTests(AppFixture fx) : IClassFixture<AppFixture>, 
 
     // --- export --------------------------------------------------------------------------------
 
+    private static DateTimeOffset Cutoff(HttpResponseMessage res)
+    {
+        var raw = res.Headers.GetValues("X-CM-Export-Cutoff").Single();
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$", raw); // UTC, microsecondi
+        return DateTimeOffset.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int Count(HttpResponseMessage res) => int.Parse(res.Headers.GetValues("X-CM-Export-Count").Single());
+
+    private static string MarkBody(string scope, HttpResponseMessage export) =>
+        $$"""{"scope":"{{scope}}","cutoff":"{{export.Headers.GetValues("X-CM-Export-Cutoff").Single()}}"}""";
+
     [DbFact]
     public async Task Export_csv_senza_effetti_poi_mark()
     {
@@ -105,13 +117,19 @@ public class ExportFieldDeviceTests(AppFixture fx) : IClassFixture<AppFixture>, 
         var imp = await admin.PostAsync("/api/import/tellico", Json("""{"fields":[],"movies":[{"id":3,"title":"Da Tellico"}]}"""));
         Assert.Equal(HttpStatusCode.OK, imp.StatusCode);
 
-        var res = await admin.PostAsync("/api/export/csv", Json("""{"scope":"new"}"""));
+        var before = DateTimeOffset.UtcNow;
+        var res = await admin.GetAsync("/api/export/csv?scope=new");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         Assert.Equal("text/csv", res.Content.Headers.ContentType!.MediaType);
         Assert.Equal("utf-8", res.Content.Headers.ContentType.CharSet);
         Assert.StartsWith("attachment;", res.Content.Headers.ContentDisposition?.ToString() ?? res.Headers.GetValues("Content-Disposition").First());
-        Assert.Equal($"{a},{b}", res.Headers.GetValues("X-CM-Movie-Ids").Single());
-        Assert.Contains("X-CM-Movie-Ids", res.Headers.GetValues("Access-Control-Expose-Headers").Single());
+        Assert.False(res.Headers.Contains("X-CM-Movie-Ids"));
+        Assert.Equal(2, Count(res));
+        var cutoff = Cutoff(res);
+        Assert.InRange(cutoff, before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
+        var exposed = res.Headers.GetValues("Access-Control-Expose-Headers").Single();
+        Assert.Contains("X-CM-Export-Cutoff", exposed);
+        Assert.Contains("X-CM-Export-Count", exposed);
         var bytes = await res.Content.ReadAsByteArrayAsync();
         Assert.False(bytes is [0xEF, 0xBB, 0xBF, ..]);
         var lines = Encoding.UTF8.GetString(bytes).Split("\r\n");
@@ -120,43 +138,141 @@ public class ExportFieldDeviceTests(AppFixture fx) : IClassFixture<AppFixture>, 
         Assert.EndsWith(",8012345678901", lines[1]);
         Assert.DoesNotContain("Da Tellico", lines[1] + lines[2]);
 
-        // Nessun effetto collaterale: export ripetibile.
+        // Nessun effetto collaterale: export ripetibile (default scope=new).
         Assert.False(await F.WithDbAsync(db => db.Movies.AnyAsync(m => m.ExportedAt != null)));
-        var again = await admin.PostAsync("/api/export/csv", Json("{}"));
-        Assert.Equal($"{a},{b}", again.Headers.GetValues("X-CM-Movie-Ids").Single());
+        var again = await admin.GetAsync("/api/export/csv");
+        Assert.Equal(2, Count(again));
 
-        var mark = await admin.PostAsync("/api/export/mark", Json($$"""{"ids":[{{a}},{{b}},{{a}},999999]}"""));
+        // Arrivo successivo all'export: non va marcato.
+        var c = await Arrival(dev, "Dopo l'export");
+        var mark = await admin.PostAsync("/api/export/mark", Json(MarkBody("new", res)));
         Assert.Equal(HttpStatusCode.OK, mark.StatusCode);
         Assert.Equal(2, JsonNode.Parse(await mark.Content.ReadAsStringAsync())!["marked"]!.GetValue<int>());
+        Assert.Null((await F.WithDbAsync(db => db.Movies.SingleAsync(m => m.Id == c))).ExportedAt);
+        Assert.NotNull((await F.WithDbAsync(db => db.Movies.SingleAsync(m => m.Id == a))).ExportedAt);
+        // Ripetuto: per "new" quelli già marcati non contano più.
+        Assert.Equal(0, JsonNode.Parse(await (await admin.PostAsync("/api/export/mark", Json(MarkBody("new", res))))
+            .Content.ReadAsStringAsync())!["marked"]!.GetValue<int>());
 
-        var empty = await admin.PostAsync("/api/export/csv", Json("""{"scope":"new"}"""));
-        Assert.Equal("", empty.Headers.GetValues("X-CM-Movie-Ids").Single());
-        Assert.Single((await empty.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries));
+        var next = await admin.GetAsync("/api/export/csv?scope=new");
+        Assert.Equal(1, Count(next));
+        Assert.Contains("Dopo l'export", await next.Content.ReadAsStringAsync());
 
-        var app = await admin.PostAsync("/api/export/csv", Json("""{"scope":"app"}"""));
-        Assert.Equal($"{a},{b}", app.Headers.GetValues("X-CM-Movie-Ids").Single());
-        var all = await admin.PostAsync("/api/export/csv", Json("""{"scope":"all"}"""));
+        // "app": tutti gli arrivi, già esportati compresi; il mark li ri-marca fino al cutoff.
+        var app = await admin.GetAsync("/api/export/csv?scope=app");
+        Assert.Equal(3, Count(app));
+        Assert.Equal(3, JsonNode.Parse(await (await admin.PostAsync("/api/export/mark", Json(MarkBody("app", app))))
+            .Content.ReadAsStringAsync())!["marked"]!.GetValue<int>());
+
+        // "all": tutta la collezione; il conteggio riguarda solo gli arrivi dall'app.
+        var all = await admin.GetAsync("/api/export/csv?scope=all");
         Assert.Contains("Da Tellico", await all.Content.ReadAsStringAsync());
+        Assert.Equal(3, Count(all));
 
         using var alice = F.Client("alice");
-        var arrivals = JsonNode.Parse(await alice.GetStringAsync("/api/arrivals?scope=new"))!.AsArray();
-        Assert.Empty(arrivals);
-        Assert.Equal(2, JsonNode.Parse(await alice.GetStringAsync("/api/arrivals?scope=app"))!.AsArray().Count);
+        Assert.Empty(JsonNode.Parse(await alice.GetStringAsync("/api/arrivals?scope=new"))!.AsArray());
+        Assert.Equal(3, JsonNode.Parse(await alice.GetStringAsync("/api/arrivals?scope=app"))!.AsArray().Count);
+    }
+
+    [DbFact]
+    public async Task Export_con_molti_arrivi_header_di_dimensione_costante()
+    {
+        // Con l'elenco degli id l'header superava i 4 KB dei buffer di nginx (502).
+        await F.WithDbAsync(async db =>
+        {
+            for (var i = 0; i < 1500; i++)
+                db.Movies.Add(new Movie
+                {
+                    Id = 2_000_000 + i, Source = MovieSources.App, Data = $$"""{"title":"Arrivo {{i}}"}""",
+                    CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1), UpdatedAt = DateTimeOffset.UtcNow,
+                });
+            await db.SaveChangesAsync();
+        });
+        using var admin = F.Client("root", "user,admin");
+        var res = await admin.GetAsync("/api/export/csv?scope=new");
+        Assert.Equal(1500, Count(res));
+        var headerBytes = res.Headers.Sum(h => h.Key.Length + h.Value.Sum(v => v.Length + 4));
+        Assert.True(headerBytes < 1024, $"header: {headerBytes} byte");
+        var mark = await admin.PostAsync("/api/export/mark", Json(MarkBody("new", res)));
+        Assert.Equal(1500, JsonNode.Parse(await mark.Content.ReadAsStringAsync())!["marked"]!.GetValue<int>());
     }
 
     [DbFact]
     public async Task Export_e_mark_solo_admin_e_validazione()
     {
         using var user = F.Client("alice");
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.PostAsync("/api/export/csv", Json("""{"scope":"new"}"""))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.PostAsync("/api/export/mark", Json("""{"ids":[1]}"""))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/api/export/csv?scope=new")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await user.PostAsync("/api/export/mark", Json("""{"scope":"new","cutoff":"2026-01-01T00:00:00.000000Z"}"""))).StatusCode);
         using var admin = F.Client("root", "user,admin");
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsync("/api/export/csv", Json("""{"scope":"tutto"}"""))).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsync("/api/export/mark", Json("""{"ids":["a"]}"""))).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsync("/api/export/mark", Json("{}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/export/csv?scope=tutto")).StatusCode);
+        foreach (var body in new[]
+        {
+            "{}", "[]", """{"ids":[1]}""", """{"scope":"new"}""", """{"cutoff":"2026-01-01T00:00:00Z"}""",
+            """{"scope":"all","cutoff":"2026-01-01T00:00:00Z"}""", """{"scope":"tutto","cutoff":"2026-01-01T00:00:00Z"}""",
+            """{"scope":"new","cutoff":"ieri"}""", """{"scope":"new","cutoff":"1/2/2026"}""", """{"scope":"new","cutoff":12345}""",
+            """{"scope":"new","cutoff":"2999-01-01T00:00:00Z"}""", """{"scope":"new","cutoff":"2026-01-01T00:00:00Z","x":1}""",
+        })
+        {
+            var res = await admin.PostAsync("/api/export/mark", Json(body));
+            Assert.True(res.StatusCode == HttpStatusCode.BadRequest, body + " → " + res.StatusCode);
+        }
+        Assert.Equal(HttpStatusCode.OK,
+            (await admin.PostAsync("/api/export/mark", Json("""{"scope":"app","cutoff":"2026-01-01T01:00:00+01:00"}"""))).StatusCode);
     }
 
     // --- campi ---------------------------------------------------------------------------------
+
+    [DbFact]
+    public async Task Campi_standard_prima_del_primo_import_visibili_e_modificabili()
+    {
+        using var admin = F.Client("root", "user,admin");
+        static List<JsonNode?> Names(string json) => [.. JsonNode.Parse(json)!.AsArray()];
+        var fields = Names(await admin.GetStringAsync("/api/fields"));
+        Assert.Contains(fields, f => f!["name"]!.GetValue<string>() == "plot" && f["origin"]!.GetValue<string>() == "tellico");
+        var coll = JsonNode.Parse(await admin.GetStringAsync("/api/collection"))!["fields"]!.AsArray();
+        Assert.Contains(coll, f => f!["name"]!.GetValue<string>() == "plot");
+
+        var patch = await admin.PatchAsJsonAsync("/api/fields/plot", new { inForm = false, title = "Trama" });
+        Assert.Equal(HttpStatusCode.OK, patch.StatusCode);
+        fields = Names(await admin.GetStringAsync("/api/fields"));
+        var plot = fields.Single(f => f!["name"]!.GetValue<string>() == "plot")!;
+        Assert.Equal(("Trama", false), (plot["title"]!.GetValue<string>(), plot["inForm"]!.GetValue<bool>()));
+        Assert.Equal(FieldCatalog.Defaults.Count, fields.Count); // il catalogo resta completo
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.PatchAsJsonAsync("/api/fields/inesistente", new { inForm = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync("/api/fields/title")).StatusCode);
+
+        using var dev = await F.PairAsync("alice");
+        using var c = F.AppClient();
+        var appFields = JsonNode.Parse(await (await c.SendAsync(dev.Request(HttpMethod.Get, "/api/app/fields"))).Content.ReadAsStringAsync())!.AsArray();
+        Assert.DoesNotContain(appFields, f => f!["name"]!.GetValue<string>() == "plot");
+        Assert.Contains(appFields, f => f!["name"]!.GetValue<string>() == "director");
+
+        // Il primo import sostituisce gli standard: quelli assenti dal .tc spariscono.
+        var imp = await admin.PostAsync("/api/import/tellico", Json("""{"fields":[{"name":"title","title":"Titolo","type":"1"}],"movies":[]}"""));
+        Assert.Equal(HttpStatusCode.OK, imp.StatusCode);
+        Assert.Equal(["title"], Names(await admin.GetStringAsync("/api/fields")).Select(f => f!["name"]!.GetValue<string>()));
+    }
+
+    [DbFact]
+    public async Task Allowed_con_NUL_400()
+    {
+        using var admin = F.Client("root", "user,admin");
+        var res = await admin.PostAsync("/api/fields", Json("""{"name":"supporto","title":"Supporto","type":"choice","allowed":["DVD\u0000"]}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Import_via_http_con_NUL_o_chiavi_duplicate_400()
+    {
+        using var admin = F.Client("root", "user,admin");
+        var nul = await admin.PostAsync("/api/import/tellico", Json("""{"fields":[],"movies":[{"id":1,"title":"A\u0000"}]}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, nul.StatusCode);
+        Assert.Contains("NUL", await nul.Content.ReadAsStringAsync());
+        var dup = await admin.PostAsync("/api/import/tellico", Json("""{"fields":[],"movies":[{"id":1,"title":"A","title":"B"}]}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, dup.StatusCode);
+        Assert.Empty(await F.WithDbAsync(db => db.Movies.ToListAsync()));
+    }
 
     [DbFact]
     public async Task Campi_crud_e_purge()
@@ -236,7 +352,7 @@ public class ExportFieldDeviceTests(AppFixture fx) : IClassFixture<AppFixture>, 
         Assert.Contains(fields, f => f!["name"]!.GetValue<string>() == "director");
         Assert.Contains(fields, f => f!["name"]!.GetValue<string>() == "edizione");
 
-        var csv = await (await admin.PostAsync("/api/export/csv", Json("{}"))).Content.ReadAsStringAsync();
+        var csv = await (await admin.GetAsync("/api/export/csv")).Content.ReadAsStringAsync();
         var header = csv.Split("\r\n")[0].Split(',');
         Assert.Equal(["Title", "Edizione", "EAN"], [header[0], header[^2], header[^1]]);
     }
