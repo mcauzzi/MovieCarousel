@@ -12,7 +12,10 @@ npm run preview      # serve dist/ at http://localhost:4173
 npm run typecheck    # tsc --noEmit (no test suite exists)
 npm run lint         # ESLint (flat config, typescript-eslint)
 npm run format       # Prettier --write su src/**/*.ts (opt-in)
+npm run a11y         # build + scansione axe-core (WCAG 2.2 AA) su temi × stati → a11y-report/
 ```
+
+`npm run a11y` esegue `scripts/a11y-scan.mjs`: per ogni tema (`p5`, `p3`, `p4`, `sh2`) e stato (loader, carosello, popup FILTRI, picker RANDOM, biglietto, scheda film, INTEL) apre una pagina fresca in Chromium (Playwright, `prefers-reduced-motion`), serve `config.json` e una collezione di prova generata intercettando le richieste, e lancia axe. Scrive `a11y-report/report.md` (riepilogo + violazioni per tema, deduplicate tra gli stati, con i rapporti di contrasto) e `report.json` (gitignorati). Opzioni dopo `--`: `--file mia.tc` (collezione reale), `--themes`, `--states`, `--screenshots`, `--url` (server già avviato), `--strict` (exit 1 se ci sono violazioni). Su una macchina nuova serve `npx playwright install chromium`. Non gira in CI.
 
 `npm run typecheck`/`lint` require `node_modules` (run `npm install` first) or fail on the `jszip` import. Prettier è disponibile come strumento ma **non** è imposto in CI: il codebase ha allineamenti manuali deliberati, quindi non fare mass-reformat (`format:check` non gira in `ci.yml`).
 
@@ -20,7 +23,7 @@ CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner G
 
 ## Architecture
 
-Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build: Anton, Oswald, JetBrains Mono, Bebas Neue; Barlow Condensed per MEMENTO, Baloo 2 per MAYONAKA, EB Garamond + Special Elite + Courier Prime per TOLUCA). Dev tooling: `eslint` + `typescript-eslint` + `prettier`.
+Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build: Anton, Oswald, JetBrains Mono, Bebas Neue; Barlow Condensed per MEMENTO, Baloo 2 per MAYONAKA, EB Garamond + Special Elite + Courier Prime per TOLUCA). Dev tooling: `eslint` + `typescript-eslint` + `prettier`; `axe-core` + `playwright` solo per `npm run a11y`.
 
 All UI is built with **lit-html functional templates** (`` html`...` `` rendered via `render()`), not LitElement/web components — no Shadow DOM, so the global `style.css` applies everywhere. Templates are pure functions returning `TemplateResult`, kept in dedicated files under `src/templates/` (they import only `lit` + types, so they stay leaves and don't break the decoupling points). Each view module computes data + handlers and calls `render(template(...), container)`; stateful UI (popups, modal) keeps its state in a closure and re-renders on change — lit diffs efficiently. Event handlers are bound in the templates (`@click`/`@input`/`@error`).
 

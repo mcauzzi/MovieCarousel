@@ -10,13 +10,16 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "a11y": "vite build && node scripts/a11y-scan.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "axe-core": "^4.14.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^9.1.2",
     "globals": "^17.6.0",
+    "playwright": "^1.63.0",
     "prettier": "^3.8.4",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.61.0",

@@ -7,3 +7,4 @@ config.json
 docs/superpowers/
 *.tc
 *.tc~
+a11y-report/
