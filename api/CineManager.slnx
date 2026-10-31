@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="CineManager.Api.Tests/CineManager.Api.Tests.csproj" />
   <Project Path="CineManager.Api/CineManager.Api.csproj" />
+  <Project Path="tools/sign-request/SignRequest.csproj" />
 </Solution>

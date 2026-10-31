@@ -77,6 +77,11 @@ public static class AuthSetup
             o.Events.OnValidatePrincipal = OnValidatePrincipal;
         });
 
+        // Richieste firmate dell'app (§4.2): schema usato solo dalla policy "device".
+        builder.Services.Configure<DevicesOptions>(cfg.GetSection(DevicesOptions.Section));
+        builder.Services.AddSingleton<ReplayCache>();
+        auth.AddScheme<AuthenticationSchemeOptions, DeviceAuthHandler>(DeviceAuthHandler.SchemeName, _ => { });
+
         if (devAuth)
         {
             builder.Services.AddSingleton<DevUserSyncState>();
@@ -133,7 +138,9 @@ public static class AuthSetup
 
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(Policies.User, p => p.RequireAuthenticatedUser().RequireRole(Roles.User))
-            .AddPolicy(Policies.Admin, p => p.RequireAuthenticatedUser().RequireRole(Roles.Admin));
+            .AddPolicy(Policies.Admin, p => p.RequireAuthenticatedUser().RequireRole(Roles.Admin))
+            .AddPolicy(Policies.Device, p => p.AddAuthenticationSchemes(DeviceAuthHandler.SchemeName)
+                .RequireAuthenticatedUser().RequireClaim(CmClaims.Device));
 
         var mode = new AuthMode(devAuth, oidcEnabled);
         builder.Services.AddSingleton(mode);

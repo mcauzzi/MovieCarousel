@@ -43,3 +43,37 @@ public sealed class TellicoOptions
     /// <summary>Nome del campo codice a barre nel <c>.tc</c> (§8, §9).</summary>
     public string BarcodeField { get; set; } = "ean";
 }
+
+/// <summary>Sezione <c>Devices</c>: telefoni abbinati (§4.2, §4.3).</summary>
+public sealed class DevicesOptions
+{
+    public const string Section = "Devices";
+    /// <summary>Giorni massimi dall'ultimo login sul sito del proprietario perché il telefono resti valido.</summary>
+    public int MaxOwnerInactiveDays { get; set; } = 90;
+}
+
+/// <summary>Sezione <c>App</c>: versione dell'app Android (§11.1).</summary>
+public sealed class AppOptions
+{
+    public const string Section = "App";
+    /// <summary>URL di <c>version.json</c> (nello stack <c>http://web/app/version.json</c>); vuoto ⇒ nessun controllo 426.</summary>
+    public string? VersionUrl { get; set; }
+}
+
+/// <summary>Sezione <c>Lookup</c>: catena dei provider di codici a barre (§7).</summary>
+public sealed class LookupOptions
+{
+    public const string Section = "Lookup";
+    /// <summary>Nomi dei provider in ordine, separati da virgola (default <c>upcitemdb</c>).</summary>
+    public string Providers { get; set; } = "upcitemdb";
+    /// <summary>Chiave UPCitemdb facoltativa: senza si usa l'endpoint di prova gratuito.</summary>
+    public string? UpcItemDbKey { get; set; }
+}
+
+/// <summary>Sezione <c>Tmdb</c> (§7).</summary>
+public sealed class TmdbOptions
+{
+    public const string Section = "Tmdb";
+    /// <summary>Token di lettura v4 (bearer). Vuoto ⇒ ricerca TMDb non disponibile.</summary>
+    public string? ApiToken { get; set; }
+}

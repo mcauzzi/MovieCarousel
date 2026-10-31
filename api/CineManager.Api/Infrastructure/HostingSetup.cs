@@ -76,22 +76,49 @@ public static class HostingSetup
         });
     }
 
-    /// <summary>Rate limit generale per IP reale (§6, Limiti): <c>RateLimit__PerMinute</c>, default 300.</summary>
+    /// <summary>
+    /// Rate limit (§6, Limiti), tutti come limitatore globale a catena, sull'IP reale:
+    /// generale <c>RateLimit__PerMinute</c> (300) per IP; <c>/api/app/pair</c> anche 10/min per IP
+    /// (<c>RateLimit__PairPerIp</c>) e 30/min in totale (<c>RateLimit__PairGlobal</c>);
+    /// <c>/api/app/lookup</c> e <c>/api/app/search</c> 60/min per dispositivo (<c>RateLimit__LookupPerDevice</c>).
+    /// Il dispositivo è il <c>kid</c> letto dal token senza verificarlo: serve solo da chiave del
+    /// secchio, la firma la controlla l'autenticazione (e il limite per IP resta comunque).
+    /// </summary>
     public static void AddCineRateLimiter(this WebApplicationBuilder builder)
     {
-        var perMinute = builder.Configuration.GetValue("RateLimit:PerMinute", 300);
+        var cfg = builder.Configuration;
+        var perMinute = cfg.GetValue("RateLimit:PerMinute", 300);
+        var pairPerIp = cfg.GetValue("RateLimit:PairPerIp", 10);
+        var pairGlobal = cfg.GetValue("RateLimit:PairGlobal", 30);
+        var lookupPerDevice = cfg.GetValue("RateLimit:LookupPerDevice", 60);
+
+        static FixedWindowRateLimiterOptions PerMinute(int n) => new()
+        {
+            PermitLimit = n, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+        };
+        static string Ip(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        static bool IsPair(HttpContext ctx) =>
+            ctx.Request.Path.Equals("/api/app/pair", StringComparison.OrdinalIgnoreCase);
+        static bool IsLookup(HttpContext ctx) =>
+            ctx.Request.Path.StartsWithSegments("/api/app/lookup", StringComparison.OrdinalIgnoreCase) ||
+            ctx.Request.Path.StartsWithSegments("/api/app/search", StringComparison.OrdinalIgnoreCase);
+
         builder.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = perMinute,
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0,
-                    }));
+            o.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+                    RateLimitPartition.GetFixedWindowLimiter("ip:" + Ip(ctx), _ => PerMinute(perMinute))),
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsPair(ctx)
+                    ? RateLimitPartition.GetFixedWindowLimiter("pair-ip:" + Ip(ctx), _ => PerMinute(pairPerIp))
+                    : RateLimitPartition.GetNoLimiter("")),
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsPair(ctx)
+                    ? RateLimitPartition.GetFixedWindowLimiter("pair", _ => PerMinute(pairGlobal))
+                    : RateLimitPartition.GetNoLimiter("")),
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsLookup(ctx)
+                    ? RateLimitPartition.GetFixedWindowLimiter("lookup:" + (UnverifiedDeviceKey(ctx) ?? "ip:" + Ip(ctx)),
+                        _ => PerMinute(lookupPerDevice))
+                    : RateLimitPartition.GetNoLimiter("")));
             o.OnRejected = async (ctx, ct) =>
             {
                 if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))
@@ -100,6 +127,28 @@ public static class HostingSetup
                     title: "Troppe richieste", detail: "Riprova tra poco.").ExecuteAsync(ctx.HttpContext);
             };
         });
+    }
+
+    /// <summary><c>kid</c> dall'header del token <c>CM-Device</c>, senza verifica (solo chiave di rate limit).</summary>
+    private static string? UnverifiedDeviceKey(HttpContext ctx)
+    {
+        var auth = ctx.Request.Headers.Authorization.ToString();
+        if (!auth.StartsWith(Auth.DeviceTokens.AuthorizationPrefix, StringComparison.Ordinal)) return null;
+        var token = auth.AsSpan(Auth.DeviceTokens.AuthorizationPrefix.Length).Trim();
+        var dot = token.IndexOf('.');
+        if (dot <= 0 || dot > 512) return null;
+        var header = Auth.Base64Url.TryDecode(token[..dot].ToString());
+        if (header is null) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(header);
+            return doc.RootElement.TryGetProperty("kid", out var kid) && Guid.TryParse(kid.GetString(), out var id)
+                ? "dev:" + id.ToString("N") : null;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static string[] Split(string? s) =>

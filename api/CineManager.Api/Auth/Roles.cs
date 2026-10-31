@@ -42,6 +42,9 @@ public static class CmClaims
     public const string Groups = "groups";
     public const string Role = "role";
     public const string Stamp = "cm_stamp";
+    /// <summary>Id del dispositivo (solo nel principal delle richieste firmate dell'app).</summary>
+    public const string Device = "cm_device";
+    public const string DeviceName = "cm_device_name";
 }
 
 /// <summary>Nomi delle policy di autorizzazione.</summary>
@@ -49,4 +52,6 @@ public static class Policies
 {
     public const string User = "user";
     public const string Admin = "admin";
+    /// <summary>Richieste firmate dell'app (schema <c>CM-Device</c>).</summary>
+    public const string Device = "device";
 }

@@ -3,7 +3,8 @@ import type { TemplateResult } from 'lit';
 import type { ImportResponse } from '../api';
 import { currentCopy } from '../copy';
 
-/* Pannello ARRIVI (modalità DB, prima versione: solo IMPORTA DA TELLICO).
+/* Pannello ARRIVI (modalità DB): scheda IMPORTA DA TELLICO e guscio a schede
+   (le altre schede in arrivals-phone/-list/-admin.templates.ts).
    Etichette funzionali (ARRIVI, IMPORTA DA TELLICO) uguali in ogni tema; le
    frasi di colore arrivano da copy.ts. Tutto interpolato con lit (titoli dei
    film mancanti compresi): niente unsafeHTML. */
@@ -127,4 +128,49 @@ export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): Template
         </div>` : nothing}
       ${v.summary ? summaryTemplate(v.summary) : nothing}
     </section>`;
+}
+
+// ------------------------------------------------------------ schede del pannello
+
+export interface ArrivalsTab {
+  id: string;
+  label: string;
+  /** Elemento radice della sezione (costruito e aggiornato dal suo controller). */
+  el: HTMLElement;
+}
+
+export interface TabsHandlers {
+  onSelect: (id: string, focus: boolean) => void;
+}
+
+/** Schede accessibili (role="tablist", tab a focus mobile, frecce/Home/Fine)
+ *  con i pannelli delle sezioni interpolati come nodi DOM: lit li mantiene al
+ *  loro posto tra un render e l'altro, conservandone lo stato interno. */
+export function arrivalsShellTemplate(tabs: ArrivalsTab[], active: string, h: TabsHandlers): TemplateResult {
+  const onKeydown = (e: KeyboardEvent): void => {
+    const i = tabs.findIndex(t => t.id === active);
+    let next = -1;
+    if (e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    h.onSelect(tabs[next].id, true);
+  };
+  return html`
+    ${tabs.length > 1 ? html`
+      <div class="arrivals-tabs" role="tablist" aria-label="Sezioni di ARRIVI" @keydown=${onKeydown}>
+        ${tabs.map(t => html`
+          <button type="button" role="tab" class="arrivals-tab ${t.id === active ? 'active' : ''}"
+            id=${`arrivalsTab-${t.id}`} aria-controls=${`arrivalsPanel-${t.id}`}
+            aria-selected=${t.id === active ? 'true' : 'false'} tabindex=${t.id === active ? '0' : '-1'}
+            @click=${() => h.onSelect(t.id, false)}>${t.label}</button>`)}
+      </div>` : nothing}
+    ${tabs.map(t => html`
+      <div class="arrivals-tabpanel" role=${tabs.length > 1 ? 'tabpanel' : nothing}
+        id=${`arrivalsPanel-${t.id}`}
+        aria-labelledby=${tabs.length > 1 ? `arrivalsTab-${t.id}` : nothing}
+        ?hidden=${t.id !== active}>${t.el}</div>`)}
+    <p class="arrivals-note arrivals-tmdb" lang="en">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>`;
 }

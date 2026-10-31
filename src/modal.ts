@@ -28,6 +28,8 @@ let cutinTimer = 0;
 
 // Elemento che aveva il focus prima dell'apertura: vi torna il focus alla chiusura.
 let lastFocused: HTMLElement | null = null;
+/** Rilegge stato/voto dallo store e ri-renderizza la scheda aperta (null = chiusa). */
+let resync: (() => void) | null = null;
 
 /** Campi che la scheda mostra già (testata, meta, elenco fisso, trama, cast,
  *  RANK, stato di visione) o che non hanno senso per chi guarda (id, date di
@@ -164,6 +166,11 @@ export function openModal(
   let rating = store.getRating(id);
 
   const rerender = (): void => { render(modalTemplate(data, { status, rating }, handlers), modalContent); };
+  resync = () => {
+    status = store.getStatus(id);
+    rating = store.getRating(id);
+    rerender();
+  };
 
   const handlers: ModalHandlers = {
     onClose: closeModal,
@@ -210,7 +217,15 @@ export function openModal(
   cutinTimer = window.setTimeout(() => cutinEl.classList.remove('go'), CUTIN_MS);
 }
 
+/** Riallinea la scheda aperta allo store: dopo un salvataggio fallito (lo
+ *  store ha ripristinato il valore precedente) o una modifica da un'altra
+ *  scheda. No-op a scheda chiusa. */
+export function refreshOpenModal(): void {
+  if (modalEl.classList.contains('show')) resync?.();
+}
+
 export function closeModal(): void {
+  resync = null;
   cancelCutin();
   modalEl.classList.remove('show');
   document.body.style.overflow = '';

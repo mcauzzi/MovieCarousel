@@ -52,5 +52,18 @@ public sealed class UserSync(CinemaDbContext db, IMemoryCache cache, TimeProvide
         return stamp;
     }
 
+    /// <summary>
+    /// Nuovo timbro di sicurezza: le sessioni del sito già emesse non sono più valide (§4.1).
+    /// False se l'utente non esiste.
+    /// </summary>
+    public async Task<bool> RegenerateStampAsync(string sub, CancellationToken ct = default)
+    {
+        var stamp = Guid.NewGuid();
+        var n = await db.Users.Where(u => u.Sub == sub)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.SecurityStamp, stamp), ct);
+        cache.Remove(StampKey(sub));
+        return n > 0;
+    }
+
     private static string StampKey(string sub) => "cm:stamp:" + sub;
 }

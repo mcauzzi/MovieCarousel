@@ -1,4 +1,4 @@
-import { html } from 'lit';
+import { html, nothing } from 'lit';
 import type { TemplateResult } from 'lit';
 
 /* Template della modalità DB fuori dal pannello ARRIVI: dialog di conferma
@@ -12,6 +12,10 @@ export interface ConfirmView {
   message: string;
   yesLabel: string;
   noLabel: string;
+  /** Casella facoltativa nel dialog (es. "cancella anche i valori"). */
+  option?: string;
+  /** Azione distruttiva: il focus iniziale va su NO invece che su SÌ. */
+  danger?: boolean;
 }
 
 export function confirmDialogTemplate(v: ConfirmView, onYes: () => void, onNo: () => void): TemplateResult {
@@ -22,6 +26,10 @@ export function confirmDialogTemplate(v: ConfirmView, onYes: () => void, onNo: (
         <h2 class="random-title" id="cmConfirmTitle">${v.title} <span class="random-title-accent">${v.accent}</span></h2>
       </div>
       <p class="cm-confirm-msg" id="cmConfirmMsg">${v.message}</p>
+      ${v.option ? html`
+        <label class="cm-confirm-option arrivals-check">
+          <input type="checkbox" class="cm-confirm-check"> ${v.option}
+        </label>` : nothing}
       <div class="random-footer cm-confirm-actions">
         <button class="group-btn cm-confirm-no" @click=${onNo}>${v.noLabel}</button>
         <button class="random-extract-btn cm-confirm-yes" @click=${onYes}>${v.yesLabel}</button>

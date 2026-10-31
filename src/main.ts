@@ -34,7 +34,7 @@ import { renderMain, resetRenderer } from './renderer';
 import type { WatchFilter } from './renderer';
 import { countLabelTemplate, filterButtonTemplate, viewSelectorTemplate } from './templates/toolbar.templates';
 import { ransomTemplate } from './templates/ransom.templates';
-import { openModal } from './modal';
+import { openModal, refreshOpenModal } from './modal';
 import { LocalStorageAdapter } from './store';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { THEMES, applyTheme, getSavedTheme } from './themes';
@@ -86,7 +86,13 @@ function useStore(s: StoreAdapter): void {
   store = s;
   // Sync multi-scheda (evento `storage`) o ricarica al ritorno in primo piano
   // (modalità DB): se stato/voto cambiano altrove, ri-renderizza qui.
-  s.setOnExternalChange?.(() => { if (s === store && movies.length) onMovieChange(); });
+  // La scheda film aperta si riallinea anche lei (PUT fallito e annullato,
+  // modifica da un'altra scheda): i suoi pulsanti tornano al valore salvato.
+  s.setOnExternalChange?.(() => {
+    if (s !== store || !movies.length) return;
+    onMovieChange();
+    refreshOpenModal();
+  });
 }
 useStore(store);
 
@@ -280,8 +286,9 @@ function initUI(preserveView = false): void {
   for (const id of ['intelBtn', 'randomBtn', 'filterBtn', 'arrivalsBtn']) document.getElementById(id)?.remove();
   // Mantiene il dropdown tema nel masthead subito prima di reload.
   masthead.insertBefore(themeWrap, reloadBtn);
-  // ARRIVI — solo modalità DB e, in questa fase, solo amministratore.
-  const arrivalsBtn = dbMode && isAdmin() ? createArrivalsButton() : null;
+  // ARRIVI — solo modalità DB, per ogni utente abilitato (le schede di
+  // amministrazione compaiono dentro il pannello solo con il ruolo admin).
+  const arrivalsBtn = dbMode && me?.roles.length ? createArrivalsButton() : null;
   if (!groupers.length) {
     if (arrivalsBtn) toolbar.appendChild(arrivalsBtn);
     showView(preserveView);
@@ -362,7 +369,10 @@ function createArrivalsButton(): HTMLButtonElement {
   btn.textContent = '⇣ ARRIVI';
   btn.setAttribute('aria-label', 'ARRIVI');
   btn.onclick = () => openArrivals({
-    onImported: () => loadFromApi(true),
+    isAdmin: isAdmin(),
+    sub: me?.sub ?? '',
+    imgDir,
+    onCollectionChanged: () => loadFromApi(true),
     onSessionExpired: () => showSessionExpired(goToLogin),
     returnFocusTo: () => document.getElementById('arrivalsBtn'),
   });
@@ -478,7 +488,14 @@ async function startDbMode(apiBase: string): Promise<void> {
   useStore(apiStore);
   setStatus('▶ CONNESSIONE ALL\'ARCHIVIO...');
   try {
-    me = await getMe();
+    const user = await getMe();
+    me = { ...user, roles: Array.isArray(user.roles) ? user.roles : [] };
+    // Utente autenticato ma senza ruoli (non nel gruppo utenti, §4.3): il resto
+    // dell'API risponderebbe 403, quindi niente altre chiamate.
+    if (!me.roles.length) {
+      setStatus('✕ Il tuo utente non è abilitato: chiedi di essere aggiunto al gruppo utenti.', true);
+      return;
+    }
     await loadFromApi(false);
     setStatus(currentCopy().statusLoaded(movies.length));
   } catch (err) {

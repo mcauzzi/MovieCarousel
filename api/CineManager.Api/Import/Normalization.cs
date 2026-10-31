@@ -46,8 +46,10 @@ public static class TitleNormalizer
         var y = data["year"];
         if (y is JsonValue v)
         {
-            if (v.TryGetValue<int>(out var i)) return i.ToString(CultureInfo.InvariantCulture);
-            if (v.TryGetValue<double>(out var d)) return ((int)d).ToString(CultureInfo.InvariantCulture);
+            // Qualsiasi numero JSON (int, long, double: i nodi creati in memoria non convertono tra tipi).
+            if (v.GetValueKind() == System.Text.Json.JsonValueKind.Number &&
+                double.TryParse(v.ToJsonString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
+                return ((int)d).ToString(CultureInfo.InvariantCulture);
             if (v.TryGetValue<string>(out var s) && int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var p))
                 return p.ToString(CultureInfo.InvariantCulture);
         }

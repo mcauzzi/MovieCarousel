@@ -10,14 +10,19 @@
  *   --file <path.tc>     collezione da caricare al posto di quella generata
  *   --img-dir <path>     imgDir passato all'app (URL relativo al sito, per copertine esterne)
  *   --themes p5,sh2      sottoinsieme di temi (default: tutti)
- *   --states modal,intel sottoinsieme di stati (default: tutti)
+ *   --states modal,intel sottoinsieme di stati (default: tutti; `arrivi` = pannello
+ *                        ARRIVI in modalità DB con API simulata)
  *   --out <dir>          cartella del report (default: a11y-report/)
  *   --screenshots        salva uno screenshot per ogni tema × stato
  *   --strict             exit code 1 se ci sono violazioni
  *
  * L'app non sa di essere sotto test: config.json e il .tc sono serviti
  * intercettando le richieste in Playwright, quindi non serve nessun file sul
- * disco del sito. Il browser gira con prefers-reduced-motion, così cut-in,
+ * disco del sito. Lo stato `arrivi` gira in modalità DB (config.json con
+ * apiBase) con un'API simulata dalle stesse intercettazioni: utente admin,
+ * collezione, dispositivi, arrivi, campi, version.json e QR; axe passa su
+ * ogni scheda del pannello (TELEFONO con QR di abbinamento, ARRIVI con il
+ * modulo di correzione aperto, ESPORTA CSV, CAMPI, IMPORTA DA TELLICO). Il browser gira con prefers-reduced-motion, così cut-in,
  * All-Out Attack e transizioni vengono saltati e ogni stato è stabile.
  *
  * Output: report.md (leggibile) + report.json (risultati axe completi). */
@@ -143,6 +148,96 @@ function buildFixtureXml() {
 }
 
 /* ------------------------------------------------------------------ *
+ * API simulata per la modalità DB (stato `arrivi`): stessi film della
+ * collezione di prova, utente amministratore, dispositivi di due utenti,
+ * arrivi dall'app (uno con copertina, uno senza) e campi di ogni tipo.
+ * ------------------------------------------------------------------ */
+const API_BASE = './__a11y__/api/';
+const COVER_DIR = './__a11y__/covers/';
+const NOW = Date.parse('2026-10-30T18:00:00Z');
+const iso = minutesAgo => new Date(NOW - minutesAgo * 60000).toISOString();
+
+function fixtureMovies() {
+  return FIXTURE.map(([title, year, genres, directors, nat, lang, time, rating, , color], i) => {
+    const m = { id: i + 1, title, genre: genres, director: directors };
+    if (year) m.year = year;
+    if (nat) m.nationality = [nat];
+    if (lang) m.language = [lang];
+    if (time) m['running-time'] = time;
+    if (rating) m.rating = rating;
+    if (color) m.cover = `cover-${i + 1}.svg`;
+    return m;
+  });
+}
+
+const API_FIELDS = [
+  ['title', 'Titolo', 'line', false, 'tellico', true],
+  ['year', 'Anno', 'number', false, 'tellico', true],
+  ['genre', 'Genere', 'line', true, 'tellico', true],
+  ['director', 'Regista', 'line', true, 'tellico', true],
+  ['cast', 'Cast', 'table', true, 'tellico', true],
+  ['plot', 'Trama', 'para', false, 'tellico', true],
+  ['medium', 'Supporto', 'choice', false, 'tellico', true, ['DVD', 'Blu-ray', '4K']],
+  ['cdate', 'Data di creazione', 'date', false, 'tellico', false],
+  ['cover', 'Copertina', 'image', false, 'tellico', false],
+  ['ean', 'EAN', 'line', false, 'local', true],
+  ['steelbook', 'Steelbook', 'bool', false, 'local', true],
+  ['acquisto', 'Data di acquisto', 'date', false, 'local', true],
+].map(([name, title, type, multiple, origin, inForm, allowed], i) => ({
+  name, title, type, multiple, origin, inForm, allowed: allowed ?? null,
+  groupable: ['genre', 'director', 'medium'].includes(name), groupMinSize: 3, ordinal: i,
+}));
+
+const API_DEVICES = [
+  { id: '0d6f1a52-6a1e-4c55-9c41-000000000001', name: 'Pixel 8', userSub: 'u-admin', userName: 'Amministratore', createdAt: iso(60 * 24 * 30), lastSeenAt: iso(15), revokedAt: null },
+  { id: '0d6f1a52-6a1e-4c55-9c41-000000000002', name: 'Telefono vecchio', userSub: 'u-admin', userName: 'Amministratore', createdAt: iso(60 * 24 * 300), lastSeenAt: iso(60 * 24 * 200), revokedAt: iso(60 * 24 * 100) },
+  { id: '0d6f1a52-6a1e-4c55-9c41-000000000003', name: 'Galaxy di Anna', userSub: 'u-anna', userName: 'Anna', createdAt: iso(60 * 24 * 3), lastSeenAt: null, revokedAt: null },
+];
+
+const API_ARRIVALS = [
+  { id: 101, ean: '8012345678901', tmdbId: 238, source: 'app', createdAt: iso(90), createdBy: 'u-anna', createdByName: 'Anna', exportedAt: null,
+    movie: { id: 101, title: 'Il padrino', year: 1972, genre: ['Drammatico', 'Crime'], director: ['Francis Ford Coppola'],
+      cast: [{ actor: 'Marlon Brando', role: 'Vito Corleone' }], medium: 'DVD', ean: '8012345678901', steelbook: 'true', cover: 'cover-1.svg' } },
+  { id: 102, ean: '8009876543210', tmdbId: null, source: 'app', createdAt: iso(60 * 26), createdBy: 'u-admin', createdByName: 'Amministratore', exportedAt: iso(60 * 20),
+    movie: { id: 102, title: 'Un titolo lunghissimo inserito dal telefono con il codice a barre', medium: 'Blu-ray', ean: '8009876543210' } },
+];
+
+const QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges"><rect width="29" height="29" fill="#fff"/><path d="M2 2h7v7H2zM20 2h7v7h-7zM2 20h7v7H2zM12 12h5v5h-5z" fill="#000"/></svg>';
+
+/** Risposte dell'API simulata (percorso relativo ad API_BASE). */
+function mockApi(route) {
+  const req = route.request();
+  const url = new URL(req.url());
+  const path = url.pathname.replace(/^.*\/__a11y__\/api\//, '');
+  const json = body => route.fulfill({ status: 200, json: body });
+  if (path === 'me') return json({ sub: 'u-admin', name: 'Amministratore', roles: ['user', 'admin'] });
+  if (path === 'collection') return json({ movies: fixtureMovies(), fields: API_FIELDS });
+  if (path === 'state') return json({ status: { 1: 'seen', 2: 'watchlist' }, rating: { 1: 5 } });
+  if (path === 'devices') return json(API_DEVICES.filter(d => url.searchParams.get('all') === 'true' || d.userSub === 'u-admin'));
+  if (path === 'arrivals') return json(url.searchParams.get('scope') === 'new' ? API_ARRIVALS.filter(a => !a.exportedAt) : API_ARRIVALS);
+  if (path === 'fields') return json(API_FIELDS);
+  if (path === 'pairing') return json({ code: 'ABCD-1234', expiresAt: new Date(Date.now() + 5 * 60000).toISOString(), qrSvg: QR_SVG });
+  if (path === 'app-download-qr.svg') return route.fulfill({ status: 200, body: QR_SVG, contentType: 'image/svg+xml' });
+  return route.fulfill({ status: 404, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Not Found' }) });
+}
+
+/** Instrada config.json, API simulata, version.json e copertine (modalità DB). */
+async function routeDbMode(context) {
+  await context.route(/\/config\.json(\?|$)/, route => route.fulfill({
+    json: { apiBase: API_BASE, imgDir: COVER_DIR, title: 'Collezione di prova', bgmDir: './__a11y__/bgm/' },
+  }));
+  await context.route(/\/__a11y__\/api\//, mockApi);
+  await context.route(/\/app\/version\.json(\?|$)/, route => route.fulfill({
+    json: { version: '1.3.0', versionCode: 10300, minSupportedCode: 10000, sha256: 'a3f1c2'.repeat(10) + 'beef', commit: 'abc1234' },
+  }));
+  await context.route(/\/__a11y__\/covers\/cover-(\d+)\.svg/, (route) => {
+    const i = Number(/cover-(\d+)/.exec(route.request().url())[1]) - 1;
+    const color = FIXTURE[i]?.[9] ?? '#888888';
+    return route.fulfill({ status: 200, body: Buffer.from(coverSvg(color, i), 'base64'), contentType: 'image/svg+xml' });
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * Stati: ognuno parte da una pagina fresca, esegue le azioni e attende
  * che la UI sia ferma. `loaded: false` = niente collezione (schermata loader).
  * ------------------------------------------------------------------ */
@@ -196,7 +291,61 @@ const STATES = {
       await page.waitForSelector('.stats-panel', { state: 'visible' });
     },
   },
+  arrivi: {
+    label: 'Pannello ARRIVI (modalità DB)',
+    db: true,
+    // Il pannello è un dialog modale: axe analizza solo lui (lo sfondo, cioè
+    // il carosello, è già coperto dallo stato `carousel`).
+    scope: '.random-backdrop.show',
+    // TELEFONO: versione dell'app, QR di abbinamento generato, dispositivi di tutti.
+    run: async page => {
+      await page.click('#arrivalsBtn');
+      await page.waitForSelector('.arrivals-panel .arrivals-app-version', { state: 'visible' });
+      await page.click('.arrivals-pair-btn');
+      await page.waitForSelector('.arrivals-pair img.arrivals-qr', { state: 'visible' });
+      await page.check('.arrivals-phone .arrivals-check input');
+      await page.waitForSelector('.arrivals-user', { state: 'visible' });
+    },
+    // Una scansione axe per scheda: i pannelli nascosti non vengono analizzati.
+    passes: [
+      async page => {
+        await page.click('#arrivalsTab-arrivals');
+        await page.waitForSelector('.arrivals-item', { state: 'visible' });
+        await page.click('.arrivals-segmented .group-btn:not(.active)');
+        await page.waitForFunction(() => document.querySelectorAll('.arrivals-item').length === 2);
+        await page.click('.arrivals-item .group-btn');
+        await page.waitForSelector('.arrivals-form .arrivals-form-grid', { state: 'visible' });
+      },
+      async page => {
+        await page.click('#arrivalsTab-export');
+        await page.waitForSelector('#arrivalsPanel-export .random-extract-btn', { state: 'visible' });
+      },
+      async page => {
+        await page.click('#arrivalsTab-fields');
+        await page.waitForSelector('.arrivals-table tbody tr', { state: 'visible' });
+        await page.check('.arrivals-table tbody tr input[type="checkbox"]:not(:checked)');
+      },
+      async page => {
+        await page.click('#arrivalsTab-import');
+        await page.waitForSelector('#arrivalsPanel-import .arrivals-drop', { state: 'visible' });
+      },
+    ],
+  },
 };
+
+/** Unisce i risultati axe di più passate: per regola, nodi senza doppioni. */
+function mergeAxe(lists) {
+  const byRule = new Map();
+  for (const list of lists) {
+    for (const rule of list) {
+      const cur = byRule.get(rule.id);
+      if (!cur) { byRule.set(rule.id, { ...rule, nodes: [...rule.nodes] }); continue; }
+      const seen = new Set(cur.nodes.map(n => n.target.join(' ')));
+      for (const n of rule.nodes) if (!seen.has(n.target.join(' '))) cur.nodes.push(n);
+    }
+  }
+  return [...byRule.values()];
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -231,12 +380,17 @@ async function scanState(browser, baseUrl, theme, stateId, tcBody, outDir) {
 
   // Dati serviti al volo: config.json punta alla collezione intercettata;
   // nel loader tutto risponde 404 così l'auto-load fallisce come su un sito vuoto.
-  await context.route(/\/config\.json(\?|$)/, route => loaded
-    ? route.fulfill({ json: { tcFile: TC_PATH, imgDir: opts['img-dir'], bgmDir: './__a11y__/bgm/' } })
-    : route.fulfill({ status: 404, body: '' }));
-  await context.route(/\.tc(\?|$)/, route => loaded && route.request().url().includes(TC_PATH)
-    ? route.fulfill({ status: 200, body: tcBody, contentType: 'application/octet-stream' })
-    : route.fulfill({ status: 404, body: '' }));
+  // Gli stati `db` usano invece la modalità DB con l'API simulata.
+  if (state.db) {
+    await routeDbMode(context);
+  } else {
+    await context.route(/\/config\.json(\?|$)/, route => loaded
+      ? route.fulfill({ json: { tcFile: TC_PATH, imgDir: opts['img-dir'], bgmDir: './__a11y__/bgm/' } })
+      : route.fulfill({ status: 404, body: '' }));
+    await context.route(/\.tc(\?|$)/, route => loaded && route.request().url().includes(TC_PATH)
+      ? route.fulfill({ status: 200, body: tcBody, contentType: 'application/octet-stream' })
+      : route.fulfill({ status: 404, body: '' }));
+  }
   await context.route(/\/__a11y__\/bgm\//, route => route.fulfill({ status: 404, body: '' }));
 
   const page = await context.newPage();
@@ -250,13 +404,26 @@ async function scanState(browser, baseUrl, theme, stateId, tcBody, outDir) {
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
 
-    if (opts.screenshots) await page.screenshot({ path: join(outDir, 'screens', `${theme}-${stateId}.png`) });
-
     await page.addScriptTag({ path: AXE_PATH });
-    const result = await page.evaluate(async tags => {
-      return await axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations', 'incomplete'] });
-    }, WCAG_TAGS);
-    return { violations: result.violations, incomplete: result.incomplete, errors };
+    const runAxe = () => page.evaluate(async ({ tags, scope }) => {
+      return await axe.run(scope ? { include: [scope] } : document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations', 'incomplete'] });
+    }, { tags: WCAG_TAGS, scope: state.scope ?? null });
+
+    const passes = [null, ...(state.passes ?? [])];
+    const violations = [];
+    const incomplete = [];
+    for (const [i, pass] of passes.entries()) {
+      if (pass) {
+        await pass(page);
+        await settle(page);
+      }
+      const suffix = passes.length > 1 ? `-${i + 1}` : '';
+      if (opts.screenshots) await page.screenshot({ path: join(outDir, 'screens', `${theme}-${stateId}${suffix}.png`) });
+      const result = await runAxe();
+      violations.push(result.violations);
+      incomplete.push(result.incomplete);
+    }
+    return { violations: mergeAxe(violations), incomplete: mergeAxe(incomplete), errors };
   } catch (e) {
     return { violations: [], incomplete: [], errors: [...errors, `scansione fallita: ${e.message}`] };
   } finally {

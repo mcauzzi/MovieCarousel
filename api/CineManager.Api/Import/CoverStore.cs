@@ -69,5 +69,51 @@ public sealed partial class CoverStore(IOptions<CoversOptions> options, IWebHost
         return new ImagesImportResult(written, skipped);
     }
 
+    /// <summary>
+    /// Scrive (o sostituisce) un file in modo atomico: file temporaneo nella stessa cartella + rename.
+    /// </summary>
+    public async Task WriteAtomicAsync(string name, ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    {
+        if (!IsSafeName(name)) throw new ArgumentException("Nome file non valido.", nameof(name));
+        var root = Root;
+        Directory.CreateDirectory(root);
+        var tmp = Path.Combine(root, $".tmp-{Guid.NewGuid():N}");
+        try
+        {
+            await File.WriteAllBytesAsync(tmp, bytes.ToArray(), ct);
+            File.Move(tmp, Path.Combine(root, name), overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+        }
+    }
+
+    /// <summary>Estensioni delle copertine scaricate per gli arrivi dall'app.</summary>
+    public static readonly string[] AppCoverExtensions = [".jpg", ".jpeg", ".png"];
+
+    /// <summary>Nome della copertina di un arrivo dall'app: <c>cm-&lt;id&gt;.&lt;ext&gt;</c>.</summary>
+    public static string AppCoverName(int movieId, string ext) => $"cm-{movieId}{ext}";
+
+    /// <summary>Cancella le copertine <c>cm-&lt;id&gt;.*</c> di un film, tranne <paramref name="keep"/>.</summary>
+    public int DeleteAppCovers(int movieId, string? keep = null)
+    {
+        var root = Root;
+        var deleted = 0;
+        foreach (var ext in AppCoverExtensions)
+        {
+            var name = AppCoverName(movieId, ext);
+            if (name == keep) continue;
+            var path = Path.Combine(root, name);
+            try
+            {
+                if (File.Exists(path)) { File.Delete(path); deleted++; }
+            }
+            catch (IOException ex) { log.LogWarning(ex, "Copertina {Name} non cancellata", name); }
+            catch (UnauthorizedAccessException ex) { log.LogWarning(ex, "Copertina {Name} non cancellata", name); }
+        }
+        return deleted;
+    }
+
     private static string Truncate(string s) => s.Length <= 60 ? s : s[..60] + "…";
 }

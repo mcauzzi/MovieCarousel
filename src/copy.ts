@@ -60,6 +60,15 @@ export interface ThemeCopy {
   arrivalsAccent: string;
   arrivalsLede: string;
   arrivalsDone: string;
+  /** Pannello ARRIVI, fase 3: frase sotto "COLLEGA UN TELEFONO", lista senza
+   *  dispositivi, frase e lista vuota della scheda ARRIVI, frase e intestazione
+   *  del riepilogo di ESPORTA CSV. */
+  arrivalsPhoneLede: string;
+  devicesEmpty: string;
+  arrivalsListLede: string;
+  arrivalsEmpty: string;
+  arrivalsExportLede: string;
+  arrivalsExportDone: string;
 }
 
 function pad2(n: number): string {
@@ -116,6 +125,12 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     arrivalsAccent: 'NEW LOOT',
     arrivalsLede: 'Porta nel covo il bottino catalogato in Tellico.',
     arrivalsDone: 'COLPO RIUSCITO',
+    arrivalsPhoneLede: 'Recluta un telefono: inquadra il codice a barre di un DVD e il bottino entra nel covo.',
+    devicesEmpty: 'Nessun complice abbinato.',
+    arrivalsListLede: 'Il bottino portato dai telefoni, in attesa di finire in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo bottino: il covo è in ordine.',
+    arrivalsExportLede: 'Prepara il bottino per Tellico.',
+    arrivalsExportDone: 'BOTTINO CONSEGNATO',
   },
   // MEMENTO — Persona 3: Velvet Room, Arcani, compendio, Ora Buia, memento mori.
   p3: {
@@ -156,6 +171,12 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     arrivalsAccent: 'COMPENDIUM',
     arrivalsLede: 'Registra nel compendio le memorie catalogate in Tellico.',
     arrivalsDone: 'MEMORIE REGISTRATE',
+    arrivalsPhoneLede: 'Stringi un patto con un telefono: ogni DVD inquadrato diventa una nuova memoria.',
+    devicesEmpty: 'Nessun patto stretto.',
+    arrivalsListLede: 'Memorie raccolte dai telefoni, non ancora trascritte in Tellico.',
+    arrivalsEmpty: 'Nessuna nuova memoria da registrare.',
+    arrivalsExportLede: 'Trascrivi le memorie per Tellico.',
+    arrivalsExportDone: 'MEMORIE TRASCRITTE',
   },
   // MAYONAKA — Persona 4: Investigation Team, Midnight Channel, casi, nebbia.
   p4: {
@@ -196,6 +217,12 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     arrivalsAccent: 'NEW CASES',
     arrivalsLede: 'Sintonizza i casi catalogati in Tellico.',
     arrivalsDone: 'CASI ARCHIVIATI!',
+    arrivalsPhoneLede: 'Sintonizza un telefono: ogni DVD inquadrato apre un nuovo caso.',
+    devicesEmpty: 'Nessun membro del team collegato.',
+    arrivalsListLede: 'Casi segnalati dai telefoni, ancora da archiviare in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo caso in onda.',
+    arrivalsExportLede: 'Manda in onda i casi per Tellico.',
+    arrivalsExportDone: 'CASI TRASMESSI!',
   },
   // TOLUCA — Silent Hill 2: nebbia, stanze d'albergo, memo battuti a macchina,
   // la radio che gracchia, una lettera, la mappa della città. Testi originali.
@@ -237,6 +264,12 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     arrivalsAccent: 'NUOVI MEMO',
     arrivalsLede: 'Altre lettere sono arrivate da Tellico.',
     arrivalsDone: 'I RICORDI SONO TORNATI',
+    arrivalsPhoneLede: 'Una radio tascabile che riconosce i DVD: inquadra il codice e un nuovo ricordo arriva qui.',
+    devicesEmpty: 'Nessuna radio sintonizzata.',
+    arrivalsListLede: 'Ricordi riportati dai telefoni, non ancora scritti in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo ricordo nella nebbia.',
+    arrivalsExportLede: 'Batti a macchina i ricordi per Tellico.',
+    arrivalsExportDone: 'MEMO SPEDITO',
   },
 };
 

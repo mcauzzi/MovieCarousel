@@ -9,7 +9,12 @@ import { trapTab } from './utils';
 
 /** Dialog modale SÌ/NO: role="dialog", focus trap, Escape = NO, focus
  *  restituito all'elemento attivo prima dell'apertura. Risolve true con SÌ. */
-export function confirmDialog(v: ConfirmView): Promise<boolean> {
+export async function confirmDialog(v: ConfirmView): Promise<boolean> {
+  return (await confirmWithOption(v)).yes;
+}
+
+/** Come confirmDialog, ma riporta anche lo stato della casella `v.option`. */
+export function confirmWithOption(v: ConfirmView): Promise<{ yes: boolean; checked: boolean }> {
   return new Promise(resolve => {
     const opener = document.activeElement as HTMLElement | null;
     const backdrop = document.createElement('div');
@@ -17,10 +22,11 @@ export function confirmDialog(v: ConfirmView): Promise<boolean> {
     document.body.appendChild(backdrop);
 
     const done = (answer: boolean): void => {
+      const checked = !!backdrop.querySelector<HTMLInputElement>('.cm-confirm-check')?.checked;
       document.removeEventListener('keydown', onKeydown, true);
       backdrop.remove();
       if (opener?.isConnected) opener.focus();
-      resolve(answer);
+      resolve({ yes: answer, checked });
     };
     // In capture: Escape chiude solo questo dialog (non i popup sotto).
     const onKeydown = (e: KeyboardEvent): void => {
@@ -33,7 +39,7 @@ export function confirmDialog(v: ConfirmView): Promise<boolean> {
     document.addEventListener('keydown', onKeydown, true);
 
     render(confirmDialogTemplate(v, () => done(true), () => done(false)), backdrop);
-    backdrop.querySelector<HTMLElement>('.cm-confirm-yes')?.focus();
+    backdrop.querySelector<HTMLElement>(v.danger ? '.cm-confirm-no' : '.cm-confirm-yes')?.focus();
   });
 }
 
