@@ -39,13 +39,14 @@ export function confirmDialogTemplate(v: ConfirmView, onYes: () => void, onNo: (
 
 export function sessionNoticeTemplate(
   visible: boolean,
+  message: string,
   onLogin: () => void,
   onDismiss: () => void
 ): TemplateResult {
   if (!visible) return html``;
   return html`
     <div class="cm-session-notice" role="alert">
-      <span class="cm-session-msg">Sessione scaduta: la modifica non è stata salvata.</span>
+      <span class="cm-session-msg">${message}</span>
       <button class="group-btn cm-session-login" @click=${onLogin}>ACCEDI</button>
       <button class="cm-session-close" aria-label="Chiudi avviso" @click=${onDismiss}>✕</button>
     </div>`;

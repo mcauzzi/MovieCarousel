@@ -273,18 +273,18 @@ export interface FieldPatch {
 
 export interface ExportResult {
   blob: Blob;
-  /** Id dei film inclusi nel CSV (header X-CM-Movie-Ids). */
-  ids: number[];
+  /** Istante di taglio dell'export (header X-CM-Export-Cutoff, ISO 8601). */
+  cutoff: string;
+  /** Righe del CSV che arrivano dall'app (header X-CM-Export-Count). */
+  count: number;
   filename: string;
 }
 
-/** Contenuto di /app/version.json (immagine del sito con l'APK, §11.1). */
+/** Parte di /app/version.json (immagine del sito con l'APK, §11.1) usata dal
+ *  sito: il file ha anche versionCode, minSupportedCode e commit. */
 export interface AppVersion {
   version: string;
-  versionCode: number;
-  minSupportedCode: number;
   sha256: string;
-  commit: string;
 }
 
 const seg = (v: string | number): string => encodeURIComponent(String(v));
@@ -337,21 +337,25 @@ function filenameFrom(header: string | null, fallback: string): string {
   return name ? name.replace(/^.*[\\/]/, '') || fallback : fallback;
 }
 
-/** Scarica il CSV per Tellico. Non segna nulla: dopo il download completo il
- *  chiamante invoca markExported(ids) (§9). */
+/** Scarica il CSV per Tellico. Non segna nulla: dopo il download completo,
+ *  per gli scope new/app con `count` > 0, il chiamante invoca
+ *  markExported(scope, cutoff) (§9). Sessione scaduta: lancia senza navigare
+ *  (è un'azione esplicita dell'utente nel pannello, decide il chiamante). */
 export async function exportCsv(scope: ExportScope): Promise<ExportResult> {
-  const res = await send('POST', 'export/csv', { scope }, { accept: 'text/csv' });
-  const ids = (res.headers.get('X-CM-Movie-Ids') ?? '')
-    .split(',')
-    .map(s => Number(s.trim()))
-    .filter(n => Number.isInteger(n) && n > 0);
+  const res = await send('GET', `export/csv?scope=${seg(scope)}`, undefined,
+    { accept: 'text/csv', navigateOnExpiry: false });
+  const cutoff = res.headers.get('X-CM-Export-Cutoff') ?? '';
+  const rawCount = Number(res.headers.get('X-CM-Export-Count'));
+  const count = Number.isInteger(rawCount) && rawCount > 0 ? rawCount : 0;
   const blob = await res.blob();
   const date = new Date().toISOString().slice(0, 10);
-  return { blob, ids, filename: filenameFrom(res.headers.get('Content-Disposition'), `cinemanager-${scope}-${date}.csv`) };
+  return { blob, cutoff, count, filename: filenameFrom(res.headers.get('Content-Disposition'), `cinemanager-${scope}-${date}.csv`) };
 }
 
-export function markExported(ids: number[]): Promise<{ marked: number }> {
-  return request<{ marked: number }>('POST', 'export/mark', { ids });
+/** Segna come esportati gli arrivi dello scope fino al cutoff restituito
+ *  dall'export (header X-CM-Export-Cutoff, passato così com'è). */
+export function markExported(scope: ArrivalScope, cutoff: string): Promise<{ marked: number }> {
+  return request<{ marked: number }>('POST', 'export/mark', { scope, cutoff });
 }
 
 export function getFields(): Promise<ApiField[]> {
@@ -385,10 +389,7 @@ export async function getAppVersion(): Promise<AppVersion | null> {
     if (!v || typeof v.version !== 'string' || !v.version) return null;
     return {
       version: v.version,
-      versionCode: Number(v.versionCode) || 0,
-      minSupportedCode: Number(v.minSupportedCode) || 0,
       sha256: typeof v.sha256 === 'string' ? v.sha256 : '',
-      commit: typeof v.commit === 'string' ? v.commit : '',
     };
   } catch {
     return null;

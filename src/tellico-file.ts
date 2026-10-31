@@ -3,21 +3,34 @@ import { parseTellicoXml } from './parser';
 import type { ParseResult } from './parser';
 
 /* Lettura di un file Tellico (.tc), condivisa dal caricamento della modalità .tc
-   (main.ts → handleFile) e da IMPORTA DA TELLICO (arrivals.ts): un solo posto
-   che conosce il formato del contenitore.
+   (main.ts → handleFile) e da IMPORTA DA TELLICO (arrivals-import.ts): un solo
+   posto che conosce il formato del contenitore.
    - .tc = zip con `tellico.xml`; se non è uno zip si prova come XML grezzo.
-   - Immagini: quelle incorporate in base64 nell'XML (<images>, lette dal parser)
-     e i file nella cartella `images/` dello zip, dove Tellico salva le immagini
-     quando non le incorpora nell'XML. Chiave = nome del file = id immagine
-     Tellico (lo stesso valore del campo `cover`). In caso di doppione vince
-     quella dell'XML. */
+   - Immagini: quelle incorporate in base64 nell'XML (<images>, lette dal parser,
+     in `embeddedImages` come data URL) e i file nella cartella `images/` dello
+     zip, dove Tellico salva le immagini quando non le incorpora nell'XML
+     (`zipImages`: voci ancora compresse, lette solo quando servono). Chiave =
+     nome del file = id immagine Tellico (lo stesso valore del campo `cover`).
+     In caso di doppione vince quella dell'XML.
+   - Per la vista: zipImageUrls() le espone come object URL (da revocare al
+     Reload o al file successivo). Per IMPORTA: imageBase64() legge i byte di
+     un'immagine alla volta, al momento dell'invio. */
+
+/** Immagine nella cartella `images/` dello zip (non ancora decompressa). */
+export interface ZipImage {
+  mime: string;
+  entry: JSZip.JSZipObject;
+}
 
 export interface TellicoFile extends ParseResult {
-  /** Fase raggiunta, per i messaggi di stato del chiamante. */
-  source: 'zip' | 'xml';
+  /** Immagini di `images/` dello zip non già incorporate nell'XML. */
+  zipImages: Map<string, ZipImage>;
 }
 
 export type TellicoPhase = 'extracting' | 'parsing';
+
+/** Nome immagine accettato dall'API (docs/api.md, import delle immagini). */
+export const IMAGE_NAME_RE = /^(?!\.)[A-Za-z0-9._-]{1,200}$/;
 
 const MIME_BY_EXT: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
@@ -29,21 +42,15 @@ function mimeFor(name: string): string | null {
   return MIME_BY_EXT[ext] ?? null;
 }
 
-async function zipImages(zip: JSZip): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  const jobs: Promise<void>[] = [];
+function zipImageEntries(zip: JSZip): Map<string, ZipImage> {
+  const out = new Map<string, ZipImage>();
   zip.forEach((path, entry) => {
     if (entry.dir) return;
     const m = /^images\/([^/]+)$/.exec(path);
     if (!m) return;
-    const name = m[1];
-    // Solo nomi "sicuri" (come li salva Tellico): niente percorsi né caratteri strani.
-    if (!/^[A-Za-z0-9._-]+$/.test(name)) return;
-    const mime = mimeFor(name);
-    if (!mime) return;
-    jobs.push(entry.async('base64').then(b64 => { out.set(name, `data:${mime};base64,${b64}`); }));
+    const mime = mimeFor(m[1]);
+    if (mime) out.set(m[1], { mime, entry });
   });
-  await Promise.all(jobs);
   return out;
 }
 
@@ -68,14 +75,32 @@ export async function readTellicoFile(
       onPhase?.('parsing');
     } else throw zipErr;
   }
-  const images = zip ? await zipImages(zip) : new Map<string, string>();
   const result = parseTellicoXml(xmlString);
-  for (const [k, v] of result.embeddedImages) images.set(k, v);
-  return { ...result, embeddedImages: images, source: zip ? 'zip' : 'xml' };
+  const zipImages = zip ? zipImageEntries(zip) : new Map<string, ZipImage>();
+  for (const k of result.embeddedImages.keys()) zipImages.delete(k);
+  return { ...result, zipImages };
+}
+
+/** Object URL per le immagini dello zip (vista della modalità .tc). `revoke`
+ *  li rilascia: va chiamato quando la collezione viene sostituita. */
+export async function zipImageUrls(
+  images: Map<string, ZipImage>
+): Promise<{ urls: Map<string, string>; revoke: () => void }> {
+  const urls = new Map<string, string>();
+  await Promise.all([...images].map(async ([name, img]) => {
+    const blob = await img.entry.async('blob');
+    urls.set(name, URL.createObjectURL(blob.slice(0, blob.size, img.mime)));
+  }));
+  return { urls, revoke: () => { for (const u of urls.values()) URL.revokeObjectURL(u); } };
 }
 
 /** Base64 puro da un data URL (`data:<mime>;base64,<dati>`); null se non è base64. */
 export function base64FromDataUrl(url: string): string | null {
   const i = url.indexOf(';base64,');
   return url.startsWith('data:') && i !== -1 ? url.slice(i + 8) : null;
+}
+
+/** Base64 di un'immagine del file (incorporata o dello zip), per l'invio all'API. */
+export async function imageBase64(img: string | ZipImage): Promise<string | null> {
+  return typeof img === 'string' ? base64FromDataUrl(img) : img.entry.async('base64');
 }

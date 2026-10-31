@@ -22,6 +22,9 @@ export interface Section {
   el: HTMLElement;
   /** La scheda della sezione è diventata visibile: carica i dati se servono. */
   activate: () => void;
+  /** La scheda non è più visibile (altra scheda o pannello chiuso): ferma timer
+   *  e polling. Facoltativo. */
+  deactivate?: () => void;
   rerender: () => void;
   destroy: () => void;
 }
@@ -38,6 +41,7 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 403 && err.title === 'Permesso negato' && !err.detail)
       return 'Permesso negato: operazione non consentita al tuo utente.';
+    if (err.status === 413) return 'Richiesta troppo grande per l\'API (413).';
     return err.message;
   }
   return (err as Error)?.message || String(err);

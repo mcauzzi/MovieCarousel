@@ -18,8 +18,8 @@ const SKIP_TYPES = new Set(['image', 'dependent']);
 
 function toFormFields(fields: ApiField[]): FormField[] {
   return fields
+    // L'API li restituisce già ordinati per ordinal, poi nome.
     .filter(f => f.inForm && !SKIP_TYPES.has(f.type))
-    .sort((a, b) => (a.ordinal ?? 0) - (b.ordinal ?? 0))
     .map(f => {
       const allowed = (f.allowed ?? []).filter(Boolean);
       let control: FormField['control'];
@@ -131,7 +131,7 @@ export function createListSection(ctx: SectionContext): ListSection {
     try {
       const items = await getArrivals(view.scope);
       if (n !== seq) return;
-      view.items = [...items].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+      view.items = items; // già dal più recente (API)
       view.error = null;
       view.sessionExpired = false;
     } catch (err) {
@@ -260,7 +260,16 @@ export function createListSection(ctx: SectionContext): ListSection {
     activate: () => { if (stale || view.items === null) void load(); },
     rerender,
     destroy: () => { seq++; },
-    invalidateFields: () => { formFields = null; if (view.edit) view.edit = null; },
+    invalidateFields: () => {
+      formFields = null;
+      // Il modulo aperto è costruito sui campi vecchi: chiudilo davvero (anche
+      // nel DOM, altrimenti resterebbe un CORREGGI morto al ritorno sulla scheda).
+      if (view.edit && !view.edit.saving) {
+        view.edit = null;
+        view.status = 'I campi sono cambiati: riapri CORREGGI per modificare il film.';
+        rerender();
+      }
+    },
     invalidate: () => { stale = true; },
   };
 }

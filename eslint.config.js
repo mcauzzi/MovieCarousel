@@ -4,7 +4,14 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'assets/**', 'Localfiles/**', '*.tc', '*.tc~'] },
+  // Output di build delle altre parti (Android/Gradle, .NET) e report generati:
+  // mai sorgenti da analizzare. Il sito vive in src/ e non ha cartelle build/.
+  {
+    ignores: [
+      'dist/**', 'node_modules/**', 'assets/**', 'Localfiles/**', '*.tc', '*.tc~',
+      'android/**', 'api/**/bin/**', 'api/**/obj/**', '**/build/**', 'a11y-report/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

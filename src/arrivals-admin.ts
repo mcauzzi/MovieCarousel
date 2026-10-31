@@ -1,6 +1,6 @@
 import { render } from 'lit';
 import { exportCsv, markExported, getFields, createField, patchField, deleteField, goToLogin } from './api';
-import type { ApiField, FieldPatch } from './api';
+import type { ApiField, ArrivalScope, FieldPatch } from './api';
 import { exportTemplate, fieldsTemplate, isDirty } from './templates/arrivals-admin.templates';
 import type { ExportView, FieldDraft, FieldsView, NewFieldDraft } from './templates/arrivals-admin.templates';
 import { confirmWithOption } from './db-ui';
@@ -9,8 +9,9 @@ import type { Section, SectionContext } from './arrivals-shared';
 
 /* Schede solo amministratore: ESPORTA CSV e CAMPI.
    Export (§9): il CSV arriva come blob; lo si salva come file e solo dopo,
-   per gli scope new/app, si chiama export/mark con gli id dell'header
-   X-CM-Movie-Ids. Un mark fallito lascia i film "nuovi" e offre di riprovare. */
+   per gli scope new/app con righe dall'app, si chiama export/mark con lo
+   scope e il cutoff dell'header X-CM-Export-Cutoff. Un mark fallito lascia i
+   film "nuovi" e offre di riprovare. */
 
 /** Salva un blob come file (link temporaneo con download). */
 function saveBlob(blob: Blob, filename: string): void {
@@ -29,7 +30,8 @@ function saveBlob(blob: Blob, filename: string): void {
 export function createExportSection(ctx: SectionContext, onMarked: () => void): Section {
   const el = sectionRoot('arrivals-export');
   const view: ExportView = { scope: 'new', busy: false, status: '', summary: null, error: null, sessionExpired: false };
-  let pendingIds: number[] = [];
+  /** Mark ancora da fare (o da riprovare) dopo l'ultimo export. */
+  let pendingMark: { scope: ArrivalScope; cutoff: string } | null = null;
 
   function rerender(): void {
     render(exportTemplate(view, {
@@ -42,15 +44,16 @@ export function createExportSection(ctx: SectionContext, onMarked: () => void): 
 
   async function mark(): Promise<void> {
     const s = view.summary;
-    if (!s || !pendingIds.length) return;
+    const p = pendingMark;
+    if (!s || !p) return;
     view.busy = true;
     view.error = null;
     rerender();
     try {
-      const res = await markExported(pendingIds);
-      s.marked = typeof res?.marked === 'number' ? res.marked : pendingIds.length;
+      const res = await markExported(p.scope, p.cutoff);
+      s.marked = typeof res?.marked === 'number' ? res.marked : s.count;
       s.markFailed = false;
-      pendingIds = [];
+      pendingMark = null;
       view.status = `${s.marked} film segnati come esportati.`;
       onMarked();
     } catch (err) {
@@ -66,11 +69,11 @@ export function createExportSection(ctx: SectionContext, onMarked: () => void): 
     if (view.busy) return;
     const scope = view.scope;
     Object.assign(view, { busy: true, status: 'Preparo il CSV…', summary: null, error: null, sessionExpired: false });
-    pendingIds = [];
+    pendingMark = null;
     rerender();
     try {
       const res = await exportCsv(scope);
-      if (scope !== 'all' && !res.ids.length) {
+      if (scope !== 'all' && !res.count) {
         view.busy = false;
         view.status = 'Nessun film da esportare per questa scelta.';
         rerender();
@@ -78,12 +81,19 @@ export function createExportSection(ctx: SectionContext, onMarked: () => void): 
       }
       saveBlob(res.blob, res.filename);
       // Il blob è già stato ricevuto per intero: ora si può segnare (§9).
-      view.summary = { filename: res.filename, count: res.ids.length, scope, marked: null, markFailed: false };
+      view.summary = { filename: res.filename, count: res.count, scope, marked: null, markFailed: false };
       view.status = `CSV scaricato: ${res.filename}.`;
       view.busy = false;
       if (scope !== 'all') {
-        pendingIds = res.ids;
-        await mark();
+        if (!res.cutoff) {
+          // Header mancante (API vecchia o proxy che lo filtra): non si può segnare.
+          view.summary.markFailed = true;
+          view.error = 'CSV scaricato, ma l\'API non ha indicato il cutoff dell\'export: film non segnati come esportati.';
+          rerender();
+        } else {
+          pendingMark = { scope, cutoff: res.cutoff };
+          await mark();
+        }
       } else {
         rerender();
       }
@@ -134,17 +144,29 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     }), el);
   }
 
-  function setFields(list: ApiField[]): void {
-    view.fields = [...list].sort((a, b) => (a.ordinal ?? 0) - (b.ordinal ?? 0));
-    view.drafts = Object.fromEntries(view.fields.map(f => [f.name, draftOf(f)]));
+  /** Bozze con modifiche non salvate (sopravvivono a load). */
+  function dirtyNames(): Set<string> {
+    return new Set((view.fields ?? []).filter(f => isDirty(f, view.drafts[f.name])).map(f => f.name));
   }
 
-  async function load(): Promise<void> {
+  /** Nuove definizioni dal server (già ordinate per ordinal, poi nome). Le bozze
+   *  modificate e non salvate delle altre righe restano; `saved` (riga appena
+   *  salvata) riparte dal valore del server. */
+  function setFields(list: ApiField[], saved?: string): void {
+    const keep = dirtyNames();
+    if (saved) keep.delete(saved);
+    const drafts: Record<string, FieldDraft> = {};
+    for (const f of list) drafts[f.name] = keep.has(f.name) ? view.drafts[f.name] : draftOf(f);
+    view.fields = list;
+    view.drafts = drafts;
+  }
+
+  async function load(saved?: string): Promise<void> {
     const n = ++seq;
     try {
       const list = await getFields();
       if (n !== seq) return;
-      setFields(list);
+      setFields(list, saved);
       view.error = null;
       view.sessionExpired = false;
     } catch (err) {
@@ -157,10 +179,10 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
 
   /** Dopo una modifica riuscita: rilegge i campi, avvisa le altre schede e
    *  ricarica la collezione (raggruppamenti e scheda film dipendono dai campi). */
-  async function afterChange(status: string): Promise<void> {
+  async function afterChange(status: string, saved?: string): Promise<void> {
     view.status = status;
     onFieldsChanged();
-    await load();
+    await load(saved);
     const warn = await reloadCollection(ctx);
     if (warn) { view.error = warn; view.sessionExpired = false; rerender(); }
   }
@@ -198,7 +220,7 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     try {
       await patchField(f.name, patch);
       view.busy = null;
-      await afterChange(`Campo «${f.title || f.name}» aggiornato.`);
+      await afterChange(`Campo «${f.title || f.name}» aggiornato.`, f.name);
     } catch (err) {
       view.busy = null;
       Object.assign(view, noticeFrom(err, ctx));
@@ -223,7 +245,7 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     try {
       await deleteField(f.name, checked);
       view.busy = null;
-      await afterChange(`Campo «${label}» eliminato${checked ? ' insieme ai suoi valori' : ''}.`);
+      await afterChange(`Campo «${label}» eliminato${checked ? ' insieme ai suoi valori' : ''}.`, f.name);
       el.querySelector<HTMLElement>('#arrivalsFieldsTitle')?.focus();
     } catch (err) {
       view.busy = null;
@@ -273,7 +295,9 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
   rerender();
   return {
     el,
-    activate: () => { void load(); },
+    // Con bozze non salvate non si ricarica: le definizioni mostrate sono quelle
+    // su cui l'utente sta lavorando (si aggiornano al prossimo salvataggio).
+    activate: () => { if (view.fields === null || !dirtyNames().size) void load(); },
     rerender,
     destroy: () => { seq++; },
   };

@@ -45,13 +45,17 @@ export function confirmWithOption(v: ConfirmView): Promise<{ yes: boolean; check
 
 let noticeHost: HTMLElement | null = null;
 
-/** Mostra l'avviso "sessione scaduta" (resta finché non si accede o lo si chiude). */
-export function showSessionExpired(onLogin: () => void): void {
+/** Mostra l'avviso "sessione scaduta" (resta finché non si accede o lo si chiude).
+ *  `message` dice cosa non è andato a buon fine (default: una modifica). */
+export function showSessionExpired(
+  onLogin: () => void,
+  message = 'Sessione scaduta: la modifica non è stata salvata.',
+): void {
   if (!noticeHost) {
     noticeHost = document.createElement('div');
     noticeHost.className = 'cm-session-host';
     document.body.appendChild(noticeHost);
   }
   const host = noticeHost;
-  render(sessionNoticeTemplate(true, onLogin, () => render(sessionNoticeTemplate(false, onLogin, () => {}), host)), host);
+  render(sessionNoticeTemplate(true, message, onLogin, () => render(sessionNoticeTemplate(false, message, onLogin, () => {}), host)), host);
 }

@@ -2,6 +2,7 @@ import { html, nothing } from 'lit';
 import type { TemplateResult } from 'lit';
 import type { ImportResponse } from '../api';
 import { currentCopy } from '../copy';
+import { errorTemplate } from './arrivals-common.templates';
 
 /* Pannello ARRIVI (modalità DB): scheda IMPORTA DA TELLICO e guscio a schede
    (le altre schede in arrivals-phone/-list/-admin.templates.ts).
@@ -14,9 +15,15 @@ export type ImportPhase = 'idle' | 'reading' | 'images' | 'movies' | 'reloading'
 export interface ImportView {
   phase: ImportPhase;
   fileName: string | null;
-  /** Avanzamento dell'upload immagini (lotti inviati / totali, immagini). */
-  progress: { done: number; total: number; images: number } | null;
-  summary: (ImportResponse & { imagesWritten: number; imagesSkipped: number; movieCount: number }) | null;
+  /** Avanzamento dell'upload immagini (immagini inviate / da inviare). */
+  progress: { sent: number; total: number } | null;
+  summary: (ImportResponse & {
+    imagesWritten: number;
+    imagesSkipped: number;
+    /** Immagini saltate perché il nome non è accettato dall'API. */
+    imagesInvalid: number;
+    movieCount: number;
+  }) | null;
   error: string | null;
   /** La sessione è scaduta durante l'import: mostra il pulsante ACCEDI. */
   sessionExpired: boolean;
@@ -39,7 +46,7 @@ function progressText(v: ImportView): string {
     case 'images': {
       const p = v.progress;
       if (!p || p.total === 0) return 'Invio immagini…';
-      return `Invio immagini: lotto ${Math.min(p.done + 1, p.total)} di ${p.total} (${p.images} immagini)…`;
+      return `Invio immagini: ${p.sent} di ${p.total}…`;
     }
     case 'movies': return 'Import di campi e film…';
     case 'reloading': return 'Import completato. Ricarico la collezione…';
@@ -60,6 +67,7 @@ function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult 
     ['Immagini scritte', s.imagesWritten],
     ['Immagini già presenti', s.imagesSkipped],
   ];
+  if (s.imagesInvalid) rows.push(['Immagini con nome non valido (saltate)', s.imagesInvalid]);
   return html`
     <div class="arrivals-summary" tabindex="-1">
       <h4 class="arrivals-summary-title">${currentCopy().arrivalsDone}</h4>
@@ -117,15 +125,11 @@ export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): Template
       </label>
       <div class="arrivals-progress" role="status" aria-live="polite">
         ${v.phase === 'images' && p && p.total > 0
-          ? html`<progress class="arrivals-bar" max=${p.total} value=${p.done} aria-label="Lotti di immagini inviati"></progress>`
+          ? html`<progress class="arrivals-bar" max=${p.total} value=${p.sent} aria-label="Immagini inviate"></progress>`
           : nothing}
         <span class="arrivals-progress-text">${progressText(v)}</span>
       </div>
-      ${v.error ? html`
-        <div class="arrivals-error" role="alert">
-          <span>✕ ${v.error}</span>
-          ${v.sessionExpired ? html`<button class="group-btn arrivals-login" @click=${h.onLogin}>ACCEDI</button>` : nothing}
-        </div>` : nothing}
+      ${errorTemplate(v, h.onLogin)}
       ${v.summary ? summaryTemplate(v.summary) : nothing}
     </section>`;
 }

@@ -49,7 +49,7 @@ import { coverUrl } from './utils';
 import { computeStats, renderStats } from './stats';
 import { checkForNewVersion } from './version-check';
 import { initBgm } from './bgm';
-import { readTellicoFile } from './tellico-file';
+import { readTellicoFile, zipImageUrls } from './tellico-file';
 import { setApiBase, getMe, getCollection, migrateState, goToLogin, SessionExpiredError } from './api';
 import type { Me, MigrateRequest } from './api';
 import { ApiStoreAdapter } from './api-store';
@@ -60,6 +60,8 @@ import { emptyCollectionTemplate } from './templates/db.templates';
 // Stato
 let movies: Movie[] = [];
 let embeddedImages = new Map<string, string>();
+/** Rilascia gli object URL delle immagini dello zip in embeddedImages (modalità .tc). */
+let releaseImageUrls: (() => void) | null = null;
 let imgDir = '';
 let configuredImgDir = '';
 let configuredBgmDir = '';
@@ -373,7 +375,7 @@ function createArrivalsButton(): HTMLButtonElement {
     sub: me?.sub ?? '',
     imgDir,
     onCollectionChanged: () => loadFromApi(true),
-    onSessionExpired: () => showSessionExpired(goToLogin),
+    onSessionExpired: () => showSessionExpired(goToLogin, 'Sessione scaduta: accedi di nuovo e ripeti l\'operazione.'),
     returnFocusTo: () => document.getElementById('arrivalsBtn'),
   });
   return btn;
@@ -388,11 +390,18 @@ async function handleFile(file: File): Promise<void> {
     const result = await readTellicoFile(file, phase =>
       setStatus(phase === 'extracting' ? currentCopy().statusExtracting : currentCopy().statusParsing));
     if (!result.movies.length) throw new Error('Nessun film trovato');
+    let dir = imgDirInput.value || configuredImgDir;
+    if (dir && !dir.endsWith('/')) dir += '/';
+    // Immagini della cartella images/ dello zip: solo senza cartella copertine
+    // (con imgDir le copertine vengono da lì, come prima), come object URL.
+    // Quelle incorporate nell'XML (data URL del parser) valgono sempre.
+    const zipUrls = !dir && result.zipImages.size ? await zipImageUrls(result.zipImages) : null;
+    releaseImageUrls?.();
+    releaseImageUrls = zipUrls?.revoke ?? null;
     movies = result.movies;
-    embeddedImages = result.embeddedImages;
+    embeddedImages = zipUrls ? new Map([...zipUrls.urls, ...result.embeddedImages]) : result.embeddedImages;
     collectionFields = toCollectionFields(result.fields);
-    imgDir = imgDirInput.value || configuredImgDir;
-    if (imgDir && !imgDir.endsWith('/')) imgDir += '/';
+    imgDir = dir;
     // Gli id sono già garantiti numerici dal parser (anche quelli sintetici).
     // Stato di base "visto" dal file .tc: i film con <visto>true</visto> partono come SEEN.
     const seed: Record<number, WatchStatus> = {};
@@ -478,13 +487,21 @@ function onStoreWriteError(err: unknown): void {
   else showToast('✕ Modifica non salvata: ' + errorText(err));
 }
 
+/** Errore della ricarica in background dello stato (scheda tornata visibile):
+ *  silenziosa, tranne la sessione scaduta, che ha un avviso dedicato. */
+function onStoreRefreshError(err: unknown): void {
+  if (err instanceof SessionExpiredError)
+    showSessionExpired(goToLogin, 'Sessione scaduta: accedi di nuovo per vedere i dati aggiornati.');
+  else console.warn('Ricarica dello stato non riuscita', err);
+}
+
 async function startDbMode(apiBase: string): Promise<void> {
   dbMode = true;
   setApiBase(apiBase);
   // Niente drop zone né cartella copertine (imgDir viene da config.json).
   dropZone.hidden = true;
   if (imgConfigEl) imgConfigEl.hidden = true;
-  apiStore = new ApiStoreAdapter(onStoreWriteError);
+  apiStore = new ApiStoreAdapter(onStoreWriteError, onStoreRefreshError);
   useStore(apiStore);
   setStatus('▶ CONNESSIONE ALL\'ARCHIVIO...');
   try {
@@ -498,6 +515,9 @@ async function startDbMode(apiBase: string): Promise<void> {
     }
     await loadFromApi(false);
     setStatus(currentCopy().statusLoaded(movies.length));
+    // Solo ora (ruoli verificati, primo caricamento riuscito) la ricarica al
+    // ritorno sulla scheda ha senso: prima darebbe 403 o errori di rete.
+    apiStore.startAutoRefresh();
   } catch (err) {
     // Lettura con sessione scaduta: api.ts sta già navigando al login.
     if (err instanceof SessionExpiredError) { setStatus('▶ ACCESSO IN CORSO...'); return; }
@@ -589,7 +609,8 @@ async function maybeMigrateLocalChoices(user: Me): Promise<void> {
     showToast(`✓ ${res.imported} scelte importate nel tuo profilo`);
   } catch (err) {
     // Flag non impostato: la domanda si ripresenterà al prossimo avvio.
-    if (err instanceof SessionExpiredError) showSessionExpired(goToLogin);
+    if (err instanceof SessionExpiredError)
+      showSessionExpired(goToLogin, 'Sessione scaduta: scelte locali non importate, accedi di nuovo.');
     else showToast('✕ Importazione non riuscita: ' + errorText(err));
   }
 }
@@ -634,6 +655,8 @@ dropZone.addEventListener('drop', e => {
 reloadBtn.addEventListener('click', () => {
   if (dbMode) { void reloadFromApi(); return; }
   movies = [];
+  releaseImageUrls?.();
+  releaseImageUrls = null;
   embeddedImages = new Map();
   imgDir = '';
   groupers = [];

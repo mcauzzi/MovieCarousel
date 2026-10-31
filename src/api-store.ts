@@ -1,45 +1,105 @@
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { getState, putStatus, putRating } from './api';
+import type { StateResponse } from './api';
 
 /* StoreAdapter della modalità DB: visto/voto dell'utente corrente nel DB.
    - Cache in memoria caricata da GET state; i getter restano sincroni.
-   - Setter ottimistici: aggiornano subito la cache e inviano il PUT; se fallisce
-     ripristinano il valore precedente, notificano onExternalChange (la vista si
-     ri-allinea) e passano l'errore a `onWriteError` (toast / ACCEDI nel chiamante).
+   - Setter ottimistici: aggiornano subito la cache e inviano il PUT. I PUT sulla
+     stessa coppia (film, campo) sono serializzati: uno alla volta, e i valori
+     arrivati nel frattempo si fondono nell'ultimo, così il server non può
+     riceverli in ordine inverso. Se un PUT fallisce e non ne segue un altro,
+     la cache torna all'ultimo valore confermato dal server, la vista si
+     riallinea (onExternalChange) e l'errore va a `onWriteError`.
+   - Le letture (load/refresh) portano un numero di generazione: una risposta
+     più vecchia di una già applicata viene scartata. Le chiavi con scritture in
+     volo, in coda o concluse durante la GET tengono il valore locale (lo
+     snapshot del server per loro potrebbe essere vecchio).
    - Nessun seed (§5): setSeed/setSeedRating sono no-op.
-   - Al ritorno della scheda in primo piano (visibilitychange) ricarica lo stato,
-     al posto dell'evento `storage` della modalità .tc. */
+   - Dopo il primo caricamento riuscito (startAutoRefresh) ricarica lo stato al
+     ritorno della scheda in primo piano, al posto dell'evento `storage` della
+     modalità .tc. Gli errori di quella ricarica vanno a `onRefreshError`. */
 
 type Kind = 'status' | 'rating';
+type StatusValue = Exclude<WatchStatus, null>;
+type RatingValue = Exclude<Rating, null>;
+type Value = StatusValue | RatingValue | null;
+
+/** Stato delle scritture di una coppia (film, campo). Esiste solo finché ci
+ *  sono scritture recenti: una lettura successiva la rimuove. */
+interface Slot {
+  /** Ultimo valore confermato dal server (ripristino su errore). */
+  confirmed: Value;
+  inFlight: boolean;
+  /** Valore impostato mentre un PUT era in volo: parte appena quello finisce. */
+  queued: { value: Value } | null;
+  /** writeGen al termine dell'ultima scrittura. */
+  doneAt: number;
+}
 
 export class ApiStoreAdapter implements StoreAdapter {
-  private status = new Map<number, Exclude<WatchStatus, null>>();
-  private rating = new Map<number, Exclude<Rating, null>>();
+  private status = new Map<number, StatusValue>();
+  private rating = new Map<number, RatingValue>();
   private onExternalChange: (() => void) | null = null;
-  /** Numero di sequenza dell'ultima scrittura per id+tipo: un PUT fallito
-   *  ripristina solo se nel frattempo non ne è partito uno più recente. */
-  private seq = new Map<string, number>();
-  private pending = 0;
+  private slots = new Map<string, Slot>();
+  /** Incrementato alla fine di ogni scrittura. */
+  private writeGen = 0;
+  /** Generazione dell'ultima lettura avviata / applicata. */
+  private readGen = 0;
+  private appliedGen = 0;
   private reloading = false;
+  private autoRefresh = false;
 
-  constructor(private readonly onWriteError: (err: unknown) => void) {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void this.refresh();
-    });
-  }
+  constructor(
+    private readonly onWriteError: (err: unknown) => void,
+    private readonly onRefreshError: (err: unknown) => void,
+  ) {}
 
   setOnExternalChange(cb: () => void): void {
     this.onExternalChange = cb;
   }
 
-  /** Carica lo stato dal server (all'avvio, al Reload, dopo una migrazione). */
-  async load(): Promise<void> {
-    this.apply(await getState());
+  /** Aggancia la ricarica su visibilitychange (idempotente). Va chiamato solo
+   *  dopo il controllo dei ruoli e il primo caricamento riuscito. */
+  startAutoRefresh(): void {
+    if (this.autoRefresh) return;
+    this.autoRefresh = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.refresh();
+    });
   }
 
-  private apply(state: { status?: Record<string, unknown>; rating?: Record<string, unknown> }): void {
-    const status = new Map<number, Exclude<WatchStatus, null>>();
-    const rating = new Map<number, Exclude<Rating, null>>();
+  /** Carica lo stato dal server (all'avvio, al Reload, dopo una migrazione). */
+  async load(): Promise<void> {
+    await this.read(() => getState());
+  }
+
+  /** Ricarica in background (scheda tornata visibile). Sessione scaduta:
+   *  niente navigazione (si perderebbe il contesto), decide il chiamante. */
+  private async refresh(): Promise<void> {
+    if (this.reloading) return;
+    this.reloading = true;
+    try {
+      const before = this.snapshot();
+      const applied = await this.read(() => getState({ navigateOnExpiry: false }));
+      if (applied && this.snapshot() !== before) this.onExternalChange?.();
+    } catch (err) {
+      this.onRefreshError(err);
+    } finally {
+      this.reloading = false;
+    }
+  }
+
+  /** GET dello stato e fusione con la cache. false se la risposta è stata
+   *  scartata perché ne era già stata applicata una più recente. */
+  private async read(get: () => Promise<StateResponse>): Promise<boolean> {
+    const gen = ++this.readGen;
+    const writesAtStart = this.writeGen;
+    const state = await get();
+    if (gen < this.appliedGen) return false;
+    this.appliedGen = gen;
+
+    const status = new Map<number, StatusValue>();
+    const rating = new Map<number, RatingValue>();
     for (const [k, v] of Object.entries(state.status ?? {})) {
       const id = Number(k);
       if (Number.isFinite(id) && (v === 'seen' || v === 'watchlist')) status.set(id, v);
@@ -47,30 +107,24 @@ export class ApiStoreAdapter implements StoreAdapter {
     for (const [k, v] of Object.entries(state.rating ?? {})) {
       const id = Number(k);
       if (Number.isFinite(id) && typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5)
-        rating.set(id, v as Exclude<Rating, null>);
+        rating.set(id, v as RatingValue);
+    }
+
+    for (const [key, slot] of this.slots) {
+      const [kind, idText] = key.split(':') as [Kind, string];
+      const id = Number(idText);
+      if (slot.inFlight || slot.queued || slot.doneAt > writesAtStart) {
+        // Snapshot forse precedente a queste scritture: resta il valore locale.
+        const local = kind === 'status' ? this.status.get(id) : this.rating.get(id);
+        const target: Map<number, Value> = kind === 'status' ? status : rating;
+        if (local) target.set(id, local); else target.delete(id);
+      } else {
+        this.slots.delete(key);
+      }
     }
     this.status = status;
     this.rating = rating;
-  }
-
-  /** Ricarica in background (scheda tornata visibile). Saltata con scritture in
-   *  volo, che altrimenti verrebbero sovrascritte dal valore vecchio del server.
-   *  Sessione scaduta: niente navigazione (si perderebbe il contesto), l'errore
-   *  va al chiamante come per le scritture. */
-  private async refresh(): Promise<void> {
-    if (this.pending > 0 || this.reloading) return;
-    this.reloading = true;
-    try {
-      const state = await getState({ navigateOnExpiry: false });
-      if (this.pending > 0) return;
-      const before = this.snapshot();
-      this.apply(state);
-      if (this.snapshot() !== before) this.onExternalChange?.();
-    } catch (err) {
-      this.onWriteError(err);
-    } finally {
-      this.reloading = false;
-    }
+    return true;
   }
 
   private snapshot(): string {
@@ -89,34 +143,56 @@ export class ApiStoreAdapter implements StoreAdapter {
   }
 
   setStatus(id: number, status: WatchStatus): void {
-    const prev = this.getStatus(id);
-    if (status) this.status.set(id, status); else this.status.delete(id);
-    this.send('status', id, () => putStatus(id, status), () => {
-      if (prev) this.status.set(id, prev); else this.status.delete(id);
-    });
+    this.set('status', id, status);
   }
 
   setRating(id: number, stars: Rating): void {
-    const prev = this.getRating(id);
-    if (stars) this.rating.set(id, stars); else this.rating.delete(id);
-    this.send('rating', id, () => putRating(id, stars), () => {
-      if (prev) this.rating.set(id, prev); else this.rating.delete(id);
-    });
+    this.set('rating', id, stars);
   }
 
-  private send(kind: Kind, id: number, put: () => Promise<void>, restore: () => void): void {
+  private get(kind: Kind, id: number): Value {
+    return (kind === 'status' ? this.status.get(id) : this.rating.get(id)) ?? null;
+  }
+
+  private put(kind: Kind, id: number, value: Value): void {
+    const map: Map<number, Value> = kind === 'status' ? this.status : this.rating;
+    if (value) map.set(id, value); else map.delete(id);
+  }
+
+  private set(kind: Kind, id: number, value: Value): void {
     const key = `${kind}:${id}`;
-    const n = (this.seq.get(key) ?? 0) + 1;
-    this.seq.set(key, n);
-    this.pending++;
-    put()
-      .catch(err => {
-        if (this.seq.get(key) === n) {
-          restore();
-          this.onExternalChange?.();
-        }
-        this.onWriteError(err);
-      })
-      .finally(() => { this.pending--; });
+    let slot = this.slots.get(key);
+    if (!slot) {
+      // Senza scritture recenti la cache coincide con l'ultimo valore del server.
+      slot = { confirmed: this.get(kind, id), inFlight: false, queued: null, doneAt: 0 };
+      this.slots.set(key, slot);
+    }
+    this.put(kind, id, value);
+    if (slot.inFlight) slot.queued = { value };
+    else this.send(kind, id, slot, value);
+  }
+
+  private send(kind: Kind, id: number, slot: Slot, value: Value): void {
+    slot.inFlight = true;
+    const request = kind === 'status'
+      ? putStatus(id, value as WatchStatus)
+      : putRating(id, value as Rating);
+    request.then(
+      () => { slot.confirmed = value; return null; },
+      (err: unknown) => err ?? new Error('PUT non riuscito'),
+    ).then(failure => {
+      slot.inFlight = false;
+      slot.doneAt = ++this.writeGen;
+      const next = slot.queued;
+      slot.queued = null;
+      if (next) {
+        // Il valore più recente parte comunque: decide lui lo stato finale.
+        this.send(kind, id, slot, next.value);
+      } else if (failure && this.get(kind, id) !== slot.confirmed) {
+        this.put(kind, id, slot.confirmed);
+        this.onExternalChange?.();
+      }
+      if (failure) this.onWriteError(failure);
+    });
   }
 }

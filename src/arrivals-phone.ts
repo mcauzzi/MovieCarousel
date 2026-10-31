@@ -15,11 +15,16 @@ import type { Section, SectionContext } from './arrivals-shared';
    - Passo 2: QR di abbinamento solo su ABBINA (scade in 5 minuti). Il conto
      alla rovescia visibile è un role="timer" non annunciato; la regione live
      annuncia la generazione, i minuti interi rimasti, gli ultimi 30 secondi e
-     la scadenza, non ogni secondo.
+     la scadenza, non ogni secondo. Mentre il QR è valido e la scheda visibile
+     controlla i propri dispositivi ogni 3 s: quando ne compare uno nuovo chiude
+     il QR, annuncia l'abbinamento e aggiorna la lista. Timer e controllo si
+     fermano quando la scheda non è visibile (altra scheda, pannello chiuso) e
+     ripartono al ritorno se il codice è ancora valido.
    - Dispositivi: propri; per l'amministratore anche "tutti gli utenti", con
      revoca di tutti i dispositivi di un utente e logout forzato. */
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+const PAIR_POLL_MS = 3000;
 
 export function createPhoneSection(ctx: SectionContext): Section {
   const el = sectionRoot('arrivals-phone');
@@ -40,6 +45,12 @@ export function createPhoneSection(ctx: SectionContext): Section {
   let qrSvg = '';
   let expiresAt = 0;
   let timer = 0;
+  let pollTimer = 0;
+  /** Id dei propri dispositivi al momento della generazione del QR. */
+  let knownIds: Set<string> | null = null;
+  /** Generazione del QR corrente: scarta i controlli partiti per un QR precedente. */
+  let pairGen = 0;
+  let visible = false;
   /** Ultima soglia annunciata (minuti interi, 30 s, 0) del codice corrente. */
   let lastMark = Infinity;
 
@@ -84,6 +95,59 @@ export function createPhoneSection(ctx: SectionContext): Section {
   function stopTimer(): void {
     clearInterval(timer);
     timer = 0;
+    clearTimeout(pollTimer);
+    pollTimer = 0;
+  }
+
+  const pairingActive = (): boolean => !!phone.pairing && expiresAt > Date.now();
+
+  /** Avvia conto alla rovescia e controllo dei dispositivi (solo a scheda visibile). */
+  function startTimer(): void {
+    stopTimer();
+    if (!visible || !pairingActive()) return;
+    timer = window.setInterval(tick, 1000);
+    schedulePoll();
+  }
+
+  function schedulePoll(): void {
+    clearTimeout(pollTimer);
+    pollTimer = window.setTimeout(() => { void pollPaired(); }, PAIR_POLL_MS);
+  }
+
+  /** Controllo leggero: è comparso un dispositivo nuovo (non revocato)? */
+  async function pollPaired(): Promise<void> {
+    pollTimer = 0;
+    const gen = pairGen;
+    if (!visible || !pairingActive() || !knownIds) return;
+    let list: Device[];
+    try {
+      list = await getDevices(false);
+    } catch {
+      // Errore transitorio: si riprova al prossimo giro (l'errore vero lo
+      // mostrerà la lista dispositivi o l'abbinamento stesso).
+      if (gen === pairGen && visible && pairingActive()) schedulePoll();
+      return;
+    }
+    if (gen !== pairGen || !visible || !pairingActive()) return;
+    const added = list.find(d => !d.revokedAt && !knownIds!.has(d.id));
+    if (!added) { schedulePoll(); return; }
+    stopTimer();
+    pairGen++;
+    phone.pairing = null;
+    knownIds = null;
+    lastMark = Infinity;
+    phone.announce = `Telefono abbinato: «${added.name || 'Dispositivo senza nome'}».`;
+    rerenderPhone();
+    // La lista mostra già il nuovo dispositivo (anche nella vista di tutti gli utenti).
+    if (!devices.showAll) {
+      devicesSeq++;
+      devices.devices = sortDevices(list);
+      devices.error = null;
+      devices.sessionExpired = false;
+      rerenderDevices();
+    } else {
+      void loadDevices();
+    }
   }
 
   function tick(): void {
@@ -115,7 +179,11 @@ export function createPhoneSection(ctx: SectionContext): Section {
     phone.sessionExpired = false;
     rerenderPhone();
     try {
-      const res = await createPairing();
+      // Dispositivi già abbinati: il controllo cerca quelli nuovi rispetto a questi.
+      // Se la lettura fallisce l'abbinamento funziona lo stesso, senza riscontro automatico.
+      const [res, before] = await Promise.all([createPairing(), getDevices(false).catch(() => null)]);
+      pairGen++;
+      knownIds = before ? new Set(before.map(d => d.id)) : null;
       const exp = Date.parse(res.expiresAt);
       expiresAt = Number.isFinite(exp) && exp > Date.now() ? exp : Date.now() + DEFAULT_TTL_MS;
       qrSvg = res.qrSvg;
@@ -124,8 +192,7 @@ export function createPhoneSection(ctx: SectionContext): Section {
       const min = Math.max(1, Math.round(remaining / 60));
       phone.announce = `Nuovo QR di abbinamento pronto: scade tra ${min} ${min === 1 ? 'minuto' : 'minuti'}.`;
       lastMark = Math.ceil(remaining / 60) * 60;
-      stopTimer();
-      timer = window.setInterval(tick, 1000);
+      startTimer();
     } catch (err) {
       Object.assign(phone, noticeFrom(err, ctx));
     } finally {
@@ -192,14 +259,21 @@ export function createPhoneSection(ctx: SectionContext): Section {
     devices.sessionExpired = false;
     devices.status = '';
     rerenderDevices();
+    let failure: ReturnType<typeof noticeFrom> | null = null;
     try {
       await action();
       devices.status = done;
     } catch (err) {
-      Object.assign(devices, noticeFrom(err, ctx));
+      failure = noticeFrom(err, ctx);
     }
     devices.busy = null;
     await loadDevices();
+    // loadDevices azzera l'errore se la lettura riesce: quello dell'azione
+    // fallita deve restare visibile (ha la precedenza su un errore di lettura).
+    if (failure) {
+      Object.assign(devices, failure);
+      rerenderDevices();
+    }
     devicesHost.querySelector<HTMLElement>('#arrivalsDevicesTitle')?.focus();
   }
 
@@ -238,10 +312,13 @@ export function createPhoneSection(ctx: SectionContext): Section {
   return {
     el,
     activate: () => {
+      visible = true;
       if (!versionRequested) { versionRequested = true; void loadVersion(); }
       void loadDevices();
+      if (phone.pairing) { tick(); startTimer(); }
     },
+    deactivate: () => { visible = false; stopTimer(); },
     rerender,
-    destroy: () => { stopTimer(); devicesSeq++; },
+    destroy: () => { visible = false; stopTimer(); pairGen++; devicesSeq++; },
   };
 }

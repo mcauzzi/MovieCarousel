@@ -108,6 +108,7 @@ function buildArrivals(params: ArrivalsParams): ArrivalsPanel {
   let active = 'phone';
 
   function select(id: string, focus: boolean): void {
+    if (id !== active) tabs.find(t => t.id === active)?.section.deactivate?.();
     active = id;
     rerenderShell();
     const tab = tabs.find(t => t.id === id);
@@ -135,6 +136,7 @@ function buildArrivals(params: ArrivalsParams): ArrivalsPanel {
       tabs.find(t => t.id === active)?.section.activate();
       return;
     }
+    tabs.find(t => t.id === active)?.section.deactivate?.();
     if (backdrop.contains(document.activeElement)) params.returnFocusTo()?.focus();
   });
   observer.observe(backdrop, { attributes: true, attributeFilter: ['class'] });

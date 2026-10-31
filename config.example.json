@@ -1,6 +1,5 @@
 {
-  "_apiBase": "apiBase solo nei deploy con l'API (modalità DB: collezione e visto/voto dal database, tcFile ignorato). Toglila per la modalità .tc.",
-  "apiBase": "./api/",
+  "_apiBase": "Per la modalità DB (collezione e visto/voto dal database, tcFile ignorato) aggiungi \"apiBase\": \"./api/\" — solo nei deploy con l'API. Senza apiBase il sito legge il .tc (modalità .tc).",
   "tcFile": "./assets/films.tc",
   "imgDir": "./assets/covers/",
   "title": "La mia Cineteca"

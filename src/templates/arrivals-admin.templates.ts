@@ -12,6 +12,7 @@ import type { Notice } from './arrivals-common.templates';
 
 export interface ExportSummary {
   filename: string;
+  /** Righe del CSV arrivate dall'app (per `all` il resto è la collezione importata). */
   count: number;
   scope: ExportScope;
   /** Film segnati come esportati; null = non previsto (scope all) o non ancora. */
@@ -46,7 +47,7 @@ function exportSummary(s: ExportSummary, h: ExportHandlers): TemplateResult {
       <h4 class="arrivals-summary-title">${currentCopy().arrivalsExportDone}</h4>
       <dl class="arrivals-stats">
         <div class="arrivals-stat"><dt>File</dt><dd class="arrivals-stat-file">${s.filename}</dd></div>
-        <div class="arrivals-stat"><dt>Film nel CSV</dt><dd>${s.count}</dd></div>
+        <div class="arrivals-stat"><dt>${s.scope === 'all' ? 'Arrivi dall\'app nel CSV' : 'Film nel CSV'}</dt><dd>${s.count}</dd></div>
         ${s.scope !== 'all' ? html`
           <div class="arrivals-stat"><dt>Segnati come esportati</dt><dd>${s.marked ?? '—'}</dd></div>` : nothing}
       </dl>
