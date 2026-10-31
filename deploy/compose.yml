@@ -1,4 +1,5 @@
-# Stack Komodo "cinemalometti": sito (nginx), API CineManager, Postgres, backup notturno.
+# Stack Komodo del sito: nginx, API CineManager, Postgres, backup notturno.
+# I container prendono il nome dello stack (<stack>-web-1, <stack>-api-1, ...).
 # Guida operativa: deploy/README.md. Design: docs/scanner-dvd.md §12.
 #
 # SEGRETI: due modi, anche insieme (a parità di nome vince il file in SECRETS_DIR).
@@ -50,11 +51,9 @@ networks:
         - subnet: "${STACK_SUBNET:-172.31.91.0/24}"
 
 services:
-  # Era il servizio "cinemalometti": stesso container (container_name), servizio rinominato in "web",
-  # che è l'hostname usato dall'API (App__VersionUrl).
+  # "web" è anche l'hostname con cui l'API legge version.json (App__VersionUrl).
   web:
     image: ghcr.io/mcauzzi/moviecarousel:latest
-    container_name: cinemalometti
     restart: unless-stopped
     ports:
       - "${PORT:-8091}:80"
@@ -69,7 +68,6 @@ services:
 
   api:
     image: ghcr.io/mcauzzi/moviecarousel-api:latest
-    container_name: cinemalometti-api
     restart: unless-stopped
     # Segreti: POSTGRES_PASSWORD (usata dall'API come password del DB, fuori dalla connection string)
     # e quelli dell'API. Vedi in testa.
@@ -107,7 +105,6 @@ services:
 
   db:
     image: postgres:17-alpine
-    container_name: cinemalometti-db
     restart: unless-stopped
     # POSTGRES_PASSWORD
     env_file:
@@ -130,7 +127,6 @@ services:
 
   backup:
     image: postgres:17-alpine
-    container_name: cinemalometti-backup
     restart: unless-stopped
     # POSTGRES_PASSWORD → PGPASSWORD in backup.sh
     env_file:

@@ -40,7 +40,7 @@ La modalità `.tc` attuale resta come **fallback** (sviluppo locale, deploy senz
      ┌────────────────┴───────────────────────────────┐
      │ /api/app/*  → nessun forward auth               │ tutto il resto → forward auth Authelia
      ▼                                                  ▼
-┌───────────────────────── stack Komodo "cinemalometti" ─────────────────────────┐
+┌───────────────────────── stack Komodo del sito ────────────────────────────────┐
 │                                                                                 │
 │   web (nginx, porta pubblicata ${PORT})                                         │
 │     ├─ /            bundle dell'immagine + dati NAS (:ro), come oggi            │
@@ -692,7 +692,7 @@ Facoltativo: la CI pubblica lo stesso APK anche come release GitHub (`android-v1
 
 ## 12. Deploy
 
-### Stack Komodo `cinemalometti` (`deploy/compose.yml`, schema)
+### Stack Komodo (`deploy/compose.yml`, schema)
 
 ```yaml
 networks:
@@ -701,9 +701,8 @@ networks:
       config: [{ subnet: "${STACK_SUBNET:-172.31.91.0/24}" }]   # fissa: l'API la usa come proxy fidato (§4.1)
 
 services:
-  web:                                   # oggi "cinemalometti": stesso container, rinominato
+  web:
     image: ghcr.io/mcauzzi/moviecarousel:latest
-    container_name: cinemalometti
     restart: unless-stopped
     ports: ["${PORT:-8091}:80"]
     volumes: ["${WEB_ROOT:?}:/srv/data:ro"]
@@ -712,7 +711,6 @@ services:
 
   api:
     image: ghcr.io/mcauzzi/moviecarousel-api:latest
-    container_name: cinemalometti-api
     restart: unless-stopped
     env_file:                            # segreti: Environment di Komodo (.env) o SECRETS_DIR, vedi sotto
       - { path: .env, required: false }
@@ -739,7 +737,6 @@ services:
 
   db:
     image: postgres:17-alpine
-    container_name: cinemalometti-db
     restart: unless-stopped
     env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
     environment: { POSTGRES_DB: cinema, POSTGRES_USER: cinema }
@@ -748,7 +745,6 @@ services:
 
   backup:
     image: postgres:17-alpine
-    container_name: cinemalometti-backup
     restart: unless-stopped
     env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
     environment:                           # backup.sh copia POSTGRES_PASSWORD in PGPASSWORD
@@ -768,7 +764,7 @@ services:
 Note:
 
 - Nessuna porta pubblicata per `api`, `db`, `backup`; rete Docker dello stack con subnet fissa, nessuna rete esterna.
-- Il nome `web` è il nome del servizio nello stack (usato da nginx e dall'API come hostname); `container_name: cinemalometti` resta quello di oggi.
+- `web` è il nome del servizio nello stack (usato dall'API come hostname). Nessun `container_name`: i container prendono il nome dello stack.
 - **Copertine**: il percorso montato nell'API (`assets/covers` dentro `WEB_ROOT`) deve coincidere con `imgDir` di `config.json` (che oggi è configurabile). L'immagine .NET gira come utente non-root (UID 1654 nelle immagini ufficiali recenti, da verificare): la cartella sul NAS deve essere scrivibile da quell'UID, oppure si imposta `user:` nel compose.
 - **Postgres** su `DB_DIR` solo su disco locale del NAS, non su una condivisione di rete (NFS/SMB).
 - I secret di firma dell'APK stanno solo nella CI (§11.1), non nello stack. Il certificato Data Protection (§4.1) sta nello stack ed è conservato con gli altri secret.

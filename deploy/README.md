@@ -1,16 +1,17 @@
-# Deploy dello stack `cinemalometti`
+# Deploy dello stack
 
 Guida passo passo per mettere in piedi sul NAS lo stack Komodo con sito, API, database e backup.
 I segreti si generano da Windows (PowerShell), i comandi sul NAS si lanciano via SSH.
 
-Lo stack ([`compose.yml`](compose.yml)) ha quattro container; solo `web` pubblica una porta:
+Lo stack ([`compose.yml`](compose.yml)) ha quattro servizi; solo `web` pubblica una porta. I container
+prendono il nome dello stack Komodo: `<stack>-web-1`, `<stack>-api-1` e così via.
 
-| Container | Cosa fa |
+| Servizio | Cosa fa |
 |---|---|
-| `cinemalometti` (servizio `web`) | nginx: il sito, i dati del NAS, inoltra `/api/` all'API, serve l'APK in `/app/` |
-| `cinemalometti-api` | l'API .NET; all'avvio crea o aggiorna le tabelle del DB |
-| `cinemalometti-db` | Postgres 17 |
-| `cinemalometti-backup` | dump notturno del DB, tiene gli ultimi 14 |
+| `web` | nginx: il sito, i dati del NAS, inoltra `/api/` all'API, serve l'APK in `/app/` |
+| `api` | l'API .NET; all'avvio crea o aggiorna le tabelle del DB |
+| `db` | Postgres 17 |
+| `backup` | dump notturno del DB, tiene gli ultimi 14 |
 
 Le immagini le pubblica GitHub Actions a ogni push su `master`; Komodo aggiorna lo stack quando escono.
 
@@ -23,8 +24,8 @@ Le immagini le pubblica GitHub Actions a ogni push su `master`; Komodo aggiorna 
 Via SSH sul NAS. Sostituisci i percorsi con i tuoi; `WEB_ROOT` è la cartella che usi già oggi per il sito.
 
 ```sh
-WEB_ROOT=/percorso/cinemalometti                  # quella di oggi, con config.json e assets/
-sudo mkdir -p /percorso/cinemalometti-db /percorso/cinemalometti-backup
+WEB_ROOT=/percorso/sito                         # quella di oggi, con config.json e assets/
+sudo mkdir -p /percorso/db /percorso/backup
 sudo chown -R 1654:1654 "$WEB_ROOT/assets/covers"   # l'API ci scrive le copertine (utente 1654)
 ```
 
@@ -143,7 +144,7 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 **Secret** attivo: `CINEMA_DB_PASSWORD`, `CINEMA_OIDC_SECRET`, `CINEMA_DP_CERT`,
 `CINEMA_DP_CERT_PASSWORD`, `CINEMA_TMDB_TOKEN`.
 
-**Stack.** Modifica lo stack `cinemalometti` esistente:
+**Stack.** Modifica lo stack esistente del sito:
 
 | Campo | Valore |
 |---|---|
@@ -156,9 +157,9 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 
 ```ini
 # Cartelle sul NAS (passo 1)
-WEB_ROOT = /percorso/cinemalometti
-DB_DIR = /percorso/cinemalometti-db
-BACKUP_DIR = /percorso/cinemalometti-backup
+WEB_ROOT = /percorso/sito
+DB_DIR = /percorso/db
+BACKUP_DIR = /percorso/backup
 
 # Indirizzi
 PUBLIC_BASE_URL = https://<host-sito>
@@ -183,11 +184,11 @@ Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#rife
 
 ### 6. Deploy
 
-1. **Destroy** dello stack, poi **Deploy**. Solo la prima volta: il vecchio servizio si chiamava
-   `cinemalometti` e ora si chiama `web`, quindi il vecchio container va tolto prima.
+1. **Destroy** dello stack, poi **Deploy**. Solo la prima volta: il vecchio container del sito ha un
+   altro nome e occupa già la porta 8091, quindi va tolto prima.
 2. Nei log:
-   - `cinemalometti-api` deve applicare le migrazioni e restare acceso;
-   - `cinemalometti-backup` scrive `avvio: dump ogni giorno alle 03:30`.
+   - `api` deve applicare le migrazioni e restare acceso;
+   - `backup` scrive `avvio: dump ogni giorno alle 03:30`.
 3. Prova dal NAS:
    - `curl -s http://localhost:8091/api/health` deve rispondere con lo stato del DB;
    - `curl -si http://localhost:8091/api/me` deve rispondere `401`.
@@ -250,16 +251,16 @@ verifica e tiene gli ultimi 14. Includi `BACKUP_DIR` nei backup del NAS. Le cope
 Dump manuale (fuori dalla rotazione):
 
 ```sh
-docker exec cinemalometti-backup pg_dump -Fc -f /backup/manuale.dump
+docker exec <stack>-backup-1 pg_dump -Fc -f /backup/manuale.dump
 ```
 
 Ripristino:
 
 ```sh
-docker stop cinemalometti-api
-docker exec cinemalometti-backup pg_restore --clean --if-exists --no-owner -d cinema \
+docker stop <stack>-api-1
+docker exec <stack>-backup-1 pg_restore --clean --if-exists --no-owner -d cinema \
   /backup/cinema-AAAAMMGG-HHMM.dump
-docker start cinemalometti-api
+docker start <stack>-api-1
 ```
 
 ---
@@ -324,10 +325,10 @@ Scrivi i valori sempre tra apici singoli.
 
 - Serve Docker Compose 2.24 o successivo.
 - Postgres legge la password solo quando crea il DB. Per cambiarla dopo: aggiorna il Secret e lancia
-  `docker exec cinemalometti-db psql -U cinema -c "ALTER ROLE cinema PASSWORD 'nuova'"`.
+  `docker exec <stack>-db-1 psql -U cinema -c "ALTER ROLE cinema PASSWORD 'nuova'"`.
 - Con i Secret di Komodo anche `db` e `backup` ricevono tutto l'Environment, segreti dell'API compresi.
   Con i file env vedono solo `db.env`.
 - Senza Komodo: dal clone del repo, `cd deploy`, metti tutte le variabili in `deploy/.env` (è
-  ignorato da git) e lancia `docker compose -p cinemalometti up -d`.
+  ignorato da git) e lancia `docker compose -p <stack> up -d`.
 - Build locale dell'immagine del sito (`docker build .`): senza l'APK passato dalla CI l'immagine non
   contiene l'app.

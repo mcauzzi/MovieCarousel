@@ -1,5 +1,5 @@
 #!/bin/sh
-# Backup notturno del DB per lo stack Komodo "cinemalometti" (servizio "backup" di deploy/compose.yml).
+# Backup notturno del DB (servizio "backup" di deploy/compose.yml).
 # POSIX sh (BusyBox/alpine). Nessun segreto: le credenziali arrivano dall'environment del container.
 #
 #   PGHOST, PGUSER, PGPASSWORD, PGDATABASE   connessione (variabili standard di libpq);
