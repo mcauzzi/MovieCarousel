@@ -42,11 +42,15 @@ export function cardTemplate(
   const director = Array.isArray(m.director) ? m.director[0] : (m.director ?? '');
   // Handler stabili (id ricavato dal data-id sul .card): identità costante tra i
   // render, così lit non ri-aggancia i listener a ogni re-render.
+  // Nome accessibile = tutto il testo visibile della card (titolo per primo):
+  // anno, regista e timbro non vanno persi per lo screen reader (WCAG 2.5.3).
+  const badge = status === 'seen' ? c.seenBadge : status === 'watchlist' ? c.watchBadge : '';
+  const label = [title || 'Dettagli film', yr, director, badge].filter(Boolean).join(', ');
   const cover = url && !failed
     ? html`<img src=${url} alt="" loading="lazy" @error=${onImgError}>`
     : placeholderTemplate(m.title);
   return html`<div class="card" data-id=${m.id} role="button" tabindex="0" style="--clip:${clip};--r:${tilt}deg"
-    aria-label=${title || 'Dettagli film'} @click=${onCardClick} @keydown=${onCardKeydown}>
+    aria-label=${label} @click=${onCardClick} @keydown=${onCardKeydown}>
     <div class="card-burst" aria-hidden="true"></div>
     <div class="card-shadow" aria-hidden="true"></div>
     <div class="card-frame"><div class="img-wrap">${cover}</div></div>

@@ -5,7 +5,7 @@
   --ink:#ffffff;
   --ink-dim:#cccccc;
   --ink-faint:#777777;
-  --hot:#e60012;     /* rosso Persona */
+  --hot:#ec0012;     /* rosso Persona; come testo su nero ≈ 4.5:1, bianco sopra ≈ 4.6:1 */
   --hot-2:#ff1a2e;
   --hot-deep:#8a0008;
   --line:#1a0000;
@@ -1393,6 +1393,9 @@ main{
   --title-skew:0deg;
   --on-hot:#111111;
   --tilt:0.5;
+  /* Testo piccolo "spento" (regista, segnaposto, reset): --ink-faint resta per
+     le decorazioni, questo arriva a 4.5:1 anche sulla --surface. */
+  --p4-faint-txt:#888888;
   /* Forme "tonde" per i clip-path condivisi: stelle e burst diventano
      puff/tasselli arrotondati ovunque li usi la base. */
   --star:inset(6% round 30%);
@@ -1518,6 +1521,9 @@ main{
   --ink-dim:#a9aca2;
   --ink-faint:#6f736c;
   --on-hot:#f3ede0;
+  /* Testo piccolo "spento" nei popup: --ink-faint resta per le decorazioni,
+     questo arriva a 4.5:1 sulla --surface. */
+  --sh-faint-txt:#838880;
   /* Fondo: banchi di nebbia fermi, vignettatura, pavimento più scuro. La nebbia
      che si muove sta su html::before/::after (sezione TOLUCA in fondo). */
   --pattern:
@@ -3253,6 +3259,7 @@ main{
   color:var(--p3-cyan);transform:none;
   text-shadow:0 0 14px rgba(127,232,255,0.5);
 }
+[data-theme="p3"] .rank-pips{gap:13px} /* passo ≥ 24px tra le tacche inclinate: bersagli touch WCAG 2.5.8 */
 [data-theme="p3"] .rank-pip{
   width:15px;height:30px;
   background:rgba(127,232,255,0.06);
@@ -4171,6 +4178,7 @@ main{
   transform:rotate(-1deg);
 }
 [data-theme="p4"] .card-bar .cap-initial{transform:none}
+[data-theme="p4"] .card-dir{color:var(--p4-faint-txt)}
 /* Visto → adesivo tondo giallo lucido con bordo bianco (niente inchiostro consumato) */
 [data-theme="p4"] .card-stamp{
   font-weight:800;font-size:1.2rem;line-height:1;letter-spacing:0.08em;
@@ -4406,6 +4414,8 @@ main{
   clip-path:none;border-radius:18px;overflow:hidden;border:2px solid #4a4532;
 }
 [data-theme="p4"] .random-grouper-label{font-weight:800;letter-spacing:0.1em}
+[data-theme="p4"] .random-no-filter{color:var(--p4-faint-txt)}
+[data-theme="p4"] .random-reset-btn:not(:hover){color:var(--p4-faint-txt)!important}
 [data-theme="p4"] .random-chip,[data-theme="p4"] .random-chip:nth-child(even){
   clip-path:none;border-radius:999px;transform:none;
   font-weight:800;letter-spacing:0.04em;padding:0.22rem 0.55rem 0.08rem 0.65rem;
@@ -5294,7 +5304,8 @@ main{
 [data-theme="sh2"] .random-grouper-header.open .random-grouper-arrow{color:var(--ink)}
 [data-theme="sh2"] .random-grouper-label{font-family:var(--f-head);letter-spacing:0.12em}
 [data-theme="sh2"] .random-grouper-arrow{color:var(--sh-fog)}
-[data-theme="sh2"] .random-no-filter{font-family:var(--f-head);text-transform:none;letter-spacing:0.04em}
+[data-theme="sh2"] .random-no-filter{font-family:var(--f-head);text-transform:none;letter-spacing:0.04em;color:var(--sh-faint-txt)}
+[data-theme="sh2"] .random-reset-btn:not(:hover){color:var(--sh-faint-txt)!important}
 [data-theme="sh2"] .random-chip,[data-theme="sh2"] .random-chip:nth-child(even){
   clip-path:none;transform:none;
   background:rgba(187,58,47,0.16);color:var(--ink);
