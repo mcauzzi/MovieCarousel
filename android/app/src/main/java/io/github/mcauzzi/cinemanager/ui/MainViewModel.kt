@@ -17,6 +17,7 @@ import io.github.mcauzzi.cinemanager.core.api.LookupResponse
 import io.github.mcauzzi.cinemanager.core.api.NewMovieRequest
 import io.github.mcauzzi.cinemanager.core.api.UpdateState
 import io.github.mcauzzi.cinemanager.core.api.stateFor
+import io.github.mcauzzi.cinemanager.core.crypto.DeviceKey
 import io.github.mcauzzi.cinemanager.core.crypto.KeyUnavailableException
 import io.github.mcauzzi.cinemanager.core.form.Ean
 import io.github.mcauzzi.cinemanager.core.form.FieldValue
@@ -73,10 +74,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Dati incompleti (chiave senza abbinamento o viceversa): si riparte da zero.
                 withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
                 if (p != null) store.clearPairing()
+                resetBiometricIfUnavailable()
                 toPairing()
                 return@launch
             }
-            usePairing(p)
+            // Il Keystore può lanciare (servizio non disponibile, voce illeggibile): mai sul main
+            // thread e mai senza gestione, altrimenti l'app si chiude a ogni apertura.
+            val key = withContext(Dispatchers.IO) { runCatching { DeviceKeyStore.load() } }
+            val k = key.getOrNull()
+            if (k == null) {
+                // Abbinamento e chiave restano: se l'errore era passeggero, alla prossima apertura
+                // funziona di nuovo; "Abbina di nuovo" crea comunque una chiave nuova.
+                val reason = key.exceptionOrNull()
+                    ?.let { text(R.string.repair_keystore, it.message ?: it.javaClass.simpleName) }
+                    ?: text(R.string.repair_missing)
+                pairing = null
+                api = null
+                screen(Screen.Repair(reason, serverStillActive = true))
+                return@launch
+            }
+            usePairing(p, k)
             screen(Screen.Scan())
             if (requireBiometric) lock() else afterUnlock()
         }
@@ -86,14 +103,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun screen(s: Screen) = _state.update { it.copy(screen = s) }
 
-    private fun message(t: UiText?) = _state.update { it.copy(message = t) }
+    /** Operazione ripetuta dal pulsante "Riprova" del messaggio. */
+    private var messageRetry: (() -> Unit)? = null
 
-    fun messageShown() = message(null)
+    private fun message(t: UiText?, retry: (() -> Unit)? = null) {
+        messageRetry = retry
+        _state.update { it.copy(message = t, messageRetryable = retry != null) }
+    }
 
-    private fun usePairing(p: Pairing) {
+    /** Messaggio chiuso; [retry] = premuto "Riprova". */
+    fun messageShown(retry: Boolean = false) {
+        val r = messageRetry
+        message(null)
+        if (retry) r?.invoke()
+    }
+
+    private fun usePairing(p: Pairing, key: DeviceKey) {
         pairing = p
-        val key = DeviceKeyStore.load()
-        api = CineManagerApi(ServerUrls.trusted(p.apiBase), http, key?.let { DeviceCredentials(p.deviceId, it) }, appVersionCode)
+        api = CineManagerApi(ServerUrls.trusted(p.apiBase), http, DeviceCredentials(p.deviceId, key), appVersionCode)
         fields = null
     }
 
@@ -105,14 +132,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pairing = null
         api = null
         fields = null
-        _state.update { it.copy(screen = Screen.Pairing(defaultDeviceName(), error = error), settings = null, update = null, locked = false) }
+        _state.update { it.copy(screen = pairingScreen(defaultDeviceName(), error), settings = null, update = null, locked = false) }
+    }
+
+    private fun pairingScreen(name: String, error: UiText? = null) = Screen.Pairing(
+        name, error = error,
+        requireBiometric = requireBiometric, biometricAvailable = BiometricGate.available(getApplication()),
+    )
+
+    /**
+     * Senza blocco schermo sicuro una chiave con autenticazione non si può creare: l'opzione
+     * dell'impronta si spegne, altrimenti ogni nuovo abbinamento fallirebbe.
+     */
+    private suspend fun resetBiometricIfUnavailable() {
+        if (requireBiometric && !BiometricGate.available(getApplication())) {
+            store.setRequireBiometric(false)
+            requireBiometric = false
+        }
     }
 
     /**
      * Esegue [block] con indicatore di attesa e gestione comune degli errori. Lo sblocco
      * biometrico ripete l'operazione; revoca, chiave invalidata e 426 cambiano schermata.
      */
-    private fun launch(onError: (Throwable) -> Boolean = { false }, block: suspend () -> Unit) {
+    private fun launch(onError: suspend (Throwable) -> Boolean = { false }, block: suspend () -> Unit) {
         current?.cancel()
         current = viewModelScope.launch {
             _state.update { it.copy(busy = true) }
@@ -134,22 +177,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 pendingRetry = retry
                 _state.update { it.copy(authPending = true) }
             }
-            e is KeyUnavailableException && e.kind != KeyUnavailableException.Kind.DEVICE_LOCKED -> forget(ErrorText.of(e))
-            e is ApiException.DeviceRevoked -> forget(text(R.string.repair_revoked))
+            // Chiave invalidata o sparita: non può più firmare, nemmeno DELETE /api/app/me.
+            ErrorPolicy.forgetsPairing(e) -> forget(ErrorText.of(e), serverStillActive = true)
+            e is ApiException.DeviceRevoked -> forget(text(R.string.repair_revoked), serverStillActive = false)
             e is ApiException.UpgradeRequired ->
                 screen(Screen.UpdateRequired(api?.server?.apkUrl, e.minSupportedCode))
             e is ApiException.OwnerInactive -> screen(Screen.OwnerInactive(api?.server?.siteRoot))
-            else -> message(ErrorText.of(e))
+            else -> message(ErrorText.of(e), retry.takeIf { ErrorPolicy.retryable(e) })
         }
     }
 
-    /** Abbinamento non più valido: si cancellano chiave e dati locali. */
-    private suspend fun forget(reason: UiText) {
-        withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
-        store.clearPairing()
+    /**
+     * Abbinamento non più valido: si cancellano chiave e dati locali. [serverStillActive]: il
+     * dispositivo non è stato revocato sul server, va revocato dal sito.
+     */
+    private suspend fun forget(reason: UiText, serverStillActive: Boolean) {
+        forgetLocal()
         pairing = null
         api = null
-        _state.update { it.copy(screen = Screen.Repair(reason), settings = null, update = null) }
+        _state.update { it.copy(screen = Screen.Repair(reason, serverStillActive), settings = null, update = null) }
     }
 
     // ------------------------------------------------------------------ sblocco biometrico
@@ -213,7 +259,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun startPairing() {
         val s = _state.value.screen
         val name = (s as? Screen.Pairing)?.deviceName ?: defaultDeviceName()
-        screen(Screen.Pairing(name))
+        screen(pairingScreen(name))
+    }
+
+    /**
+     * "Chiedi impronta" scelta prima di abbinare: vale per la chiave che verrà creata. Un'eventuale
+     * chiave rimasta da un abbinamento interrotto si cancella, perché ha l'impostazione vecchia.
+     */
+    fun setPairRequireBiometric(value: Boolean) {
+        if (_state.value.screen !is Screen.Pairing || _state.value.busy) return
+        viewModelScope.launch {
+            store.setRequireBiometric(value)
+            requireBiometric = value
+            withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
+            updatePairing { it.copy(requireBiometric = value, biometricAvailable = BiometricGate.available(getApplication()), error = null) }
+        }
     }
 
     fun onDeviceNameChange(name: String) = updatePairing { it.copy(deviceName = name.take(100), error = null) }
@@ -236,18 +296,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when (val r = PairingQrParser.parse(raw, allowHttp = BuildConfig.ALLOW_HTTP)) {
             is PairingQrResult.Invalid -> screen(s.copy(scanning = false, error = ErrorText.of(r.reason)))
             is PairingQrResult.Valid -> {
+                if (requireBiometric && !BiometricGate.available(getApplication())) {
+                    // Impossibile creare una chiave con autenticazione senza blocco schermo.
+                    screen(s.copy(scanning = false, error = text(R.string.pair_error_biometric_unavailable),
+                        requireBiometric = true, biometricAvailable = false))
+                    return
+                }
                 screen(s.copy(scanning = false, error = null))
                 launch(onError = { e -> pairFailed(e) }) {
                     // Se lo sblocco biometrico interrompe l'abbinamento, al nuovo tentativo si
                     // riusa la chiave appena creata (senza chiedere di nuovo l'impronta).
                     val key = withContext(Dispatchers.IO) {
-                        DeviceKeyStore.load() ?: DeviceKeyStore.generate(requireBiometric)
+                        runCatching { DeviceKeyStore.load() }.getOrNull() ?: DeviceKeyStore.generate(requireBiometric)
                     }
                     val anon = CineManagerApi(r.qr.server, http, null, appVersionCode)
                     val res = anon.pair(r.qr.code, name, key)
                     val p = Pairing(r.qr.server.apiBase, res.deviceId, name, res.user.name)
                     store.savePairing(p)
-                    usePairing(p)
+                    usePairing(p, key)
                     _state.update { it.copy(screen = Screen.Scan(), message = text(R.string.pair_done, res.user.name)) }
                     checkVersion()
                 }
@@ -256,9 +322,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Errori dell'abbinamento mostrati nella schermata (la chiave locale resta per il prossimo QR). */
-    private fun pairFailed(e: Throwable): Boolean {
+    private suspend fun pairFailed(e: Throwable): Boolean {
         if (e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED) return false
-        if (e is KeyUnavailableException) DeviceKeyStore.delete()
+        // Solo una chiave inutilizzabile si butta; telefono bloccato o errore passeggero: si riprova.
+        if (ErrorPolicy.forgetsPairing(e)) withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
         val msg = when (e) {
             is ApiException, is KeyUnavailableException -> ErrorText.of(e)
             // Creazione della chiave non riuscita (es. impronta richiesta senza blocco schermo).
@@ -335,7 +402,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val year = s.year.toIntOrNull()?.takeIf { it in 1870..2200 }
         launch {
             val c = a.search(q, year)
-            screen(s.copy(candidates = c, searched = true))
+            // Sullo stato attuale: titolo e anno possono essere cambiati durante la ricerca.
+            updateChoose { it.copy(candidates = c, searched = true) }
             if (c.isEmpty()) message(text(R.string.choose_no_results))
         }
     }
@@ -472,55 +540,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setRequireBiometric(value: Boolean) {
         launch {
-            unpairRemote(force = true)
+            val revoked = unpairRemote(force = true)
             store.setRequireBiometric(value)
             requireBiometric = value
             forgetLocal()
-            toPairing(text(R.string.settings_biometric_repair_done))
+            // §4.2: se la revoca non è riuscita il vecchio dispositivo resta attivo sul server.
+            toPairing(text(if (revoked) R.string.settings_biometric_repair_done else R.string.settings_biometric_repair_done_offline))
         }
     }
 
-    /** "Scollega": prima `DELETE /api/app/me`, poi la chiave locale (§4.2). */
+    /**
+     * "Scollega": prima `DELETE /api/app/me`, poi la chiave locale (§4.2). Se la revoca non
+     * riesce (rete, 401 persistente, 403, 426, 5xx…) si propone di scollegare solo il telefono;
+     * fa eccezione lo sblocco richiesto, che apre il prompt e ripete.
+     */
     fun unpair(force: Boolean) {
         launch(onError = { e ->
-            if (e is ApiException.Network && !force) {
-                _unpairOffline.value = true
+            if (!force && ErrorPolicy.offerLocalUnpair(e)) {
+                _unpairFailure.value = ErrorText.of(e)
                 true
             } else {
                 false
             }
         }) {
-            unpairRemote(force)
+            val revoked = unpairRemote(force)
             forgetLocal()
-            toPairing(text(if (force) R.string.settings_unpaired_offline else R.string.settings_unpaired))
+            toPairing(text(if (revoked) R.string.settings_unpaired else R.string.settings_unpaired_offline))
         }
     }
 
-    private val _unpairOffline = MutableStateFlow(false)
+    private val _unpairFailure = MutableStateFlow<UiText?>(null)
 
-    /** Il server non risponde: chiedere se scollegare solo il telefono. */
-    val unpairOffline: StateFlow<Boolean> = _unpairOffline.asStateFlow()
+    /** Revoca sul server non riuscita (motivo): chiedere se scollegare solo il telefono. */
+    val unpairFailure: StateFlow<UiText?> = _unpairFailure.asStateFlow()
 
-    fun dismissUnpairOffline() {
-        _unpairOffline.value = false
+    fun dismissUnpairFailure() {
+        _unpairFailure.value = null
     }
 
-    private suspend fun unpairRemote(force: Boolean) {
-        try {
-            api?.unpair()
+    /**
+     * `DELETE /api/app/me`. True se il dispositivo risulta revocato sul server; con [force] gli
+     * errori (tranne lo sblocco richiesto) danno false invece di propagarsi.
+     */
+    private suspend fun unpairRemote(force: Boolean): Boolean {
+        val a = api ?: return false
+        return try {
+            a.unpair()
+            true
         } catch (e: ApiException.DeviceRevoked) {
-            // già revocato: va bene
+            true // già revocato: va bene
         } catch (e: ApiException) {
             if (!force) throw e
+            false
         } catch (e: KeyUnavailableException) {
             if (!force || e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED) throw e
+            false
         }
     }
 
     private suspend fun forgetLocal() {
         withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
         store.clearPairing()
-        _unpairOffline.value = false
+        resetBiometricIfUnavailable()
+        _unpairFailure.value = null
     }
 
     fun retryAfterOwnerInactive() {

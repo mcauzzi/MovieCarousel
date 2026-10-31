@@ -16,6 +16,22 @@ val appVersionCode: Int = appVersionName.split(".").map(String::toInt).let { (ma
     require(minor in 0..99 && patch in 0..99) { "versionName non valido: $appVersionName" }
     major * 10000 + minor * 100 + patch
 }
+val appMinSupportedCode: Int = versionProps.getProperty("minSupportedCode").trim().toInt().also {
+    require(it <= appVersionCode) { "minSupportedCode ($it) maggiore del versionCode ($appVersionCode)" }
+}
+
+// Valori letti dal job android di deploy.yml per version.json: una sola formula del versionCode.
+tasks.register("printVersion") {
+    description = "Stampa versionName, versionCode e minSupportedCode (righe chiave=valore)."
+    val name = appVersionName
+    val code = appVersionCode
+    val min = appMinSupportedCode
+    doLast {
+        println("versionName=$name")
+        println("versionCode=$code")
+        println("minSupportedCode=$min")
+    }
+}
 
 // Firma di release solo da variabili d'ambiente (in CI dai GitHub Secrets, vedi android/README.md).
 // Senza, assembleRelease produce un APK non firmato.
@@ -104,13 +120,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
-    debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)

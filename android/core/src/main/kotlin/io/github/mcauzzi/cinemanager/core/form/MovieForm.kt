@@ -203,7 +203,7 @@ object MovieForm {
     }
 }
 
-/** Codici a barre accettati: EAN-8, UPC-A, EAN-13 (e fino a 14 cifre, come l'API). */
+/** Codici a barre accettati: EAN-8, UPC-A, EAN-13 (e fino a 14 cifre, come l'API); UPC-E espanso a UPC-A. */
 object Ean {
     /** Solo cifre, 8–14; null se non valido. Lo zero davanti agli UPC-A lo aggiunge il server. */
     fun normalize(input: String): String? {
@@ -219,5 +219,41 @@ object Ean {
         val body = digits.dropLast(1).reversed()
         val sum = body.withIndex().sumOf { (i, d) -> if (i % 2 == 0) d * 3 else d }
         return (10 - sum % 10) % 10 == digits.last()
+    }
+
+    /**
+     * UPC-E (zero soppressi) → UPC-A a 12 cifre, che il server normalizza a EAN-13 come gli altri
+     * UPC-A. Senza espansione le 8 cifre di un UPC-E sarebbero lette come un EAN-8 (altro codice).
+     *
+     * Accetta le 8 cifre complete (sistema numerico 0 o 1, sei cifre, cifra di controllo, che
+     * viene verificata), oppure 7 (senza controllo) o 6 (sistema 0 sottinteso), forme che alcuni
+     * lettori restituiscono. Null se il codice non è un UPC-E valido.
+     */
+    fun upcEToUpcA(code: String): String? {
+        if (code.any { it !in '0'..'9' }) return null
+        val (system, middle, check) = when (code.length) {
+            6 -> Triple('0', code, null)
+            7 -> Triple(code[0], code.substring(1), null)
+            8 -> Triple(code[0], code.substring(1, 7), code[7])
+            else -> return null
+        }
+        if (system != '0' && system != '1') return null
+        val d = middle
+        val body = when (d[5]) {
+            '0', '1', '2' -> "${d[0]}${d[1]}${d[5]}0000${d[2]}${d[3]}${d[4]}"
+            '3' -> "${d[0]}${d[1]}${d[2]}00000${d[3]}${d[4]}"
+            '4' -> "${d[0]}${d[1]}${d[2]}${d[3]}00000${d[4]}"
+            else -> "${d[0]}${d[1]}${d[2]}${d[3]}${d[4]}0000${d[5]}"
+        }
+        val partial = "$system$body"
+        val upcA = partial + checkDigit(partial)
+        if (check != null && check != upcA.last()) return null
+        return upcA
+    }
+
+    /** Cifra di controllo GS1 per il corpo [body] (codice senza l'ultima cifra). */
+    private fun checkDigit(body: String): Char {
+        val sum = body.reversed().withIndex().sumOf { (i, c) -> (c - '0') * if (i % 2 == 0) 3 else 1 }
+        return '0' + (10 - sum % 10) % 10
     }
 }

@@ -1,16 +1,23 @@
 name: Android CI
 
 # Solo per modifiche all'app (docs/scanner-dvd.md §12): i filtri paths valgono per l'intero
-# workflow, per questo è separato da ci.yml.
+# workflow, per questo è separato da ci.yml. Gira anche quando cambia il protocollo lato server
+# (auth dei dispositivi, contratto in docs/api.md): il job e2e prova l'app contro l'API vera.
 on:
   pull_request:
     paths:
       - "android/**"
+      - "api/CineManager.Api/Auth/**"
+      - "api/CineManager.Api/Devices/**"
+      - "docs/api.md"
       - ".github/workflows/android-ci.yml"
   push:
     branches-ignore: [master]
     paths:
       - "android/**"
+      - "api/CineManager.Api/Auth/**"
+      - "api/CineManager.Api/Devices/**"
+      - "docs/api.md"
       - ".github/workflows/android-ci.yml"
 
 concurrency:
@@ -38,8 +45,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # L'SDK Android è già installato sui runner ubuntu-latest (ANDROID_HOME).
+      # assembleRelease senza keystore: APK non firmato, ma passa da R8 e dallo shrink delle
+      # risorse come quello del deploy (regole mancanti in proguard-rules.pro emergono qui).
       - name: Build, test e lint
-        run: ./gradlew assembleDebug testDebugUnitTest lint --console=plain
+        run: ./gradlew assembleDebug assembleRelease testDebugUnitTest lint --console=plain
 
       - name: Report
         if: failure()
@@ -50,3 +59,75 @@ jobs:
             android/app/build/reports/
             android/core/build/reports/
           retention-days: 7
+
+  # EndToEndTest (android/core) contro l'API vera in Development con l'utente finto: abbinamento,
+  # richieste firmate, revoca. Stessa logica di firma del server, nessun mock.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cinema
+          POSTGRES_PASSWORD: cinema
+          POSTGRES_DB: cinema
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cinema"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('api/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Il processo resta attivo per gli step successivi; il runner lo chiude a fine job.
+      - name: Avvia l'API
+        working-directory: api/CineManager.Api
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:5080
+          Auth__DevUser: dev
+          Auth__DevRoles: user,admin
+          ConnectionStrings__Cinema: Host=localhost;Port=5432;Database=cinema;Username=cinema;Password=cinema
+        run: |
+          dotnet build -c Release -o "$RUNNER_TEMP/api"
+          nohup dotnet "$RUNNER_TEMP/api/CineManager.Api.dll" > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5080/api/health > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::L'API non risponde su /api/health"
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: EndToEndTest
+        working-directory: android
+        env:
+          CM_E2E_API: http://127.0.0.1:5080
+        # --rerun: l'API non è un input del task, senza si potrebbe riusare un esito in cache.
+        run: ./gradlew :core:test --tests '*EndToEndTest*' --rerun --console=plain
+
+      - name: Log dell'API
+        if: failure()
+        run: cat "$RUNNER_TEMP/api.log" || true

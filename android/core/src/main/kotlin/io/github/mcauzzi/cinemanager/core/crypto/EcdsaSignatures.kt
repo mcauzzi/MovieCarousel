@@ -1,8 +1,5 @@
 package io.github.mcauzzi.cinemanager.core.crypto
 
-import java.io.ByteArrayOutputStream
-import java.math.BigInteger
-
 /**
  * Conversione delle firme ECDSA P-256 tra il formato DER di JCA (`SHA256withECDSA`, anche
  * nell'Android Keystore) e il formato JOSE `R||S` a 64 byte richiesto da ES256 (RFC 7518 §3.4).
@@ -49,25 +46,5 @@ object EcdsaSignatures {
         val s = integer()
         require(i == der.size) { "Byte in eccesso nella firma DER" }
         return r + s
-    }
-
-    /** `R||S` → DER, per verificare con JCA una firma JOSE (test e diagnostica). */
-    fun joseToDer(jose: ByteArray): ByteArray {
-        require(jose.size % 2 == 0 && jose.isNotEmpty()) { "Firma JOSE non valida" }
-        val half = jose.size / 2
-        fun encInt(bytes: ByteArray): ByteArray = BigInteger(1, bytes).toByteArray() // con lo 0x00 se serve
-        val r = encInt(jose.copyOfRange(0, half))
-        val s = encInt(jose.copyOfRange(half, jose.size))
-        val body = ByteArrayOutputStream().apply {
-            write(0x02); writeLength(r.size); write(r)
-            write(0x02); writeLength(s.size); write(s)
-        }.toByteArray()
-        return ByteArrayOutputStream().apply {
-            write(0x30); writeLength(body.size); write(body)
-        }.toByteArray()
-    }
-
-    private fun ByteArrayOutputStream.writeLength(len: Int) {
-        if (len < 0x80) write(len) else { write(0x81); write(len) }
     }
 }

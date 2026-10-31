@@ -104,4 +104,34 @@ class MovieFormTest {
         assertTrue(Ean.hasValidCheckDigit("96385074"))
         assertFalse(Ean.hasValidCheckDigit("4006381333932"))
     }
+
+    @Test
+    fun `UPC-E espanso in UPC-A con cifra di controllo verificata`() {
+        // Esempi noti (GS1 / Wikipedia): 01234565 ↔ 012345000065, 04252614 ↔ 042100005264.
+        assertEquals("012345000065", Ean.upcEToUpcA("01234565"))
+        assertEquals("042100005264", Ean.upcEToUpcA("04252614"))
+        // Le quattro regole di espansione (ultima cifra 0–2, 3, 4, 5–9).
+        assertEquals("012000003455", Ean.upcEToUpcA("01234505"))
+        assertEquals("012300000451", Ean.upcEToUpcA("01234531"))
+        assertEquals("012340000053", Ean.upcEToUpcA("01234543"))
+        assertEquals("012345000058", Ean.upcEToUpcA("01234558"))
+        // Sistema numerico 1.
+        assertEquals("112345000062", Ean.upcEToUpcA("11234562"))
+        // Senza cifra di controllo (7 cifre) o senza sistema numerico (6 cifre).
+        assertEquals("012345000065", Ean.upcEToUpcA("0123456"))
+        assertEquals("042100005264", Ean.upcEToUpcA("425261"))
+        // Ogni espansione è un UPC-A valido per l'app e per il server.
+        listOf("01234565", "04252614", "01234505", "01234531", "01234543", "11234562").forEach {
+            assertTrue(it, Ean.hasValidCheckDigit(Ean.upcEToUpcA(it)!!))
+        }
+    }
+
+    @Test
+    fun `UPC-E non valido rifiutato`() {
+        assertNull(Ean.upcEToUpcA("01234566")) // cifra di controllo sbagliata
+        assertNull(Ean.upcEToUpcA("21234565")) // sistema numerico 2 non esiste in UPC-E
+        assertNull(Ean.upcEToUpcA("0123456A"))
+        assertNull(Ean.upcEToUpcA("12345"))
+        assertNull(Ean.upcEToUpcA("012345650"))
+    }
 }

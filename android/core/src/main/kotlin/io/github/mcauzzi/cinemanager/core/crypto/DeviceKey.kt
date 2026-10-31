@@ -53,5 +53,11 @@ class KeyUnavailableException(val kind: Kind, cause: Throwable? = null) :
 
         /** Telefono bloccato (`setUnlockedDeviceRequired`). */
         DEVICE_LOCKED,
+
+        /**
+         * Errore del Keystore forse passeggero (servizio occupato, errore di sistema): la chiave
+         * non risulta invalidata, quindi si riprova senza cancellare l'abbinamento.
+         */
+        TEMPORARY,
     }
 }

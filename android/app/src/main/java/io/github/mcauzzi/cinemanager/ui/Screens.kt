@@ -34,15 +34,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -111,7 +113,7 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
         }
         return
     }
-    var showManual by remember { mutableStateOf(false) }
+    var showManual by rememberSaveable { mutableStateOf(false) }
     Page {
         Heading(stringResource(R.string.pair_heading))
         Text(stringResource(R.string.pair_intro))
@@ -122,6 +124,12 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
             supportingText = { Text(stringResource(R.string.pair_device_name_help)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+        )
+        BiometricToggle(
+            checked = s.requireBiometric,
+            available = s.biometricAvailable,
+            enabled = !busy,
+            onChange = vm::setPairRequireBiometric,
         )
         s.error?.let { ErrorText(it.resolve()) }
         Button(onClick = { vm.setPairScanning(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -145,15 +153,49 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
     }
 }
 
+/** Testo d'errore annunciato da TalkBack quando compare o cambia. */
 @Composable
 fun ErrorText(text: String) {
-    Text(text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text,
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    )
+}
+
+/**
+ * Interruttore "Chiedi impronta all'apertura". Attivabile solo con un blocco schermo sicuro;
+ * se è già attivo si può sempre spegnere (es. dopo aver tolto il blocco schermo).
+ */
+@Composable
+private fun BiometricToggle(checked: Boolean, available: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val canToggle = enabled && (available || checked)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(
+            value = checked,
+            enabled = canToggle,
+            role = Role.Switch,
+            onValueChange = onChange,
+        ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.settings_biometric))
+            Text(
+                stringResource(if (available) R.string.settings_biometric_help else R.string.settings_biometric_unavailable),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null, enabled = canToggle)
+    }
 }
 
 @Composable
 fun RepairScreen(s: Screen.Repair, onRepair: () -> Unit) = Centered {
     Heading(stringResource(R.string.repair_title))
     Text(s.reason.resolve(), textAlign = TextAlign.Center)
+    if (s.serverStillActive) Text(stringResource(R.string.repair_server_active), textAlign = TextAlign.Center)
     Button(onClick = onRepair, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.repair_action)) }
 }
 
@@ -326,8 +368,8 @@ fun ResultScreen(s: Screen.Result, busy: Boolean, vm: MainViewModel) = Centered 
 
 @Composable
 fun SettingsScreen(s: SettingsInfo, busy: Boolean, vm: MainViewModel) {
-    var confirmBiometric by remember { mutableStateOf<Boolean?>(null) }
-    var confirmUnpair by remember { mutableStateOf(false) }
+    var confirmBiometric by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var confirmUnpair by rememberSaveable { mutableStateOf(false) }
     val uri = LocalUriHandler.current
     Page {
         Heading(stringResource(R.string.settings_pairing))
@@ -338,24 +380,12 @@ fun SettingsScreen(s: SettingsInfo, busy: Boolean, vm: MainViewModel) {
         HorizontalDivider()
 
         Heading(stringResource(R.string.settings_security))
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(
-                value = s.requireBiometric,
-                enabled = !busy && (s.biometricAvailable || s.requireBiometric),
-                role = Role.Switch,
-                onValueChange = { confirmBiometric = it },
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.settings_biometric))
-                Text(
-                    stringResource(if (s.biometricAvailable) R.string.settings_biometric_help else R.string.settings_biometric_unavailable),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Switch(checked = s.requireBiometric, onCheckedChange = null, enabled = !busy && (s.biometricAvailable || s.requireBiometric))
-        }
+        BiometricToggle(
+            checked = s.requireBiometric,
+            available = s.biometricAvailable,
+            enabled = !busy,
+            onChange = { confirmBiometric = it },
+        )
         OutlinedButton(onClick = { confirmUnpair = true }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(stringResource(R.string.settings_unpair))
         }

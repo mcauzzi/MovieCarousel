@@ -25,6 +25,8 @@ data class UiState(
     val busy: Boolean = false,
     /** Messaggio temporaneo (snackbar). */
     val message: UiText? = null,
+    /** Il messaggio ha il pulsante "Riprova" (errore passeggero). */
+    val messageRetryable: Boolean = false,
     /** Aggiornamento disponibile, non bloccante (banner). */
     val update: AppVersionInfo? = null,
     /** Sblocco richiesto: l'Activity mostra il prompt biometrico e riporta l'esito. */
@@ -54,10 +56,16 @@ sealed interface Screen {
         val scanning: Boolean = false,
         val manual: String = "",
         val error: UiText? = null,
+        /** "Chiedi impronta all'apertura" per la chiave che verrà creata. */
+        val requireBiometric: Boolean = false,
+        val biometricAvailable: Boolean = false,
     ) : Screen
 
-    /** Abbinamento da rifare (dispositivo revocato, chiave invalidata). */
-    data class Repair(val reason: UiText) : Screen
+    /**
+     * Abbinamento da rifare (dispositivo revocato, chiave invalidata). [serverStillActive]: sul
+     * server il dispositivo non è stato revocato, va fatto dal sito.
+     */
+    data class Repair(val reason: UiText, val serverStillActive: Boolean = false) : Screen
 
     /** Versione sotto `minSupportedCode` (version.json o 426): invio disabilitato. */
     data class UpdateRequired(val apkUrl: String?, val minSupportedCode: Int?) : Screen

@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -164,7 +165,7 @@ private fun OptionChips(options: List<String>, selected: List<String>, enabled: 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MultiEditor(f: FormField, values: List<String>, error: String?, enabled: Boolean, onChange: (List<String>) -> Unit) {
-    var input by remember(f.def.name) { mutableStateOf("") }
+    var input by rememberSaveable(f.def.name) { mutableStateOf("") }
     fun add() {
         val v = input.trim()
         if (v.isNotEmpty() && values.none { it.equals(v, ignoreCase = true) }) onChange(values + v)

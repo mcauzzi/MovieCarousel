@@ -20,7 +20,7 @@ command-line tools con `sdkmanager "platforms;android-36" "build-tools;36.0.0"`.
 
 ```bash
 cd android
-./gradlew assembleDebug testDebugUnitTest lint     # come la CI (android-ci.yml)
+./gradlew assembleDebug assembleRelease testDebugUnitTest lint   # come la CI (android-ci.yml)
 ./gradlew installDebug                             # su un telefono collegato con il debug USB
 ```
 
@@ -41,8 +41,9 @@ oppure inquadra il QR del pannello ARRIVI del sito in sviluppo.
   `api/tools/sign-request` (payload identico byte per byte; nell'header .NET scrive `+` come
   `+`, stesso JSON), verifica con una trascrizione dei controlli di `DeviceTokens.cs`,
   prova di possesso, QR, client contro `MockWebServer` (htu = request-target, `bh`, `jti` nuovo
-  a ogni richiesta, 401/403/409/426/429), modulo dalla bozza e ritorno.
-- `app`: messaggi d'errore.
+  a ogni richiesta, 401/403/409/426/429), modulo dalla bozza e ritorno, espansione UPC-E → UPC-A.
+- `app`: messaggi d'errore, decisioni dopo un errore (riabbinamento solo per chiave invalidata o
+  mancante, "Riprova", scollegamento solo locale), classificazione delle eccezioni del Keystore.
 - **End-to-end facoltativo** contro l'API vera (stessa logica di firma del server): con l'API
   avviata in Development (`cd api/CineManager.Api && dotnet run`)
 
@@ -51,13 +52,18 @@ oppure inquadra il QR del pannello ARRIVI del sito in sviluppo.
   ```
 
   abbina una chiave software, fa `me`, `fields`, `lookup` firmate, poi scollega e verifica il
-  401 `device_revoked`. Senza la variabile il test viene saltato.
+  401 `device_revoked`. Senza la variabile il test viene saltato. In CI lo esegue il job `e2e` di
+  `android-ci.yml` (API e Postgres avviati nel job), anche quando cambiano
+  `api/CineManager.Api/Auth/**`, `api/CineManager.Api/Devices/**` o `docs/api.md`.
 
 ## Versione
 
 `version.properties` è l'unica fonte: `versionName` (a mano a ogni rilascio) e
 `minSupportedCode`. `versionCode = major*10000 + minor*100 + patch` (es. 1.3.0 → 10300) viene
-calcolato da `app/build.gradle.kts` e finisce nel claim `av` delle richieste firmate. Alza
+calcolato da `app/build.gradle.kts` e finisce nel claim `av` delle richieste firmate;
+`./gradlew -q :app:printVersion` stampa `versionName`, `versionCode` e `minSupportedCode`, ed è
+ciò che il deploy usa per `version.json` (la build fallisce se `minSupportedCode` supera il
+`versionCode`). Alza
 `minSupportedCode` solo quando l'API cambia in modo incompatibile: l'API risponde 426 alle app
 più vecchie e l'app mostra "Aggiornamento necessario".
 
@@ -75,11 +81,26 @@ APK non firmato:
 | `CM_RELEASE_KEY_PASSWORD` | password della chiave |
 
 In CI le valorizza il job `android` di `.github/workflows/deploy.yml` dai GitHub Secrets
-(nomi e procedura in [`deploy/README.md`](../deploy/README.md#app-android-apk-firmato)). Usa
+(nomi e procedura in [`deploy/README.md`](../deploy/README.md#app-android-apk-firmato)); il file
+della keystore decodificato viene cancellato a fine step anche se la build fallisce. Usa
 **sempre la stessa keystore**: un APK firmato con un'altra chiave non si installa sopra quello
 esistente (bisogna disinstallare e rifare l'abbinamento).
 
+Per accorgersene prima del deploy, imposta la variabile di repository (Settings › Secrets and
+variables › Actions › Variables; va bene anche un secret con lo stesso nome)
+`ANDROID_CERT_SHA256` con l'impronta SHA-256 del certificato di firma: il job `android` la
+confronta con quella dell'APK firmato e si ferma se sono diverse. Maiuscole, minuscole e `:` non
+contano. Senza la variabile il job scrive un avviso nel log e prosegue. L'impronta si legge con
+
+```bash
+keytool -list -v -keystore release.jks -alias <alias> | grep SHA256
+# oppure, da un APK firmato:
+apksigner verify --print-certs cinemanager.apk | grep 'SHA-256'
+```
+
 La release usa R8 (`isMinifyEnabled`) e include solo le librerie native ARM (telefoni reali).
+Senza le variabili di firma `assembleRelease` produce `app-release-unsigned.apk`: la CI dei PR lo
+costruisce comunque per verificare R8.
 
 ## Non ancora implementato
 

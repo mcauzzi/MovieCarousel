@@ -62,13 +62,18 @@ jobs:
           CM_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           CM_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           export CM_RELEASE_KEYSTORE="$RUNNER_TEMP/release.jks"
+          # La keystore decodificata sparisce anche se la build fallisce.
+          trap 'rm -f "$CM_RELEASE_KEYSTORE"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$CM_RELEASE_KEYSTORE"
           ./gradlew testReleaseUnitTest assembleRelease --console=plain
-          rm -f "$CM_RELEASE_KEYSTORE"
 
       - name: APK e version.json
         if: steps.check.outputs.built == 'true'
+        env:
+          # Impronta SHA-256 attesa del certificato di firma (non è un segreto: meglio una variabile).
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 || secrets.ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/android-app"
@@ -76,12 +81,25 @@ jobs:
           apk=app/build/outputs/apk/release/app-release.apk
           test -f "$apk" || { echo "::error::APK firmato non trovato (firma non configurata?)"; exit 1; }
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
-          "$apksigner" verify --print-certs "$apk"
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs"
+          # Una keystore diversa produce un APK che non si installa sopra quello esistente.
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$certs" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          expected=$(printf '%s' "${ANDROID_CERT_SHA256:-}" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          if [ -z "$expected" ]; then
+            echo "::warning::ANDROID_CERT_SHA256 non impostata: impronta del certificato non verificata (attuale: $actual)."
+          elif [ "$actual" != "$expected" ]; then
+            echo "::error::APK firmato con un certificato inatteso ($actual, atteso $expected): keystore sbagliata?"
+            exit 1
+          fi
           cp "$apk" "$out/cinemanager.apk"
-          name=$(sed -n 's/^versionName=//p' version.properties | tr -d '[:space:]')
-          min=$(sed -n 's/^minSupportedCode=//p' version.properties | tr -d '[:space:]')
-          IFS=. read -r major minor patch <<< "$name"
-          code=$((major * 10000 + minor * 100 + patch))
+          # Versione calcolata da Gradle (app/build.gradle.kts): una sola formula del versionCode.
+          ./gradlew -q :app:printVersion --console=plain > "$RUNNER_TEMP/version.txt"
+          name=$(sed -n 's/^versionName=//p' "$RUNNER_TEMP/version.txt" | tr -d '[:space:]')
+          code=$(sed -n 's/^versionCode=//p' "$RUNNER_TEMP/version.txt" | tr -d '[:space:]')
+          min=$(sed -n 's/^minSupportedCode=//p' "$RUNNER_TEMP/version.txt" | tr -d '[:space:]')
+          test -n "$name" && test -n "$code" && test -n "$min" || { echo "::error::printVersion senza output"; exit 1; }
+          test "$min" -le "$code" || { echo "::error::minSupportedCode ($min) maggiore del versionCode ($code)"; exit 1; }
           sha=$(sha256sum "$out/cinemanager.apk" | cut -d' ' -f1)
           # Stesso formato letto da AppVersionProvider (API) e da src/api.ts (sito).
           jq -n --arg version "$name" --argjson versionCode "$code" --argjson minSupportedCode "$min" \

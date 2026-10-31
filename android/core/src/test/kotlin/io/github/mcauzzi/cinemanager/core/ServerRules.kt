@@ -1,7 +1,6 @@
 package io.github.mcauzzi.cinemanager.core
 
 import io.github.mcauzzi.cinemanager.core.crypto.Base64Url
-import io.github.mcauzzi.cinemanager.core.crypto.EcdsaSignatures
 import io.github.mcauzzi.cinemanager.core.crypto.RequestTokenFactory
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -46,7 +45,7 @@ object ServerRules {
         val ok = Signature.getInstance("SHA256withECDSA").run {
             initVerify(pub)
             update((parts[0] + "." + parts[1]).toByteArray(Charsets.US_ASCII))
-            verify(EcdsaSignatures.joseToDer(sig))
+            verify(TestSignatures.joseToDer(sig))
         }
         if (!ok) return null
         if (exp <= iat || exp - iat > 60) return null

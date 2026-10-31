@@ -38,6 +38,7 @@ object ErrorText {
             KeyUnavailableException.Kind.PERMANENTLY_INVALIDATED -> text(R.string.repair_invalidated)
             KeyUnavailableException.Kind.MISSING -> text(R.string.repair_missing)
             KeyUnavailableException.Kind.DEVICE_LOCKED -> text(R.string.error_device_locked)
+            KeyUnavailableException.Kind.TEMPORARY -> text(R.string.error_key_temporary)
         }
         else -> text(R.string.error_unexpected, e.message ?: e.javaClass.simpleName)
     }
@@ -49,4 +50,30 @@ object ErrorText {
         PairingQrResult.Reason.INSECURE_API -> text(R.string.qr_error_http)
         PairingQrResult.Reason.BAD_CODE -> text(R.string.qr_error_code)
     }
+}
+
+/** Cosa fare dopo un errore: decisioni separate dal ViewModel per poterle provare sulla JVM. */
+object ErrorPolicy {
+    /**
+     * Solo la chiave invalidata da Android o sparita fa rifare l'abbinamento (e cancella i dati
+     * locali). Telefono bloccato o errori passeggeri del Keystore lasciano tutto com'è.
+     */
+    fun forgetsPairing(e: Throwable): Boolean = e is KeyUnavailableException &&
+        (e.kind == KeyUnavailableException.Kind.PERMANENTLY_INVALIDATED || e.kind == KeyUnavailableException.Kind.MISSING)
+
+    /** Errori per cui ha senso il pulsante "Riprova" (passeggeri: rete, 429, 5xx, Keystore). */
+    fun retryable(e: Throwable): Boolean = when (e) {
+        is ApiException.Network, is ApiException.RateLimited, is ApiException.Server -> true
+        is ApiException.TmdbUnavailable -> !e.notConfigured
+        is KeyUnavailableException ->
+            e.kind == KeyUnavailableException.Kind.TEMPORARY || e.kind == KeyUnavailableException.Kind.DEVICE_LOCKED
+        else -> false
+    }
+
+    /**
+     * "Scollega" non riuscito sul server: si può scollegare solo il telefono per qualsiasi errore,
+     * tranne lo sblocco con impronta richiesto (si apre il prompt e si ripete la revoca).
+     */
+    fun offerLocalUnpair(e: Throwable): Boolean =
+        !(e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED)
 }

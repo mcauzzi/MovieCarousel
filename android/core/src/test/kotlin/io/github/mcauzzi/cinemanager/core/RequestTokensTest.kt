@@ -127,7 +127,7 @@ class RequestTokensTest {
             val der = k.signDer(data)
             val jose = EcdsaSignatures.derToJose(der)
             assertEquals(64, jose.size)
-            assertArrayEquals(der, EcdsaSignatures.joseToDer(jose))
+            assertArrayEquals(der, TestSignatures.joseToDer(jose))
             assertTrue(verifyJose(Base64.getEncoder().encodeToString(k.publicKeySpki), String(data), Base64Url.encode(k.signJose(data))))
         }
     }
@@ -145,7 +145,7 @@ class RequestTokensTest {
         assertEquals(1, jose[31].toInt())
         assertEquals(0x80, jose[63].toInt() and 0xFF)
         assertTrue(jose.copyOfRange(0, 31).all { it.toInt() == 0 })
-        assertArrayEquals(der, EcdsaSignatures.joseToDer(jose))
+        assertArrayEquals(der, TestSignatures.joseToDer(jose))
     }
 
     private fun verifyJose(spkiB64: String, data: String, sigB64Url: String): Boolean {
@@ -155,7 +155,7 @@ class RequestTokensTest {
         return Signature.getInstance("SHA256withECDSA").run {
             initVerify(pub)
             update(data.toByteArray(Charsets.UTF_8))
-            verify(EcdsaSignatures.joseToDer(sig))
+            verify(TestSignatures.joseToDer(sig))
         }
     }
 }

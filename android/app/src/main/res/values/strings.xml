@@ -23,6 +23,7 @@
     <string name="camera_needed">Per leggere i codici serve la fotocamera.</string>
     <string name="camera_denied">Permesso della fotocamera negato. Puoi concederlo, oppure inserire il codice a mano.</string>
     <string name="camera_allow">Consenti fotocamera</string>
+    <string name="camera_open_settings">Apri le impostazioni dell\'app</string>
     <string name="camera_preview_qr">Anteprima della fotocamera: inquadra il QR di abbinamento</string>
     <string name="camera_preview_ean">Anteprima della fotocamera: inquadra il codice a barre del DVD</string>
 
@@ -42,6 +43,7 @@
     <string name="pair_error_key">Il server ha rifiutato la chiave del telefono. Riprova con un nuovo QR.</string>
     <string name="pair_error_name">Inserisci un nome per il telefono (al massimo 100 caratteri).</string>
     <string name="pair_error_generic">Abbinamento non riuscito.</string>
+    <string name="pair_error_biometric_unavailable">Con «Chiedi impronta all\'apertura» serve un blocco schermo (PIN, sequenza, password o impronta): impostalo, oppure disattiva l\'opzione qui sopra.</string>
     <string name="pair_error_keystore">Impossibile creare la chiave sul telefono: %1$s</string>
     <string name="qr_error_not_cinemanager">Questo non è un QR di abbinamento di CineManager.</string>
     <string name="qr_error_version">QR di una versione più recente: aggiorna l\'app.</string>
@@ -54,6 +56,8 @@
     <string name="repair_revoked">Questo telefono è stato scollegato dal sito.</string>
     <string name="repair_invalidated">Android ha invalidato la chiave del telefono (blocco schermo o impronte cambiati).</string>
     <string name="repair_missing">La chiave del telefono non c\'è più.</string>
+    <string name="repair_keystore">Impossibile leggere la chiave del telefono (%1$s).</string>
+    <string name="repair_server_active">Sul server il vecchio abbinamento resta attivo: revocalo dal sito (ARRIVI › TELEFONO).</string>
     <string name="repair_action">Abbina di nuovo</string>
 
     <!-- Versioni (§11.1) -->
@@ -138,12 +142,13 @@
     <string name="settings_biometric_off_title">Disattivare l\'impronta?</string>
     <string name="settings_biometric_repair">La protezione è legata alla chiave del telefono: cambiarla scollega questo telefono e richiede un nuovo abbinamento con il QR del sito.</string>
     <string name="settings_biometric_repair_done">Impostazione salvata: abbina di nuovo il telefono.</string>
+    <string name="settings_biometric_repair_done_offline">Impostazione salvata: abbina di nuovo il telefono. Il server non ha revocato il vecchio abbinamento: revocalo dal sito (ARRIVI › TELEFONO).</string>
     <string name="settings_unpair">Scollega</string>
     <string name="settings_unpair_title">Scollegare il telefono?</string>
     <string name="settings_unpair_body">Il telefono viene revocato sul server e la sua chiave cancellata. Per usarlo di nuovo servirà un nuovo QR.</string>
-    <string name="settings_unpair_offline_title">Server non raggiungibile</string>
-    <string name="settings_unpair_offline_body">Se scolleghi ora, sul server il dispositivo resta attivo finché non lo revochi dal sito (ARRIVI › TELEFONO).</string>
-    <string name="settings_unpair_anyway">Scollega comunque</string>
+    <string name="settings_unpair_failed_title">Revoca sul server non riuscita</string>
+    <string name="settings_unpair_failed_body">%1$s\n\nPuoi scollegare solo questo telefono: sul server il dispositivo resta attivo finché non lo revochi dal sito (ARRIVI › TELEFONO).</string>
+    <string name="settings_unpair_anyway">Scollega solo qui</string>
     <string name="settings_unpaired">Telefono scollegato.</string>
     <string name="settings_unpaired_offline">Telefono scollegato solo qui: revocalo anche dal sito.</string>
     <string name="settings_about">Informazioni</string>
@@ -169,5 +174,6 @@
     <string name="error_server">Errore del server (%1$d).</string>
     <string name="error_auth_required">Serve lo sblocco con impronta o PIN.</string>
     <string name="error_device_locked">Sblocca il telefono e riprova.</string>
+    <string name="error_key_temporary">Il Keystore del telefono non ha risposto: riprova.</string>
     <string name="error_unexpected">Errore imprevisto: %1$s</string>
 </resources>

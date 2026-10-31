@@ -289,6 +289,17 @@ Nel repository, *Settings → Secrets and variables → Actions → New reposito
 | `ANDROID_KEY_ALIAS` | `cinemanager` |
 | `ANDROID_KEY_PASSWORD` | la stessa password |
 
+**Impronta del certificato** (facoltativa, consigliata): così il deploy si ferma se per errore la
+keystore viene sostituita, invece di pubblicare un APK che non si installa sopra quello esistente.
+Leggila con:
+
+```powershell
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -list -v -keystore release.jks -alias cinemanager | Select-String SHA256
+```
+
+e salvala in *Settings → Secrets and variables → Actions → Variables* come `ANDROID_CERT_SHA256`
+(maiuscole, minuscole e `:` indifferenti). Se manca, il deploy scrive un avviso e prosegue.
+
 ### Nuova versione dell'app
 
 1. In `android/version.properties` aumenta `versionName`. Aumenta `minSupportedCode` solo se le

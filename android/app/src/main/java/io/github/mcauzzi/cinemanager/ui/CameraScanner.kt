@@ -1,8 +1,14 @@
 package io.github.mcauzzi.cinemanager.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +44,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -48,11 +57,17 @@ import java.util.concurrent.Executors
 
 enum class ScanMode { QR, EAN }
 
-private const val SAME_CODE_PAUSE_MS = 5000L
+/**
+ * Un codice già letto torna valido solo dopo essere uscito dall'inquadratura per questo tempo:
+ * se la ricerca fallisce (rete, 429, 5xx) non riparte da sola finché il DVD resta davanti alla
+ * fotocamera (si usa "Riprova" o si inquadra di nuovo).
+ */
+private const val LEFT_FRAME_MS = 1500L
 
 /**
  * Anteprima della fotocamera con riconoscimento ML Kit (modello incluso, offline).
- * EAN: EAN-13, EAN-8, UPC-A, UPC-E con cifra di controllo valida; QR: il QR di abbinamento.
+ * EAN: EAN-13, EAN-8, UPC-A con cifra di controllo valida, UPC-E espanso in UPC-A (12 cifre,
+ * come lo normalizza il server); QR: il QR di abbinamento.
  * Alla lettura: vibrazione di conferma e [onDetected] una volta finché [enabled] resta vero.
  */
 @Composable
@@ -61,12 +76,19 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    var asked by remember { mutableStateOf(false) }
+    // Sopravvive alla rotazione: niente nuova richiesta automatica a ogni rotazione e, dopo un
+    // rifiuto, compare camera_denied invece di camera_needed.
+    var asked by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         granted = it
         asked = true
     }
-    LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
+    LaunchedEffect(Unit) { if (!granted && !asked) launcher.launch(Manifest.permission.CAMERA) }
+    // Permesso concesso dalle impostazioni di sistema mentre l'app era in secondo piano.
+    LifecycleResumeEffect(Unit) {
+        granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        onPauseOrDispose {}
+    }
 
     if (!granted) {
         Column(
@@ -79,7 +101,20 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text(stringResource(R.string.camera_allow)) }
+            // Dopo un rifiuto definitivo Android non mostra più la richiesta: si aprono le
+            // impostazioni dell'app.
+            val activity = context.findActivity()
+            val blocked = asked && activity != null &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+            Button(onClick = {
+                if (blocked) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
+                    )
+                } else {
+                    launcher.launch(Manifest.permission.CAMERA)
+                }
+            }) { Text(stringResource(if (blocked) R.string.camera_open_settings else R.string.camera_allow)) }
         }
         return
     }
@@ -102,21 +137,23 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
         val scanner = BarcodeScanning.getClient(formats.build())
         val executor = Executors.newSingleThreadExecutor()
         val main = ContextCompat.getMainExecutor(context)
-        // Lo stesso codice viene ignorato per qualche secondo (resta inquadrato mentre si cerca).
+        // Lo stesso codice viene ignorato finché resta inquadrato (vedi LEFT_FRAME_MS).
         var last: String? = null
-        var lastAt = 0L
+        var lastSeenAt = 0L
         controller.setEnabledUseCases(CameraController.IMAGE_ANALYSIS)
         controller.setImageAnalysisAnalyzer(
             executor,
             MlKitAnalyzer(listOf(scanner), ImageAnalysis.COORDINATE_SYSTEM_ORIGINAL, executor) { result ->
-                val value = result.getValue(scanner)?.firstNotNullOfOrNull { b ->
-                    b.rawValue?.takeIf { mode == ScanMode.QR || Ean.hasValidCheckDigit(it) || b.format == Barcode.FORMAT_UPC_E }
-                } ?: return@MlKitAnalyzer
+                val value = result.getValue(scanner)?.firstNotNullOfOrNull { b -> accepted(mode, b) } ?: return@MlKitAnalyzer
                 main.execute {
                     val now = SystemClock.elapsedRealtime()
-                    if (!active || (value == last && now - lastAt < SAME_CODE_PAUSE_MS)) return@execute
+                    if (value == last && now - lastSeenAt < LEFT_FRAME_MS) {
+                        lastSeenAt = now // ancora inquadrato
+                        return@execute
+                    }
+                    if (!active) return@execute
                     last = value
-                    lastAt = now
+                    lastSeenAt = now
                     view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                     callback(value)
                 }
@@ -143,4 +180,22 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
                 .semantics { contentDescription = description },
         )
     }
+}
+
+/** Valore da passare all'app, o null se il codice va ignorato. */
+private fun accepted(mode: ScanMode, b: Barcode): String? {
+    val raw = b.rawValue ?: return null
+    return when {
+        mode == ScanMode.QR -> raw
+        // UPC-E compresso: inviato così sarebbe letto come un EAN-8 diverso.
+        b.format == Barcode.FORMAT_UPC_E -> Ean.upcEToUpcA(raw)
+        Ean.hasValidCheckDigit(raw) -> raw
+        else -> null
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
