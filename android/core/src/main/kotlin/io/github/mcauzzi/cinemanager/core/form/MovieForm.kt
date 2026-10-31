@@ -16,18 +16,8 @@ enum class FieldType {
     LINE, PARA, NUMBER, BOOL, DATE, CHOICE, URL, RATING, TABLE, OTHER;
 
     companion object {
-        fun of(type: String): FieldType = when (type) {
-            "line" -> LINE
-            "para" -> PARA
-            "number" -> NUMBER
-            "bool" -> BOOL
-            "date" -> DATE
-            "choice" -> CHOICE
-            "url" -> URL
-            "rating" -> RATING
-            "table" -> TABLE
-            else -> OTHER
-        }
+        /** Il tipo dell'API è il nome in minuscolo; i tipi sconosciuti (e "other") → [OTHER]. */
+        fun of(type: String): FieldType = entries.firstOrNull { it.name.lowercase() == type } ?: OTHER
     }
 }
 
@@ -215,10 +205,7 @@ object Ean {
     /** Cifra di controllo GS1 (EAN-8/12/13/14). */
     fun hasValidCheckDigit(code: String): Boolean {
         if (code.length !in setOf(8, 12, 13, 14) || code.any { it !in '0'..'9' }) return false
-        val digits = code.map { it - '0' }
-        val body = digits.dropLast(1).reversed()
-        val sum = body.withIndex().sumOf { (i, d) -> if (i % 2 == 0) d * 3 else d }
-        return (10 - sum % 10) % 10 == digits.last()
+        return checkDigit(code.dropLast(1)) == code.last()
     }
 
     /**

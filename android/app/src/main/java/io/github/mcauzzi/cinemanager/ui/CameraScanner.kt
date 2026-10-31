@@ -73,9 +73,8 @@ private const val LEFT_FRAME_MS = 1500L
 @Composable
 fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
+    fun hasPermission() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    var granted by remember { mutableStateOf(hasPermission()) }
     // Sopravvive alla rotazione: niente nuova richiesta automatica a ogni rotazione e, dopo un
     // rifiuto, compare camera_denied invece di camera_needed.
     var asked by rememberSaveable { mutableStateOf(false) }
@@ -86,7 +85,7 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
     LaunchedEffect(Unit) { if (!granted && !asked) launcher.launch(Manifest.permission.CAMERA) }
     // Permesso concesso dalle impostazioni di sistema mentre l'app era in secondo piano.
     LifecycleResumeEffect(Unit) {
-        granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        granted = hasPermission()
         onPauseOrDispose {}
     }
 
@@ -127,14 +126,11 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
 
     val controller = remember { LifecycleCameraController(context) }
     DisposableEffect(mode, lifecycleOwner) {
-        val formats = if (mode == ScanMode.QR) {
-            BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-        } else {
-            BarcodeScannerOptions.Builder().setBarcodeFormats(
-                Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E,
-            )
-        }
-        val scanner = BarcodeScanning.getClient(formats.build())
+        val options = BarcodeScannerOptions.Builder().run {
+            if (mode == ScanMode.QR) setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            else setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E)
+        }.build()
+        val scanner = BarcodeScanning.getClient(options)
         val executor = Executors.newSingleThreadExecutor()
         val main = ContextCompat.getMainExecutor(context)
         // Lo stesso codice viene ignorato finché resta inquadrato (vedi LEFT_FRAME_MS).
@@ -175,9 +171,7 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                 }
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .semantics { contentDescription = description },
+            modifier = Modifier.fillMaxSize().semantics { contentDescription = description },
         )
     }
 }

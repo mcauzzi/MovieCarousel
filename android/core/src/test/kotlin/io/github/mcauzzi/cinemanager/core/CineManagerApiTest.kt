@@ -27,7 +27,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.Base64
@@ -120,11 +119,7 @@ class CineManagerApiTest {
     @Test
     fun `errori di pair`() = runBlocking<Unit> {
         server.enqueue(problem(400, "invalid_code"))
-        try {
-            api(creds = null).pair("x", "P", key); fail()
-        } catch (e: ApiException.PairingFailed) {
-            assertEquals(PairFailure.INVALID_CODE, e.reason)
-        }
+        assertEquals(PairFailure.INVALID_CODE, expect<ApiException.PairingFailed> { api(creds = null).pair("x", "P", key) }.reason)
     }
 
     @Test
@@ -169,14 +164,11 @@ class CineManagerApiTest {
                 throw KeyUnavailableException(KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED)
         }
         server.enqueue(json("{}"))
-        try {
-            api(DeviceCredentials(deviceId, locked)).fields(); fail()
-        } catch (e: KeyUnavailableException) {
-            assertEquals(KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED, e.kind)
-        }
+        val e = expect<KeyUnavailableException> { api(DeviceCredentials(deviceId, locked)).fields() }
+        assertEquals(KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED, e.kind)
         assertEquals(0, server.requestCount)
         // Senza abbinamento le chiamate firmate non partono.
-        expectKey { api(creds = null).me() }
+        assertEquals(KeyUnavailableException.Kind.MISSING, expect<KeyUnavailableException> { api(creds = null).me() }.kind)
     }
 
     @Test
@@ -216,9 +208,5 @@ class CineManagerApiTest {
             throw AssertionError("Attesa ${T::class.simpleName}, ricevuta $e", e)
         }
         throw AssertionError("Attesa ${T::class.simpleName}, nessuna eccezione")
-    }
-
-    private suspend fun expectKey(block: suspend () -> Unit) {
-        assertEquals(KeyUnavailableException.Kind.MISSING, expect<KeyUnavailableException>(block).kind)
     }
 }

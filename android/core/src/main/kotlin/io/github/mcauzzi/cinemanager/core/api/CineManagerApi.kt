@@ -61,19 +61,11 @@ class CineManagerApi(
     // ------------------------------------------------------------------ non firmate
 
     /** `GET /api/app/version`; null se il file manca (build senza APK) o non è valido. */
-    suspend fun appVersion(): AppVersionInfo? {
-        val req = Request.Builder().url(server.versionUrl).header("Accept", "application/json").get().build()
-        return try {
-            plain.newCall(req).await().use { res ->
-                if (!res.isSuccessful) return null
-                val text = withContext(Dispatchers.IO) { res.body?.string() }.orEmpty()
-                JSON.decodeFromString(AppVersionInfo.serializer(), text)
-            }
-        } catch (_: IllegalArgumentException) {
-            null // JSON non valido (es. pagina HTML al posto del file)
-        } catch (e: IOException) {
-            throw ApiException.Network(e)
-        }
+    suspend fun appVersion(): AppVersionInfo? = try {
+        execute(plain, get(server.versionUrl.toHttpUrl()), AppVersionInfo.serializer())
+    } catch (e: ApiException) {
+        // Risposta non 2xx o JSON non valido (es. pagina HTML al posto del file): nessuna informazione.
+        if (e is ApiException.Network) throw e else null
     }
 
     /**
@@ -87,41 +79,33 @@ class CineManagerApi(
             publicKey = Base64.getEncoder().encodeToString(key.publicKeySpki),
             proof = PairingProof.create(key, code),
         )
-        val req = Request.Builder().url(url("app/pair"))
-            .post(JSON.encodeToString(PairRequest.serializer(), body).toRequestBody(JSON_TYPE))
-            .build()
-        return execute(plain, req, PairResponse.serializer(), pairing = true)
+        return execute(plain, post("app/pair", PairRequest.serializer(), body), PairResponse.serializer(), pairing = true)
     }
 
     // ------------------------------------------------------------------ firmate
 
-    suspend fun me(): AppMe = execute(signed(), get("app/me"), AppMe.serializer())
+    suspend fun me(): AppMe = execute(signed(), get(url("app/me")), AppMe.serializer())
 
     /** "Scollega": il dispositivo si revoca da solo. */
     suspend fun unpair() {
         executeRaw(signed(), Request.Builder().url(url("app/me")).delete().build()) { }
     }
 
-    suspend fun fields(): List<Field> = execute(signed(), get("app/fields"), ListSerializer(Field.serializer()))
+    suspend fun fields(): List<Field> = execute(signed(), get(url("app/fields")), ListSerializer(Field.serializer()))
 
     suspend fun lookup(ean: String): LookupResponse =
-        execute(signed(), get(url("app/lookup").newBuilder().addQueryParameter("ean", ean).build()), LookupResponse.serializer())
+        execute(signed(), get(url("app/lookup", "ean" to ean)), LookupResponse.serializer())
 
-    suspend fun search(query: String, year: Int?): List<Candidate> {
-        val u = url("app/search").newBuilder().addQueryParameter("q", query)
-            .apply { if (year != null) addQueryParameter("year", year.toString()) }.build()
-        return execute(signed(), get(u), SearchResponse.serializer(), tmdb = true).candidates
-    }
+    suspend fun search(query: String, year: Int?): List<Candidate> =
+        execute(signed(), get(url("app/search", "q" to query, "year" to year?.toString())), SearchResponse.serializer(), tmdb = true)
+            .candidates
 
     suspend fun tmdb(tmdbId: Int): TmdbDraftResponse =
         execute(signed(), get(url("app/tmdb/$tmdbId")), TmdbDraftResponse.serializer(), tmdb = true)
 
     /** `POST /api/app/movies`: 201 → [CreateMovieResult.Created]; i due 409 → esiti, non eccezioni. */
     suspend fun createMovie(request: NewMovieRequest): CreateMovieResult {
-        val req = Request.Builder().url(url("app/movies"))
-            .post(JSON.encodeToString(NewMovieRequest.serializer(), request).toRequestBody(JSON_TYPE))
-            .build()
-        return executeRaw(signed(), req, accept409 = true) { (status, text) ->
+        return executeRaw(signed(), post("app/movies", NewMovieRequest.serializer(), request), accept409 = true) { (status, text) ->
             val obj = runCatching { JSON.parseToJsonElement(text) as? JsonObject }.getOrNull()
             fun str(n: String) = (obj?.get(n) as? JsonPrimitive)?.contentOrNull
             if (status == 409) {
@@ -143,11 +127,15 @@ class CineManagerApi(
 
     // ------------------------------------------------------------------ infrastruttura
 
-    private fun url(path: String): HttpUrl = api.newBuilder().addPathSegments(path).build()
-
-    private fun get(path: String) = get(url(path))
+    /** URL sotto l'API; i parametri null vengono omessi. */
+    private fun url(path: String, vararg query: Pair<String, String?>): HttpUrl = api.newBuilder().addPathSegments(path)
+        .apply { query.forEach { (k, v) -> if (v != null) addQueryParameter(k, v) } }
+        .build()
 
     private fun get(u: HttpUrl) = Request.Builder().url(u).header("Accept", "application/json").get().build()
+
+    private fun <B> post(path: String, serializer: KSerializer<B>, body: B) =
+        Request.Builder().url(url(path)).post(JSON.encodeToString(serializer, body).toRequestBody(JSON_TYPE)).build()
 
     private fun signed(): OkHttpClient =
         signed ?: throw KeyUnavailableException(KeyUnavailableException.Kind.MISSING)

@@ -1,16 +1,18 @@
 package io.github.mcauzzi.cinemanager.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -49,6 +51,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import io.github.mcauzzi.cinemanager.R
@@ -59,12 +62,42 @@ import io.github.mcauzzi.cinemanager.core.api.DuplicateRef
 // ---------------------------------------------------------------------------- comuni
 
 @Composable
-fun Heading(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.titleLarge, modifier = modifier.semantics { heading() })
+fun Heading(@StringRes id: Int) = Text(stringResource(id), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+
+enum class ButtonKind { FILLED, OUTLINED, TEXT }
+
+/** Pulsante con etichetta da risorsa e area di tocco di almeno 48 dp. */
+@Composable
+fun ActionButton(
+    @StringRes label: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    kind: ButtonKind = ButtonKind.FILLED,
+) {
+    val m = modifier.heightIn(min = 48.dp)
+    val content: @Composable RowScope.() -> Unit = { Text(stringResource(label)) }
+    when (kind) {
+        ButtonKind.FILLED -> Button(onClick = onClick, modifier = m, enabled = enabled, content = content)
+        ButtonKind.OUTLINED -> OutlinedButton(onClick = onClick, modifier = m, enabled = enabled, content = content)
+        ButtonKind.TEXT -> TextButton(onClick = onClick, modifier = m, enabled = enabled, content = content)
+    }
+}
+
+/** Dialog di conferma con "Annulla"; [onConfirm] dopo la chiusura. */
+@Composable
+fun ConfirmDialog(title: String, body: String, @StringRes confirm: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(stringResource(confirm)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 @Composable
-private fun Page(content: @Composable ColumnScope.() -> Unit) {
+fun Page(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -94,10 +127,9 @@ fun DuplicatesWarning(list: List<DuplicateRef>) {
 }
 
 @Composable
-private fun duplicateLabel(d: DuplicateRef): String {
-    val title = d.title ?: stringResource(R.string.untitled)
-    return if (d.year != null) "$title (${d.year})" else title
-}
+private fun duplicateLabel(d: DuplicateRef) = titleYear(d.title ?: stringResource(R.string.untitled), d.year)
+
+private fun titleYear(title: String, year: Int?) = if (year != null) "$title ($year)" else title
 
 // ---------------------------------------------------------------------------- abbinamento
 
@@ -115,7 +147,7 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
     }
     var showManual by rememberSaveable { mutableStateOf(false) }
     Page {
-        Heading(stringResource(R.string.pair_heading))
+        Heading(R.string.pair_heading)
         Text(stringResource(R.string.pair_intro))
         OutlinedTextField(
             value = s.deviceName,
@@ -132,12 +164,8 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
             onChange = vm::setPairRequireBiometric,
         )
         s.error?.let { ErrorText(it.resolve()) }
-        Button(onClick = { vm.setPairScanning(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.pair_scan))
-        }
-        TextButton(onClick = { showManual = !showManual }, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.pair_manual_toggle))
-        }
+        ActionButton(R.string.pair_scan, { vm.setPairScanning(true) }, Modifier.fillMaxWidth(), enabled = !busy)
+        ActionButton(R.string.pair_manual_toggle, { showManual = !showManual }, kind = ButtonKind.TEXT)
         if (showManual) {
             OutlinedTextField(
                 value = s.manual,
@@ -146,9 +174,10 @@ fun PairingScreen(s: Screen.Pairing, busy: Boolean, vm: MainViewModel) {
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedButton(onClick = { vm.onPairingQr(s.manual) }, enabled = !busy && s.manual.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.pair_manual_submit))
-            }
+            ActionButton(
+                R.string.pair_manual_submit, { vm.onPairingQr(s.manual) },
+                enabled = !busy && s.manual.isNotBlank(), kind = ButtonKind.OUTLINED,
+            )
         }
     }
 }
@@ -170,49 +199,50 @@ fun ErrorText(text: String) {
  */
 @Composable
 private fun BiometricToggle(checked: Boolean, available: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    val canToggle = enabled && (available || checked)
+    SwitchRow(checked, enabled = enabled && (available || checked), onChange, minHeight = 56.dp) {
+        Text(stringResource(R.string.settings_biometric))
+        Text(
+            stringResource(if (available) R.string.settings_biometric_help else R.string.settings_biometric_unavailable),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/** Riga intera che fa da interruttore (un solo elemento per TalkBack, ruolo Switch). */
+@Composable
+fun SwitchRow(checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit, minHeight: Dp, label: @Composable ColumnScope.() -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(
-            value = checked,
-            enabled = canToggle,
-            role = Role.Switch,
-            onValueChange = onChange,
-        ),
+        Modifier.fillMaxWidth().heightIn(min = minHeight)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.settings_biometric))
-            Text(
-                stringResource(if (available) R.string.settings_biometric_help else R.string.settings_biometric_unavailable),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Switch(checked = checked, onCheckedChange = null, enabled = canToggle)
+        Column(Modifier.weight(1f), content = label)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
 @Composable
 fun RepairScreen(s: Screen.Repair, onRepair: () -> Unit) = Centered {
-    Heading(stringResource(R.string.repair_title))
+    Heading(R.string.repair_title)
     Text(s.reason.resolve(), textAlign = TextAlign.Center)
     if (s.serverStillActive) Text(stringResource(R.string.repair_server_active), textAlign = TextAlign.Center)
-    Button(onClick = onRepair, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.repair_action)) }
+    ActionButton(R.string.repair_action, onRepair)
 }
 
 @Composable
 fun LockedScreen(onUnlock: () -> Unit) = Centered {
-    Heading(stringResource(R.string.locked_title))
+    Heading(R.string.locked_title)
     Text(stringResource(R.string.locked_body), textAlign = TextAlign.Center)
-    Button(onClick = onUnlock, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.locked_action)) }
+    ActionButton(R.string.locked_action, onUnlock)
 }
 
 @Composable
 fun UpdateRequiredScreen(s: Screen.UpdateRequired) = Centered {
     val uri = LocalUriHandler.current
-    Heading(stringResource(R.string.update_required_title))
+    Heading(R.string.update_required_title)
     Text(stringResource(R.string.update_required_body), textAlign = TextAlign.Center)
     s.apkUrl?.let { url ->
-        Button(onClick = { uri.openUri(url) }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.update_download)) }
+        ActionButton(R.string.update_download, { uri.openUri(url) })
         Text(stringResource(R.string.update_install_note), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
     }
 }
@@ -220,12 +250,12 @@ fun UpdateRequiredScreen(s: Screen.UpdateRequired) = Centered {
 @Composable
 fun OwnerInactiveScreen(s: Screen.OwnerInactive, onRetry: () -> Unit) = Centered {
     val uri = LocalUriHandler.current
-    Heading(stringResource(R.string.owner_inactive_title))
+    Heading(R.string.owner_inactive_title)
     Text(stringResource(R.string.owner_inactive_body), textAlign = TextAlign.Center)
     s.siteUrl?.let { url ->
-        Button(onClick = { uri.openUri(url) }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.owner_inactive_open_site)) }
+        ActionButton(R.string.owner_inactive_open_site, { uri.openUri(url) })
     }
-    OutlinedButton(onClick = onRetry, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_retry)) }
+    ActionButton(R.string.action_retry, onRetry, kind = ButtonKind.OUTLINED)
 }
 
 // ---------------------------------------------------------------------------- scansione
@@ -238,9 +268,7 @@ fun ScanScreen(s: Screen.Scan, busy: Boolean, update: AppVersionInfo?, vm: MainV
             Card(Modifier.fillMaxWidth().padding(8.dp)) {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.update_available, update.version), Modifier.weight(1f))
-                    TextButton(onClick = { vm.apkUrl()?.let(uri::openUri) }, Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.update_download))
-                    }
+                    ActionButton(R.string.update_download, { vm.apkUrl()?.let(uri::openUri) }, kind = ButtonKind.TEXT)
                 }
             }
         }
@@ -256,9 +284,7 @@ fun ScanScreen(s: Screen.Scan, busy: Boolean, update: AppVersionInfo?, vm: MainV
                 keyboardActions = KeyboardActions(onSearch = { vm.submitManualEan() }),
                 modifier = Modifier.weight(1f),
             )
-            Button(onClick = vm::submitManualEan, enabled = !busy && s.manualEan.length >= 8, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.scan_manual_submit))
-            }
+            ActionButton(R.string.scan_manual_submit, vm::submitManualEan, enabled = !busy && s.manualEan.length >= 8)
         }
     }
 }
@@ -267,7 +293,7 @@ fun ScanScreen(s: Screen.Scan, busy: Boolean, update: AppVersionInfo?, vm: MainV
 
 @Composable
 fun ChooseScreen(s: Screen.Choose, busy: Boolean, vm: MainViewModel) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.choose_ean, s.ean), style = MaterialTheme.typography.bodyMedium)
@@ -276,13 +302,13 @@ fun ChooseScreen(s: Screen.Choose, busy: Boolean, vm: MainViewModel) {
         }
         item { DuplicatesWarning(s.lookup.possibleDuplicates) }
         if (s.candidates.isNotEmpty()) {
-            item { Heading(stringResource(R.string.choose_pick)) }
+            item { Heading(R.string.choose_pick) }
             items(s.candidates, key = { it.tmdbId }) { c -> CandidateRow(c, enabled = !busy) { vm.choose(c) } }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 HorizontalDivider()
-                Heading(stringResource(R.string.choose_search_heading))
+                Heading(R.string.choose_search_heading)
                 OutlinedTextField(
                     value = s.query, onValueChange = vm::onQueryChange,
                     label = { Text(stringResource(R.string.choose_query)) }, singleLine = true,
@@ -298,12 +324,8 @@ fun ChooseScreen(s: Screen.Choose, busy: Boolean, vm: MainViewModel) {
                     modifier = Modifier.width(160.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = vm::search, enabled = !busy && s.query.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.choose_search))
-                    }
-                    OutlinedButton(onClick = vm::fillManually, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.choose_manual))
-                    }
+                    ActionButton(R.string.choose_search, vm::search, enabled = !busy && s.query.isNotBlank())
+                    ActionButton(R.string.choose_manual, vm::fillManually, enabled = !busy, kind = ButtonKind.OUTLINED)
                 }
             }
         }
@@ -312,10 +334,9 @@ fun ChooseScreen(s: Screen.Choose, busy: Boolean, vm: MainViewModel) {
 
 @Composable
 private fun CandidateRow(c: Candidate, enabled: Boolean, onClick: () -> Unit) {
-    val label = if (c.year != null) "${c.title} (${c.year})" else c.title
     Card(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
         ListItem(
-            headlineContent = { Text(label) },
+            headlineContent = { Text(titleYear(c.title, c.year)) },
             supportingContent = c.originalTitle?.takeIf { it != c.title }?.let { { Text(it) } },
             leadingContent = {
                 Poster(c.posterUrl, stringResource(R.string.poster_of, c.title), Modifier.width(56.dp))
@@ -326,11 +347,8 @@ private fun CandidateRow(c: Candidate, enabled: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun Poster(url: String?, description: String, modifier: Modifier = Modifier) {
-    if (url == null) {
-        Spacer(modifier.aspectRatio(2f / 3f))
-        return
-    }
-    AsyncImage(model = url, contentDescription = description, contentScale = ContentScale.Crop, modifier = modifier.aspectRatio(2f / 3f))
+    val m = modifier.aspectRatio(2f / 3f)
+    if (url == null) Spacer(m) else AsyncImage(model = url, contentDescription = description, contentScale = ContentScale.Crop, modifier = m)
 }
 
 // ---------------------------------------------------------------------------- esito
@@ -339,29 +357,25 @@ fun Poster(url: String?, description: String, modifier: Modifier = Modifier) {
 fun ResultScreen(s: Screen.Result, busy: Boolean, vm: MainViewModel) = Centered {
     when (val o = s.outcome) {
         is Outcome.Added -> {
-            Heading(stringResource(R.string.result_added_title))
+            Heading(R.string.result_added_title)
             Text(stringResource(R.string.result_added_body, o.title), textAlign = TextAlign.Center)
         }
         is Outcome.EanExists -> {
-            Heading(stringResource(R.string.result_exists_title))
+            Heading(R.string.result_exists_title)
             Text(
                 o.title?.let { stringResource(R.string.result_exists_body, it) } ?: stringResource(R.string.result_exists_body_untitled),
                 textAlign = TextAlign.Center,
             )
         }
         is Outcome.PossibleDuplicate -> {
-            Heading(stringResource(R.string.result_duplicate_title))
+            Heading(R.string.result_duplicate_title)
             Text(stringResource(R.string.result_duplicate_body), textAlign = TextAlign.Center)
             DuplicatesWarning(o.candidates)
-            Button(onClick = vm::confirmDuplicate, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.result_duplicate_confirm))
-            }
-            OutlinedButton(onClick = vm::backToForm, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.result_duplicate_edit))
-            }
+            ActionButton(R.string.result_duplicate_confirm, vm::confirmDuplicate, enabled = !busy)
+            ActionButton(R.string.result_duplicate_edit, vm::backToForm, enabled = !busy, kind = ButtonKind.OUTLINED)
         }
     }
-    Button(onClick = vm::scanNext, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.result_next)) }
+    ActionButton(R.string.result_next, vm::scanNext, enabled = !busy)
 }
 
 // ---------------------------------------------------------------------------- impostazioni
@@ -372,46 +386,39 @@ fun SettingsScreen(s: SettingsInfo, busy: Boolean, vm: MainViewModel) {
     var confirmUnpair by rememberSaveable { mutableStateOf(false) }
     val uri = LocalUriHandler.current
     Page {
-        Heading(stringResource(R.string.settings_pairing))
+        Heading(R.string.settings_pairing)
         InfoRow(stringResource(R.string.settings_server), s.server)
         InfoRow(stringResource(R.string.settings_user), s.userName)
         InfoRow(stringResource(R.string.settings_device), s.deviceName)
-        TextButton(onClick = { uri.openUri(s.siteUrl) }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.settings_open_site)) }
+        ActionButton(R.string.settings_open_site, { uri.openUri(s.siteUrl) }, kind = ButtonKind.TEXT)
         HorizontalDivider()
 
-        Heading(stringResource(R.string.settings_security))
+        Heading(R.string.settings_security)
         BiometricToggle(
             checked = s.requireBiometric,
             available = s.biometricAvailable,
             enabled = !busy,
             onChange = { confirmBiometric = it },
         )
-        OutlinedButton(onClick = { confirmUnpair = true }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.settings_unpair))
-        }
+        ActionButton(R.string.settings_unpair, { confirmUnpair = true }, enabled = !busy, kind = ButtonKind.OUTLINED)
         HorizontalDivider()
 
-        Heading(stringResource(R.string.settings_about))
+        Heading(R.string.settings_about)
         InfoRow(stringResource(R.string.settings_version), s.appVersion)
         Text(stringResource(R.string.tmdb_attribution), style = MaterialTheme.typography.bodySmall)
     }
 
     confirmBiometric?.let { value ->
-        AlertDialog(
-            onDismissRequest = { confirmBiometric = null },
-            title = { Text(stringResource(if (value) R.string.settings_biometric_on_title else R.string.settings_biometric_off_title)) },
-            text = { Text(stringResource(R.string.settings_biometric_repair)) },
-            confirmButton = { TextButton(onClick = { confirmBiometric = null; vm.setRequireBiometric(value) }) { Text(stringResource(R.string.action_continue)) } },
-            dismissButton = { TextButton(onClick = { confirmBiometric = null }) { Text(stringResource(R.string.action_cancel)) } },
+        ConfirmDialog(
+            stringResource(if (value) R.string.settings_biometric_on_title else R.string.settings_biometric_off_title),
+            stringResource(R.string.settings_biometric_repair), R.string.action_continue,
+            onConfirm = { vm.setRequireBiometric(value) }, onDismiss = { confirmBiometric = null },
         )
     }
     if (confirmUnpair) {
-        AlertDialog(
-            onDismissRequest = { confirmUnpair = false },
-            title = { Text(stringResource(R.string.settings_unpair_title)) },
-            text = { Text(stringResource(R.string.settings_unpair_body)) },
-            confirmButton = { TextButton(onClick = { confirmUnpair = false; vm.unpair(force = false) }) { Text(stringResource(R.string.settings_unpair)) } },
-            dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text(stringResource(R.string.action_cancel)) } },
+        ConfirmDialog(
+            stringResource(R.string.settings_unpair_title), stringResource(R.string.settings_unpair_body), R.string.settings_unpair,
+            onConfirm = { vm.unpair(force = false) }, onDismiss = { confirmUnpair = false },
         )
     }
 }

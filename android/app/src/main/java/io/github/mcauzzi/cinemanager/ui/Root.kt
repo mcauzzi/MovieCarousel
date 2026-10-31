@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,7 +19,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,7 +48,6 @@ fun UiText.resolve(): String = when (this) {
 @Composable
 fun CineManagerRoot(vm: MainViewModel, activity: FragmentActivity) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val unpairFailure by vm.unpairFailure.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     // Prompt biometrico a ogni richiesta del ViewModel (apertura o chiave da sbloccare).
@@ -113,13 +110,11 @@ fun CineManagerRoot(vm: MainViewModel, activity: FragmentActivity) {
         }
     }
 
-    unpairFailure?.let { reason ->
-        AlertDialog(
-            onDismissRequest = vm::dismissUnpairFailure,
-            title = { Text(stringResource(R.string.settings_unpair_failed_title)) },
-            text = { Text(stringResource(R.string.settings_unpair_failed_body, reason.resolve())) },
-            confirmButton = { TextButton(onClick = { vm.dismissUnpairFailure(); vm.unpair(force = true) }) { Text(stringResource(R.string.settings_unpair_anyway)) } },
-            dismissButton = { TextButton(onClick = vm::dismissUnpairFailure) { Text(stringResource(R.string.action_cancel)) } },
+    state.unpairFailure?.let { reason ->
+        ConfirmDialog(
+            stringResource(R.string.settings_unpair_failed_title),
+            stringResource(R.string.settings_unpair_failed_body, reason.resolve()), R.string.settings_unpair_anyway,
+            onConfirm = { vm.unpair(force = true) }, onDismiss = vm::dismissUnpairFailure,
         )
     }
 }

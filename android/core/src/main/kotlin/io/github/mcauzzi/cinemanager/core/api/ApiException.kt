@@ -96,16 +96,9 @@ object ErrorMapper {
         val p = parseProblem(body)
         return when (status) {
             400 -> if (pairing) {
-                ApiException.PairingFailed(
-                    when (p.reason) {
-                        "invalid_request" -> PairFailure.INVALID_REQUEST
-                        "invalid_key" -> PairFailure.INVALID_KEY
-                        "invalid_proof" -> PairFailure.INVALID_PROOF
-                        "invalid_code" -> PairFailure.INVALID_CODE
-                        else -> PairFailure.UNKNOWN
-                    },
-                    p.detail,
-                )
+                // `reason` = nome del valore in minuscolo (invalid_code...); altri valori → UNKNOWN.
+                val reason = PairFailure.entries.firstOrNull { it.name.lowercase() == p.reason }
+                ApiException.PairingFailed(reason ?: PairFailure.UNKNOWN, p.detail)
             } else {
                 ApiException.Validation(p.errors, p.detail)
             }

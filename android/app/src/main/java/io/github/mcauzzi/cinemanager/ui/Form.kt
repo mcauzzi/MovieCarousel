@@ -5,20 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -29,11 +22,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -59,10 +48,7 @@ import io.github.mcauzzi.cinemanager.core.form.FormField
 @Composable
 fun FormScreen(s: Screen.Form, busy: Boolean, vm: MainViewModel) {
     val title = (s.values["title"] as? FieldValue.Text)?.value.orEmpty()
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Page {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (s.source.posterUrl != null) {
                 Poster(s.source.posterUrl, stringResource(R.string.poster_of, title), Modifier.width(96.dp))
@@ -71,7 +57,7 @@ fun FormScreen(s: Screen.Form, busy: Boolean, vm: MainViewModel) {
                 Text(stringResource(R.string.choose_ean, s.source.ean), style = MaterialTheme.typography.bodyMedium)
                 if (s.source.tmdbId == null) Text(stringResource(R.string.form_no_tmdb), style = MaterialTheme.typography.bodySmall)
                 s.source.choose?.let {
-                    TextButton(onClick = { vm.back() }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.form_wrong_movie)) }
+                    ActionButton(R.string.form_wrong_movie, { vm.back() }, kind = ButtonKind.TEXT)
                 }
             }
         }
@@ -84,9 +70,7 @@ fun FormScreen(s: Screen.Form, busy: Boolean, vm: MainViewModel) {
         // Errori del server su proprietà fuori dal modulo (ean, posterPath...).
         s.errors.filterKeys { k -> s.fields.none { it.def.name == k } }.forEach { (k, v) -> ErrorText("$k: $v") }
 
-        Button(onClick = { vm.submit() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.form_submit))
-        }
+        ActionButton(R.string.form_submit, vm::submit, Modifier.fillMaxWidth(), enabled = !busy)
     }
 }
 
@@ -94,13 +78,8 @@ fun FormScreen(s: Screen.Form, busy: Boolean, vm: MainViewModel) {
 private fun FieldEditor(f: FormField, value: FieldValue, error: String?, enabled: Boolean, onChange: (FieldValue) -> Unit) {
     val label = f.def.title
     when (value) {
-        is FieldValue.Flag -> Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                .toggleable(value.checked, enabled = enabled, role = Role.Switch) { onChange(FieldValue.Flag(it)) },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(label, Modifier.weight(1f))
-            Switch(checked = value.checked, onCheckedChange = null, enabled = enabled)
+        is FieldValue.Flag -> SwitchRow(value.checked, enabled, { onChange(FieldValue.Flag(it)) }, minHeight = 48.dp) {
+            Text(label)
         }
         is FieldValue.Text -> TextEditor(f, value.value, error, enabled) { onChange(FieldValue.Text(it)) }
         is FieldValue.Multi -> MultiEditor(f, value.values, error, enabled) { onChange(FieldValue.Multi(it)) }
@@ -201,9 +180,7 @@ private fun MultiEditor(f: FormField, values: List<String>, error: String?, enab
                     isError = error != null, supportingText = error?.let { { Text(it) } },
                     modifier = Modifier.weight(1f),
                 )
-                OutlinedButton(onClick = { add() }, enabled = enabled && input.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.form_add))
-                }
+                ActionButton(R.string.form_add, { add() }, enabled = enabled && input.isNotBlank(), kind = ButtonKind.OUTLINED)
             }
         } else if (error != null) {
             ErrorText(error)
@@ -221,16 +198,15 @@ private fun RowsEditor(f: FormField, rows: List<List<String>>, error: String?, e
             val removeLabel = stringResource(R.string.form_remove_row, i + 1)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (f.isCast) {
-                    OutlinedTextField(
-                        value = row.getOrElse(0) { "" }, onValueChange = { set(listOf(it, row.getOrElse(1) { "" })) },
-                        enabled = enabled, singleLine = true, label = { Text(stringResource(R.string.form_actor)) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = row.getOrElse(1) { "" }, onValueChange = { set(listOf(row.getOrElse(0) { "" }, it)) },
-                        enabled = enabled, singleLine = true, label = { Text(stringResource(R.string.form_role)) },
-                        modifier = Modifier.weight(1f),
-                    )
+                    // Attore e ruolo: sempre due celle.
+                    listOf(R.string.form_actor, R.string.form_role).forEachIndexed { c, cellLabel ->
+                        OutlinedTextField(
+                            value = row.getOrElse(c) { "" },
+                            onValueChange = { v -> set(List(2) { j -> if (j == c) v else row.getOrElse(j) { "" } }) },
+                            enabled = enabled, singleLine = true, label = { Text(stringResource(cellLabel)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 } else {
                     OutlinedTextField(
                         value = row.joinToString("::"), onValueChange = { set(it.split("::")) },
@@ -245,8 +221,7 @@ private fun RowsEditor(f: FormField, rows: List<List<String>>, error: String?, e
             }
         }
         error?.let { ErrorText(it) }
-        TextButton(onClick = { onChange(rows + listOf(if (f.isCast) listOf("", "") else listOf(""))) }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.form_add_row))
-        }
+        val emptyRow = if (f.isCast) listOf("", "") else listOf("")
+        ActionButton(R.string.form_add_row, { onChange(rows + listOf(emptyRow)) }, enabled = enabled, kind = ButtonKind.TEXT)
     }
 }

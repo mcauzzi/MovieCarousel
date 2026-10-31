@@ -72,9 +72,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val p = s.pairing
             if (p == null || !withContext(Dispatchers.IO) { DeviceKeyStore.exists() }) {
                 // Dati incompleti (chiave senza abbinamento o viceversa): si riparte da zero.
-                withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
-                if (p != null) store.clearPairing()
-                resetBiometricIfUnavailable()
+                forgetLocal()
                 toPairing()
                 return@launch
             }
@@ -88,8 +86,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val reason = key.exceptionOrNull()
                     ?.let { text(R.string.repair_keystore, it.message ?: it.javaClass.simpleName) }
                     ?: text(R.string.repair_missing)
-                pairing = null
-                api = null
                 screen(Screen.Repair(reason, serverStillActive = true))
                 return@launch
             }
@@ -102,6 +98,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------ stato
 
     private fun screen(s: Screen) = _state.update { it.copy(screen = s) }
+
+    /** Modifica la schermata attuale solo se è di tipo [S]. */
+    private inline fun <reified S : Screen> updateScreen(f: (S) -> Screen) {
+        val s = _state.value.screen as? S ?: return
+        screen(f(s))
+    }
 
     /** Operazione ripetuta dal pulsante "Riprova" del messaggio. */
     private var messageRetry: (() -> Unit)? = null
@@ -128,10 +130,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         listOf(Build.MANUFACTURER.replaceFirstChar { it.uppercase() }, Build.MODEL)
             .distinct().joinToString(" ").take(100)
 
-    private fun toPairing(error: UiText? = null) {
+    private fun clearSession() {
         pairing = null
         api = null
         fields = null
+    }
+
+    private fun toPairing(error: UiText? = null) {
+        clearSession()
         _state.update { it.copy(screen = pairingScreen(defaultDeviceName(), error), settings = null, update = null, locked = false) }
     }
 
@@ -173,7 +179,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun handle(e: Throwable, retry: () -> Unit) {
         when {
-            e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED -> {
+            ErrorPolicy.needsUnlock(e) -> {
                 pendingRetry = retry
                 _state.update { it.copy(authPending = true) }
             }
@@ -193,16 +199,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun forget(reason: UiText, serverStillActive: Boolean) {
         forgetLocal()
-        pairing = null
-        api = null
+        clearSession()
         _state.update { it.copy(screen = Screen.Repair(reason, serverStillActive), settings = null, update = null) }
     }
 
     // ------------------------------------------------------------------ sblocco biometrico
 
-    private fun lock() {
-        _state.update { it.copy(locked = true, authPending = true) }
-    }
+    private fun lock() = _state.update { it.copy(locked = true, authPending = true) }
 
     fun requestUnlock() = _state.update { it.copy(authPending = true) }
 
@@ -223,9 +226,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun onBackground() {
-        backgroundSince = SystemClock.elapsedRealtime()
-    }
+    fun onBackground() { backgroundSince = SystemClock.elapsedRealtime() }
 
     /** Di nuovo in primo piano dopo la finestra di 10 minuti: si richiede lo sblocco. */
     fun onForeground() {
@@ -257,9 +258,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------ abbinamento
 
     fun startPairing() {
-        val s = _state.value.screen
-        val name = (s as? Screen.Pairing)?.deviceName ?: defaultDeviceName()
-        screen(pairingScreen(name))
+        screen(pairingScreen((_state.value.screen as? Screen.Pairing)?.deviceName ?: defaultDeviceName()))
     }
 
     /**
@@ -272,18 +271,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             store.setRequireBiometric(value)
             requireBiometric = value
             withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
-            updatePairing { it.copy(requireBiometric = value, biometricAvailable = BiometricGate.available(getApplication()), error = null) }
+            updateScreen<Screen.Pairing> {
+                it.copy(requireBiometric = value, biometricAvailable = BiometricGate.available(getApplication()), error = null)
+            }
         }
     }
 
-    fun onDeviceNameChange(name: String) = updatePairing { it.copy(deviceName = name.take(100), error = null) }
-    fun onPairManualChange(text: String) = updatePairing { it.copy(manual = text, error = null) }
-    fun setPairScanning(on: Boolean) = updatePairing { it.copy(scanning = on, error = null) }
-
-    private fun updatePairing(f: (Screen.Pairing) -> Screen.Pairing) {
-        val s = _state.value.screen as? Screen.Pairing ?: return
-        screen(f(s))
-    }
+    fun onDeviceNameChange(name: String) = updateScreen<Screen.Pairing> { it.copy(deviceName = name.take(100), error = null) }
+    fun onPairManualChange(text: String) = updateScreen<Screen.Pairing> { it.copy(manual = text, error = null) }
+    fun setPairScanning(on: Boolean) = updateScreen<Screen.Pairing> { it.copy(scanning = on, error = null) }
 
     fun onPairingQr(raw: String) {
         val s = _state.value.screen as? Screen.Pairing ?: return
@@ -323,7 +319,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Errori dell'abbinamento mostrati nella schermata (la chiave locale resta per il prossimo QR). */
     private suspend fun pairFailed(e: Throwable): Boolean {
-        if (e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED) return false
+        if (ErrorPolicy.needsUnlock(e)) return false
         // Solo una chiave inutilizzabile si butta; telefono bloccato o errore passeggero: si riprova.
         if (ErrorPolicy.forgetsPairing(e)) withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
         val msg = when (e) {
@@ -331,16 +327,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Creazione della chiave non riuscita (es. impronta richiesta senza blocco schermo).
             else -> text(R.string.pair_error_keystore, e.message ?: e.javaClass.simpleName)
         }
-        updatePairing { it.copy(scanning = false, error = msg) }
+        updateScreen<Screen.Pairing> { it.copy(scanning = false, error = msg) }
         return true
     }
 
     // ------------------------------------------------------------------ scansione
 
-    fun onManualEanChange(v: String) {
-        val s = _state.value.screen as? Screen.Scan ?: return
-        screen(s.copy(manualEan = v.filter { it.isDigit() }.take(14)))
-    }
+    fun onManualEanChange(v: String) = updateScreen<Screen.Scan> { it.copy(manualEan = v.filter(Char::isDigit).take(14)) }
 
     fun submitManualEan() {
         val s = _state.value.screen as? Screen.Scan ?: return
@@ -365,7 +358,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loadFields(a)
             when {
                 l.candidates.size > 1 -> screen(chooseFor(ean, l))
-                l.candidates.size == 1 || l.draft.isNotEmpty() -> openForm(sourceFrom(ean, l, null), l.draft)
+                l.candidates.size == 1 || l.draft.isNotEmpty() -> openForm(a, sourceFrom(ean, l, null), l.draft)
                 else -> {
                     screen(chooseFor(ean, l))
                     message(text(if (l.productName == null) R.string.choose_unknown_ean else R.string.choose_no_match))
@@ -386,13 +379,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ scelta
 
-    fun onQueryChange(q: String) = updateChoose { it.copy(query = q.take(200)) }
-    fun onYearChange(y: String) = updateChoose { it.copy(year = y.filter(Char::isDigit).take(4)) }
-
-    private fun updateChoose(f: (Screen.Choose) -> Screen.Choose) {
-        val s = _state.value.screen as? Screen.Choose ?: return
-        screen(f(s))
-    }
+    fun onQueryChange(q: String) = updateScreen<Screen.Choose> { it.copy(query = q.take(200)) }
+    fun onYearChange(y: String) = updateScreen<Screen.Choose> { it.copy(year = y.filter(Char::isDigit).take(4)) }
 
     fun search() {
         val s = _state.value.screen as? Screen.Choose ?: return
@@ -403,7 +391,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         launch {
             val c = a.search(q, year)
             // Sullo stato attuale: titolo e anno possono essere cambiati durante la ricerca.
-            updateChoose { it.copy(candidates = c, searched = true) }
+            updateScreen<Screen.Choose> { it.copy(candidates = c, searched = true) }
             if (c.isEmpty()) message(text(R.string.choose_no_results))
         }
     }
@@ -411,15 +399,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun choose(c: Candidate) {
         val s = _state.value.screen as? Screen.Choose ?: return
         val a = api ?: return
-        if (c.tmdbId == s.lookup.tmdbId) {
-            launch { loadFields(a); openForm(sourceFrom(s.ean, s.lookup, s), s.lookup.draft) }
-            return
-        }
         launch {
+            if (c.tmdbId == s.lookup.tmdbId) return@launch openForm(a, sourceFrom(s.ean, s.lookup, s), s.lookup.draft)
             val d = a.tmdb(c.tmdbId)
-            loadFields(a)
             val dups = (s.lookup.possibleDuplicates + d.possibleDuplicates).distinctBy(DuplicateRef::id)
-            openForm(DraftSource(s.ean, d.tmdbId, d.posterPath, d.posterUrl, dups, s), d.draft)
+            openForm(a, DraftSource(s.ean, d.tmdbId, d.posterPath, d.posterUrl, dups, s), d.draft)
         }
     }
 
@@ -427,52 +411,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun fillManually() {
         val s = _state.value.screen as? Screen.Choose ?: return
         val a = api ?: return
-        launch {
-            loadFields(a)
-            val draft = s.lookup.draft.takeIf { it.isNotEmpty() }
-                ?: JsonObject(mapOf(MovieForm.TITLE to JsonPrimitive(s.query.ifBlank { s.lookup.productName.orEmpty() })))
-            openForm(DraftSource(s.ean, null, null, null, s.lookup.possibleDuplicates, s), draft)
-        }
+        val draft = s.lookup.draft.takeIf { it.isNotEmpty() }
+            ?: JsonObject(mapOf(MovieForm.TITLE to JsonPrimitive(s.query.ifBlank { s.lookup.productName.orEmpty() })))
+        launch { openForm(a, DraftSource(s.ean, null, null, null, s.lookup.possibleDuplicates, s), draft) }
     }
 
     // ------------------------------------------------------------------ modulo
 
-    private fun openForm(source: DraftSource, draft: JsonObject) {
-        val f = fields ?: return
+    private suspend fun openForm(a: CineManagerApi, source: DraftSource, draft: JsonObject) {
+        val f = loadFields(a)
         screen(Screen.Form(source, f, MovieForm.initialValues(f, draft), MovieForm.passthrough(f, draft)))
     }
 
-    fun onFieldChange(name: String, value: FieldValue) {
-        val s = _state.value.screen as? Screen.Form ?: return
-        screen(s.copy(values = s.values + (name to value), errors = s.errors - name))
+    fun onFieldChange(name: String, value: FieldValue) =
+        updateScreen<Screen.Form> { it.copy(values = it.values + (name to value), errors = it.errors - name) }
+
+    fun submit() {
+        val a = api ?: return
+        val form = _state.value.screen as? Screen.Form ?: return
+        val errors = MovieForm.validate(form.fields, form.values)
+        if (errors.isNotEmpty()) {
+            screen(form.copy(errors = errors, generalError = text(R.string.form_fix_errors)))
+            return
+        }
+        val movie = MovieForm.toMovieJson(form.fields, form.values, form.passthrough)
+        send(a, NewMovieRequest(form.source.ean, form.source.tmdbId, form.source.posterPath, movie), form)
     }
 
-    fun submit(confirmDuplicate: Boolean = false, retryRequest: NewMovieRequest? = null, retryForm: Screen.Form? = null) {
+    fun confirmDuplicate() {
         val a = api ?: return
-        val form = retryForm ?: _state.value.screen as? Screen.Form ?: return
-        val request = retryRequest?.copy(confirmDuplicate = confirmDuplicate) ?: run {
-            val errors = MovieForm.validate(form.fields, form.values)
-            if (errors.isNotEmpty()) {
-                screen(form.copy(errors = errors, generalError = text(R.string.form_fix_errors)))
-                return
-            }
-            NewMovieRequest(
-                ean = form.source.ean,
-                tmdbId = form.source.tmdbId,
-                posterPath = form.source.posterPath,
-                movie = MovieForm.toMovieJson(form.fields, form.values, form.passthrough),
-                confirmDuplicate = confirmDuplicate,
-            )
-        }
+        val r = (_state.value.screen as? Screen.Result)?.outcome as? Outcome.PossibleDuplicate ?: return
+        send(a, r.request.copy(confirmDuplicate = true), r.form)
+    }
+
+    private fun send(a: CineManagerApi, request: NewMovieRequest, form: Screen.Form) {
         val title = (request.movie[MovieForm.TITLE] as? JsonPrimitive)?.content.orEmpty()
-        launch(onError = { e ->
-            if (e is ApiException.Validation) {
-                screen(form.copy(errors = e.errors.mapValues { it.value.joinToString(" ") },
-                    generalError = e.detail?.let(UiText::Raw) ?: text(R.string.form_server_errors)))
-                true
-            } else {
-                false
-            }
+        launch(onError = onError@{ e ->
+            if (e !is ApiException.Validation) return@onError false
+            screen(form.copy(errors = e.errors.mapValues { it.value.joinToString(" ") },
+                generalError = e.detail?.let(UiText::Raw) ?: text(R.string.form_server_errors)))
+            true
         }) {
             val outcome = when (val r = a.createMovie(request)) {
                 // TODO: annullare dall'app un arrivo appena inviato (oggi correzione ed eliminazione
@@ -483,11 +461,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             screen(Screen.Result(outcome))
         }
-    }
-
-    fun confirmDuplicate() {
-        val r = (_state.value.screen as? Screen.Result)?.outcome as? Outcome.PossibleDuplicate ?: return
-        submit(confirmDuplicate = true, retryRequest = r.request, retryForm = r.form)
     }
 
     fun backToForm() {
@@ -555,13 +528,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * fa eccezione lo sblocco richiesto, che apre il prompt e ripete.
      */
     fun unpair(force: Boolean) {
-        launch(onError = { e ->
-            if (!force && ErrorPolicy.offerLocalUnpair(e)) {
-                _unpairFailure.value = ErrorText.of(e)
-                true
-            } else {
-                false
-            }
+        launch(onError = onError@{ e ->
+            if (force || !ErrorPolicy.offerLocalUnpair(e)) return@onError false
+            _state.update { it.copy(unpairFailure = ErrorText.of(e)) }
+            true
         }) {
             val revoked = unpairRemote(force)
             forgetLocal()
@@ -569,14 +539,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _unpairFailure = MutableStateFlow<UiText?>(null)
-
-    /** Revoca sul server non riuscita (motivo): chiedere se scollegare solo il telefono. */
-    val unpairFailure: StateFlow<UiText?> = _unpairFailure.asStateFlow()
-
-    fun dismissUnpairFailure() {
-        _unpairFailure.value = null
-    }
+    fun dismissUnpairFailure() = _state.update { it.copy(unpairFailure = null) }
 
     /**
      * `DELETE /api/app/me`. True se il dispositivo risulta revocato sul server; con [force] gli
@@ -593,7 +556,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (!force) throw e
             false
         } catch (e: KeyUnavailableException) {
-            if (!force || e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED) throw e
+            if (!force || ErrorPolicy.needsUnlock(e)) throw e
             false
         }
     }
@@ -602,7 +565,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) { DeviceKeyStore.delete() }
         store.clearPairing()
         resetBiometricIfUnavailable()
-        _unpairFailure.value = null
+        dismissUnpairFailure()
     }
 
     fun retryAfterOwnerInactive() {

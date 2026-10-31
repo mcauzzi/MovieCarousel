@@ -22,6 +22,7 @@ class PairingStore(private val context: Context) {
         val DEVICE_NAME = stringPreferencesKey("device_name")
         val USER_NAME = stringPreferencesKey("user_name")
         val BIOMETRIC = booleanPreferencesKey("require_biometric")
+        val PAIRING = listOf(API, DEVICE_ID, DEVICE_NAME, USER_NAME)
     }
 
     suspend fun load(): Settings = context.dataStore.data.first().toSettings()
@@ -36,12 +37,7 @@ class PairingStore(private val context: Context) {
     }
 
     suspend fun clearPairing() {
-        context.dataStore.edit {
-            it.remove(Keys.API)
-            it.remove(Keys.DEVICE_ID)
-            it.remove(Keys.DEVICE_NAME)
-            it.remove(Keys.USER_NAME)
-        }
+        context.dataStore.edit { prefs -> Keys.PAIRING.forEach { prefs.remove(it) } }
     }
 
     suspend fun setRequireBiometric(value: Boolean) {

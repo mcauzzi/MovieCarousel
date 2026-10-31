@@ -35,6 +35,8 @@ data class UiState(
     val locked: Boolean = false,
     /** Non null = impostazioni aperte. */
     val settings: SettingsInfo? = null,
+    /** Revoca sul server non riuscita (motivo): chiedere se scollegare solo il telefono. */
+    val unpairFailure: UiText? = null,
 )
 
 data class SettingsInfo(

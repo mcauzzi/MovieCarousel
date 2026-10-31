@@ -70,10 +70,13 @@ object ErrorPolicy {
         else -> false
     }
 
+    /** Serve lo sblocco con impronta o PIN: si apre il prompt e si ripete l'operazione. */
+    fun needsUnlock(e: Throwable): Boolean =
+        e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED
+
     /**
      * "Scollega" non riuscito sul server: si può scollegare solo il telefono per qualsiasi errore,
-     * tranne lo sblocco con impronta richiesto (si apre il prompt e si ripete la revoca).
+     * tranne lo sblocco richiesto (si apre il prompt e si ripete la revoca).
      */
-    fun offerLocalUnpair(e: Throwable): Boolean =
-        !(e is KeyUnavailableException && e.kind == KeyUnavailableException.Kind.AUTHENTICATION_REQUIRED)
+    fun offerLocalUnpair(e: Throwable): Boolean = !needsUnlock(e)
 }

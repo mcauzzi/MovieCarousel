@@ -141,8 +141,7 @@ enum class KeyFailure {
                 else -> Kind.TEMPORARY
             }
             // setUnlockedDeviceRequired: a telefono bloccato la chiave non si può usare.
-            INVALID_KEY -> if (deviceLocked) Kind.DEVICE_LOCKED else Kind.TEMPORARY
-            OTHER -> if (deviceLocked) Kind.DEVICE_LOCKED else Kind.TEMPORARY
+            INVALID_KEY, OTHER -> if (deviceLocked) Kind.DEVICE_LOCKED else Kind.TEMPORARY
         }
     }
 }
