@@ -21,7 +21,9 @@
 # Variabili da impostare nell'Environment dello stack in Komodo (nessun segreto):
 #
 #   Obbligatorie
-#     WEB_ROOT            cartella del NAS con config.json e assets/ (collezione .tc, covers/, bgm/)
+#     WEB_ROOT            cartella del NAS con config.json e i dati del sito (collezione .tc, copertine, bgm)
+#     COVERS_DIR          cartella delle copertine, relativa a WEB_ROOT: la stessa di imgDir in config.json
+#                         (es. imgDir "./assets/copertine/" → COVERS_DIR=assets/copertine)
 #     DB_DIR              cartella dei dati di Postgres (disco locale del NAS, non NFS/SMB)
 #     BACKUP_DIR          cartella dei dump notturni
 #     PUBLIC_BASE_URL     indirizzo pubblico del sito, es. https://<host-sito> (redirect_uri OIDC, QR)
@@ -93,9 +95,9 @@ services:
       App__VersionUrl: "http://web/app/version.json"
       Covers__Path: /data/covers
     volumes:
-      # Unico mount in scrittura: deve coincidere con imgDir di config.json (assets/covers/).
-      # La cartella deve essere scrivibile dall'utente dell'immagine .NET (UID 1654, vedi README).
-      - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}/assets/covers:/data/covers"
+      # Unico mount in scrittura: la cartella delle copertine, la stessa di imgDir in config.json.
+      # Deve essere scrivibile dall'utente dell'immagine .NET (UID 1654, vedi README).
+      - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}/${COVERS_DIR:?imposta COVERS_DIR (cartella delle copertine, relativa a WEB_ROOT)}:/data/covers"
     read_only: true
     tmpfs:
       - /tmp

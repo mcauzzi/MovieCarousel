@@ -51,7 +51,7 @@ La modalità `.tc` attuale resta come **fallback** (sviluppo locale, deploy senz
 │     ├─ sessione sito: OIDC con Authelia → cookie HttpOnly                       │
 │     ├─ app Android: richieste firmate con chiave del dispositivo                │
 │     ├─ ricerca EAN → titolo → TMDb (chiavi solo lato server)                    │
-│     └─ scrive le copertine in assets/covers/ (unico mount in scrittura)         │
+│     └─ scrive le copertine in WEB_ROOT/COVERS_DIR (unico mount in scrittura)    │
 │                                                                                 │
 │   db (Postgres 17, nessuna porta pubblicata, volume sul NAS)                    │
 │   backup (pg_dump notturno con rotazione)                                       │
@@ -501,7 +501,7 @@ Quando un film viene collegato a un `tellico_id` già assegnato a un altro film 
 
 ### Immagini incorporate
 
-Salvate in `assets/covers/` con il loro id Tellico come nome file (solo `[A-Za-z0-9._-]`, nessun percorso), scritte solo se il file non esiste già: l'id Tellico è un hash del contenuto, quindi l'import è idempotente. Le immagini sono caricate prima e fuori dalla transazione dei film: se l'import dei film fallisce restano sul disco, il che è innocuo (al tentativo successivo vengono saltate).
+Salvate nella cartella delle copertine (`COVERS_DIR`, la stessa di `imgDir`) con il loro id Tellico come nome file (solo `[A-Za-z0-9._-]`, nessun percorso), scritte solo se il file non esiste già: l'id Tellico è un hash del contenuto, quindi l'import è idempotente. Le immagini sono caricate prima e fuori dalla transazione dei film: se l'import dei film fallisce restano sul disco, il che è innocuo (al tentativo successivo vengono saltate).
 
 ### Cosa non fa
 
@@ -730,7 +730,7 @@ services:
       Tellico__BarcodeField: "${TELLICO_BARCODE_FIELD:-ean}"
       App__VersionUrl: "http://web/app/version.json"
       Covers__Path: /data/covers
-    volumes: ["${WEB_ROOT:?}/assets/covers:/data/covers"]   # unico mount in scrittura
+    volumes: ["${WEB_ROOT:?}/${COVERS_DIR:?}:/data/covers"]   # unico mount in scrittura
     read_only: true
     tmpfs: [/tmp]
     depends_on: { db: { condition: service_healthy } }
@@ -765,7 +765,7 @@ Note:
 
 - Nessuna porta pubblicata per `api`, `db`, `backup`; rete Docker dello stack con subnet fissa, nessuna rete esterna.
 - `web` è il nome del servizio nello stack (usato dall'API come hostname). Nessun `container_name`: i container prendono il nome dello stack.
-- **Copertine**: il percorso montato nell'API (`assets/covers` dentro `WEB_ROOT`) deve coincidere con `imgDir` di `config.json` (che oggi è configurabile). L'immagine .NET gira come utente non-root (UID 1654 nelle immagini ufficiali recenti, da verificare): la cartella sul NAS deve essere scrivibile da quell'UID, oppure si imposta `user:` nel compose.
+- **Copertine**: il percorso montato nell'API (`COVERS_DIR`, relativo a `WEB_ROOT`) deve coincidere con `imgDir` di `config.json`. L'immagine .NET gira come utente non-root (UID 1654 nelle immagini ufficiali recenti, da verificare): la cartella sul NAS deve essere scrivibile da quell'UID, oppure si imposta `user:` nel compose.
 - **Postgres** su `DB_DIR` solo su disco locale del NAS, non su una condivisione di rete (NFS/SMB).
 - I secret di firma dell'APK stanno solo nella CI (§11.1), non nello stack. Il certificato Data Protection (§4.1) sta nello stack ed è conservato con gli altri secret.
 
@@ -781,6 +781,7 @@ Passando da `env_file` i valori arrivano ai container così come sono; la passwo
 | Variabile | Obbligatoria | Note |
 |---|---|---|
 | `WEB_ROOT`, `PORT` | sì | cartella dei dati e porta sull'host |
+| `COVERS_DIR` | sì | cartella delle copertine relativa a `WEB_ROOT`, uguale a `imgDir` |
 | `DB_DIR`, `BACKUP_DIR`, `BACKUP_KEEP` | sì / sì / no (14) | cartelle sul NAS |
 | `SECRETS_DIR` | no | cartella con `db.env` e `api.env`, se non si usano i Secret di Komodo |
 | `STACK_SUBNET` | no | subnet fissa della rete dello stack |
@@ -860,7 +861,7 @@ Una route in più **prima** del forward auth, per l'app:
 
 - `pg_dump -Fc` notturno con rotazione nella cartella `BACKUP_DIR` sul NAS (inclusa nei backup del NAS).
 - Ripristino documentato: `pg_restore --clean -d cinema` sul servizio `db`.
-- Le copertine stanno già in `assets/covers/` sul NAS.
+- Le copertine stanno già nella cartella del sito sul NAS (`COVERS_DIR`).
 - Il `.tc` di Tellico resta comunque un backup indipendente della collezione (ESPORTA CSV `all` per i film non ancora in Tellico).
 
 ## 13. Test

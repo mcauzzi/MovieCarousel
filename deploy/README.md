@@ -24,11 +24,14 @@ Le immagini le pubblica GitHub Actions a ogni push su `master`; Komodo aggiorna 
 Via SSH sul NAS. Sostituisci i percorsi con i tuoi; `WEB_ROOT` è la cartella che usi già oggi per il sito.
 
 ```sh
-WEB_ROOT=/percorso/sito                         # quella di oggi, con config.json e assets/
+WEB_ROOT=/percorso/sito                   # quella di oggi, con config.json
+COVERS_DIR=<cartella-copertine>           # relativa a WEB_ROOT, la stessa di imgDir in config.json
 sudo mkdir -p /percorso/db /percorso/backup
-sudo chown -R 1654:1654 "$WEB_ROOT/assets/covers"   # l'API ci scrive le copertine (utente 1654)
+sudo chown -R 1654:1654 "$WEB_ROOT/$COVERS_DIR"   # l'API ci scrive le copertine (utente 1654)
 ```
 
+- `COVERS_DIR` è il percorso che hai in `imgDir` di `config.json`, senza `./` iniziale e senza `/`
+  finale: con `"imgDir": "./assets/copertine/"` è `assets/copertine`.
 - La cartella del DB deve stare su un disco locale del NAS, non su una condivisione di rete.
 - In `WEB_ROOT/config.json` aggiungi `"apiBase": "./api/"`: il sito legge la collezione dal DB invece
   che dal `.tc` (esempio in [`config.example.json`](../config.example.json)).
@@ -158,6 +161,7 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 ```ini
 # Cartelle sul NAS (passo 1)
 WEB_ROOT = /percorso/sito
+COVERS_DIR = <cartella-copertine>
 DB_DIR = /percorso/db
 BACKUP_DIR = /percorso/backup
 
@@ -249,8 +253,8 @@ sito e Android chiede conferma.
 ## Backup e ripristino
 
 Ogni notte alle 03:30 `backup.sh` salva un dump in `BACKUP_DIR` (`cinema-AAAAMMGG-HHMM.dump`), lo
-verifica e tiene gli ultimi 14. Includi `BACKUP_DIR` nei backup del NAS. Le copertine sono già in
-`assets/covers/`.
+verifica e tiene gli ultimi 14. Includi `BACKUP_DIR` nei backup del NAS. Le copertine sono già nella
+cartella del sito (`COVERS_DIR`).
 
 Dump manuale (fuori dalla rotazione):
 
@@ -275,7 +279,8 @@ docker start <stack>-api-1
 
 | Variabile | Cosa |
 |---|---|
-| `WEB_ROOT` | cartella del sito sul NAS (`config.json`, `assets/`) |
+| `WEB_ROOT` | cartella del sito sul NAS (`config.json`, collezione, copertine) |
+| `COVERS_DIR` | cartella delle copertine relativa a `WEB_ROOT`, la stessa di `imgDir` in `config.json` |
 | `DB_DIR` | dati di Postgres, disco locale |
 | `BACKUP_DIR` | dump notturni |
 | `PUBLIC_BASE_URL` | indirizzo pubblico del sito (`https://<host-sito>`) |
