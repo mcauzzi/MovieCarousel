@@ -18,9 +18,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
     },
   },
-  // Config a livello di repo (eslint.config.js) gira in Node, non nel browser.
+  // Config a livello di repo (eslint.config.js) e script in scripts/ girano in Node, non nel browser.
   {
-    files: ['*.js'],
+    files: ['*.js', 'scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
   prettier,
