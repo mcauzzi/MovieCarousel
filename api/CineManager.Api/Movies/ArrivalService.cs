@@ -6,7 +6,6 @@ using CineManager.Api.Import;
 using CineManager.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Npgsql;
 
 namespace CineManager.Api.Movies;
 
@@ -38,6 +37,7 @@ public sealed class ArrivalService(
     TimeProvider clock, ILogger<ArrivalService> log)
 {
     private static readonly HashSet<string> CreateKeys = ["ean", "tmdbId", "posterPath", "movie", "confirmDuplicate"];
+    private static readonly HashSet<string> PatchKeys = ["movie"];
 
     /// <summary>Tempo massimo per scaricare la copertina, indipendente dalla richiesta dell'app.</summary>
     public static readonly TimeSpan CoverTimeout = TimeSpan.FromSeconds(30);
@@ -49,24 +49,17 @@ public sealed class ArrivalService(
 
     public async Task<ArrivalOutcome> CreateAsync(JsonElement body, string ownerSub, Guid deviceId, CancellationToken ct)
     {
-        if (body.ValueKind != JsonValueKind.Object) return new ArrivalOutcome.Invalid("Il corpo deve essere un oggetto JSON.");
-        if (JsonSafety.Problem(body) is { } unsafeJson) return new ArrivalOutcome.Invalid(unsafeJson);
-        foreach (var p in body.EnumerateObject())
-            if (!CreateKeys.Contains(p.Name)) return new ArrivalOutcome.Invalid($"Proprietà sconosciuta: '{p.Name}'.");
-
-        if (!body.TryGetProperty("movie", out var movieEl) || movieEl.ValueKind != JsonValueKind.Object)
-            return new ArrivalOutcome.Invalid("'movie' mancante o non è un oggetto.");
+        if (ReadBody(body, CreateKeys, out var movieEl) is { } badBody) return badBody;
 
         string? ean = null;
         if (body.TryGetProperty("ean", out var eanEl) && eanEl.ValueKind != JsonValueKind.Null)
         {
-            var raw = eanEl.ValueKind switch
+            ean = EanNormalizer.Normalize(eanEl.ValueKind switch
             {
                 JsonValueKind.String => eanEl.GetString(),
                 JsonValueKind.Number => eanEl.GetRawText(),
                 _ => null,
-            };
-            ean = EanNormalizer.Normalize(raw);
+            });
             if (ean is null || !MovieValidator.IsValidEan(ean)) return new ArrivalOutcome.Invalid("'ean' non valido (8–14 cifre).");
         }
 
@@ -94,24 +87,20 @@ public sealed class ArrivalService(
             confirm = confirmEl.GetBoolean();
         }
 
-        var fields = await FieldCatalog.LoadAsync(db, ct);
-        var validator = new MovieValidator(fields, BarcodeField, clock.GetLocalNow().Year);
-        var result = validator.Validate((JsonObject)JsonNode.Parse(movieEl.GetRawText())!, allowBarcode: false);
-        if (!result.Ok) return new ArrivalOutcome.Invalid("Campi non validi.", result.Errors);
+        var result = await ValidateAsync(movieEl, allowBarcode: false, ct);
+        if (!result.Ok) return FieldErrors(result.Errors);
 
         var data = new JsonObject();
         foreach (var (k, v) in result.Values)
             if (v is not null) data[k] = v;
-        if (TitleOf(data) is null)
-            return new ArrivalOutcome.Invalid("Campi non validi.", new() { ["title"] = ["Il titolo è obbligatorio."] });
+        if (TitleOf(data) is null) return MissingTitle();
 
         Movie movie;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             // Condiviso: niente arrivi a metà di un import o di un export (che lo prendono esclusivo).
             await CollectionLock.SharedAsync(db, ct);
-            if (ean is not null && await EanHolderAsync(ean, null, ct) is { } holder)
-                return new ArrivalOutcome.EanConflict(holder.Id, holder.Title);
+            if (ean is not null && await EanConflictAsync(ean, null, ct) is { } conflict) return conflict;
             if (!confirm)
             {
                 var dups = await DuplicateFinder.FindAsync(db, data, tmdbId, null, ct);
@@ -120,7 +109,7 @@ public sealed class ArrivalService(
 
             // cdate = data di inserimento: il film compare tra le novità come quelli di Tellico.
             data["cdate"] = clock.GetLocalNow().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            if (ean is not null) data[BarcodeField] = ean;
+            Movie.SetBarcode(data, BarcodeField, ean);
 
             // created_at letto dopo il lock: il cutoff dell'export (preso con il lock esclusivo) lo separa con certezza.
             var now = clock.GetUtcNow();
@@ -138,8 +127,7 @@ public sealed class ArrivalService(
                     await db.SaveChangesAsync(ct); // in una transazione EF usa un savepoint: si può riprovare
                     break;
                 }
-                catch (DbUpdateException ex) when (ex.InnerException is PostgresException
-                    { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "pk_movies" } && attempt < MaxIdAttempts)
+                catch (DbUpdateException ex) when (ex.IsUniqueViolation("pk_movies") && attempt < MaxIdAttempts)
                 {
                     // Id già preso (es. un id Tellico importato prima dell'allineamento della sequenza).
                     log.LogWarning("Id {Id} già occupato: nuovo valore dalla sequenza", movie.Id);
@@ -147,11 +135,11 @@ public sealed class ArrivalService(
                     movie.Id = await db.NextMovieIdAsync(ct);
                     db.Movies.Add(movie);
                 }
-                catch (DbUpdateException ex) when (ean is not null && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+                catch (DbUpdateException ex) when (ean is not null && ex.IsUniqueViolation())
                 {
                     // Stesso EAN inserito nel frattempo da un'altra richiesta.
                     db.ChangeTracker.Clear();
-                    if (await EanHolderAsync(ean, null, ct) is { } h) return new ArrivalOutcome.EanConflict(h.Id, h.Title);
+                    if (await EanConflictAsync(ean, null, ct) is { } raced) return raced;
                     throw;
                 }
             }
@@ -204,38 +192,24 @@ public sealed class ArrivalService(
         var movie = await db.Movies.FirstOrDefaultAsync(m => m.Id == id, ct);
         if (CheckAccess(movie, sub, isAdmin) is { } denied) return denied;
 
-        if (body.ValueKind != JsonValueKind.Object) return new ArrivalOutcome.Invalid("Il corpo deve essere un oggetto JSON.");
-        if (JsonSafety.Problem(body) is { } unsafeJson) return new ArrivalOutcome.Invalid(unsafeJson);
-        foreach (var p in body.EnumerateObject())
-            if (p.Name != "movie") return new ArrivalOutcome.Invalid($"Proprietà sconosciuta: '{p.Name}'.");
-        if (!body.TryGetProperty("movie", out var movieEl) || movieEl.ValueKind != JsonValueKind.Object)
-            return new ArrivalOutcome.Invalid("'movie' mancante o non è un oggetto.");
+        if (ReadBody(body, PatchKeys, out var movieEl) is { } badBody) return badBody;
+        var result = await ValidateAsync(movieEl, allowBarcode: true, ct);
+        if (!result.Ok) return FieldErrors(result.Errors);
 
-        var fields = await FieldCatalog.LoadAsync(db, ct);
-        var validator = new MovieValidator(fields, BarcodeField, clock.GetLocalNow().Year);
-        var result = validator.Validate((JsonObject)JsonNode.Parse(movieEl.GetRawText())!, allowBarcode: true);
-        if (!result.Ok) return new ArrivalOutcome.Invalid("Campi non validi.", result.Errors);
-
-        var data = JsonNode.Parse(movie!.Data) as JsonObject ?? new JsonObject();
+        var data = Movie.ParseData(movie!.Data);
         foreach (var (k, v) in result.Values)
         {
             if (v is null) data.Remove(k);
             else data[k] = v;
         }
-        if (TitleOf(data) is null)
-            return new ArrivalOutcome.Invalid("Campi non validi.", new() { ["title"] = ["Il titolo è obbligatorio."] });
+        if (TitleOf(data) is null) return MissingTitle();
 
         if (result.HasEan && result.Ean != movie.Ean)
         {
-            if (result.Ean is not null && await EanHolderAsync(result.Ean, movie.Id, ct) is { } holder)
-                return new ArrivalOutcome.EanConflict(holder.Id, holder.Title);
+            if (result.Ean is not null && await EanConflictAsync(result.Ean, movie.Id, ct) is { } conflict) return conflict;
             movie.Ean = result.Ean;
         }
-        if (result.HasEan)
-        {
-            if (movie.Ean is null) data.Remove(BarcodeField);
-            else data[BarcodeField] = movie.Ean;
-        }
+        if (result.HasEan) Movie.SetBarcode(data, BarcodeField, movie.Ean);
 
         movie.Data = data.ToJsonString();
         movie.UpdatedAt = clock.GetUtcNow();
@@ -243,11 +217,10 @@ public sealed class ArrivalService(
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             db.ChangeTracker.Clear();
-            if (result.Ean is not null && await EanHolderAsync(result.Ean, id, ct) is { } h)
-                return new ArrivalOutcome.EanConflict(h.Id, h.Title);
+            if (result.Ean is not null && await EanConflictAsync(result.Ean, id, ct) is { } raced) return raced;
             throw;
         }
         await tx.CommitAsync(ct);
@@ -270,6 +243,27 @@ public sealed class ArrivalService(
         return new ArrivalOutcome.Deleted();
     }
 
+    /// <summary>Oggetto JSON, senza NUL né chiavi duplicate, solo con <paramref name="keys"/> e con <c>movie</c> oggetto.</summary>
+    private static ArrivalOutcome.Invalid? ReadBody(JsonElement body, HashSet<string> keys, out JsonElement movie)
+    {
+        movie = default;
+        if (body.ValueKind != JsonValueKind.Object) return new("Il corpo deve essere un oggetto JSON.");
+        if (JsonSafety.Problem(body) is { } unsafeJson) return new(unsafeJson);
+        foreach (var p in body.EnumerateObject())
+            if (!keys.Contains(p.Name)) return new($"Proprietà sconosciuta: '{p.Name}'.");
+        if (!body.TryGetProperty("movie", out movie) || movie.ValueKind != JsonValueKind.Object)
+            return new("'movie' mancante o non è un oggetto.");
+        return null;
+    }
+
+    private async Task<MovieValidator.Result> ValidateAsync(JsonElement movie, bool allowBarcode, CancellationToken ct) =>
+        new MovieValidator(await FieldCatalog.LoadAsync(db, ct), BarcodeField, clock.GetLocalNow().Year)
+            .Validate((JsonObject)JsonNode.Parse(movie.GetRawText())!, allowBarcode);
+
+    private static ArrivalOutcome.Invalid FieldErrors(Dictionary<string, string[]> errors) => new("Campi non validi.", errors);
+
+    private static ArrivalOutcome.Invalid MissingTitle() => FieldErrors(new() { ["title"] = ["Il titolo è obbligatorio."] });
+
     /// <summary>
     /// Esiste, è un arrivo dall'app, è dell'utente (o l'utente è admin). La sorgente si controlla
     /// prima del proprietario: un film di Tellico dà 409 a chiunque, come da contratto.
@@ -282,12 +276,12 @@ public sealed class ArrivalService(
         return null;
     }
 
-    private async Task<(int Id, string? Title)?> EanHolderAsync(string ean, int? excludeId, CancellationToken ct)
+    /// <summary>409 se un altro film (diverso da <paramref name="excludeId"/>) ha già l'EAN.</summary>
+    private async Task<ArrivalOutcome.EanConflict?> EanConflictAsync(string ean, int? excludeId, CancellationToken ct)
     {
         var row = await db.Movies.AsNoTracking().Where(m => m.Ean == ean && m.Id != excludeId)
             .Select(m => new { m.Id, m.Data }).FirstOrDefaultAsync(ct);
-        if (row is null) return null;
-        return (row.Id, TitleOf(JsonNode.Parse(row.Data) as JsonObject ?? new JsonObject()));
+        return row is null ? null : new(row.Id, TitleOf(Movie.ParseData(row.Data)));
     }
 
     private static string? TitleOf(JsonObject data) =>
@@ -301,14 +295,7 @@ public sealed class ArrivalService(
             .ToDictionaryAsync(u => u.Sub, u => u.DisplayName ?? u.Username, ct);
     }
 
-    public static JsonObject MovieJson(Movie m)
-    {
-        var obj = JsonNode.Parse(m.Data) as JsonObject ?? new JsonObject();
-        obj["id"] = m.Id;
-        return obj;
-    }
-
     private static ArrivalDto ToDto(Movie m, Dictionary<string, string> names) => new(
         m.Id, m.Ean, m.TmdbId, m.Source, m.CreatedAt, m.CreatedBy,
-        m.CreatedBy is { } s && names.TryGetValue(s, out var n) ? n : null, m.ExportedAt, MovieJson(m));
+        m.CreatedBy is { } s && names.TryGetValue(s, out var n) ? n : null, m.ExportedAt, Movie.ToJson(m.Id, m.Data));
 }

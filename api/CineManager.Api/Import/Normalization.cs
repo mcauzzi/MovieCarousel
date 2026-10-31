@@ -34,12 +34,8 @@ public static class TitleNormalizer
     }
 
     /// <summary>Chiave titolo + anno; null se il titolo è vuoto.</summary>
-    public static string? Key(JsonObject data)
-    {
-        var title = Normalize(AsString(data["title"]));
-        if (title.Length == 0) return null;
-        return title + "|" + YearOf(data);
-    }
+    public static string? Key(JsonObject data) =>
+        Normalize(AsString(data["title"])) is { Length: > 0 } title ? title + "|" + YearOf(data) : null;
 
     internal static string YearOf(JsonObject data)
     {

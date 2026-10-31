@@ -20,26 +20,21 @@ namespace CineManager.Api.Tests.Support;
 /// </summary>
 public sealed class DbFactAttribute : FactAttribute
 {
-    public DbFactAttribute()
-    {
-        if (TestDb.BaseConnection is null)
-            Skip = "CINEMA_TEST_CONNECTION non impostata: test d'integrazione con Postgres saltato.";
-    }
+    public DbFactAttribute() => Skip = TestDb.SkipReason;
 }
 
 public sealed class DbTheoryAttribute : TheoryAttribute
 {
-    public DbTheoryAttribute()
-    {
-        if (TestDb.BaseConnection is null)
-            Skip = "CINEMA_TEST_CONNECTION non impostata: test d'integrazione con Postgres saltato.";
-    }
+    public DbTheoryAttribute() => Skip = TestDb.SkipReason;
 }
 
 public static class TestDb
 {
     public static string? BaseConnection =>
         Environment.GetEnvironmentVariable("CINEMA_TEST_CONNECTION") is { Length: > 0 } s ? s : null;
+
+    public static string? SkipReason => BaseConnection is null
+        ? "CINEMA_TEST_CONNECTION non impostata: test d'integrazione con Postgres saltato." : null;
 
     /// <summary>Connection string verso un database nuovo con nome univoco (creato dalle migrazioni).</summary>
     public static string NewDatabase()
@@ -108,11 +103,7 @@ public class ApiFactory : WebApplicationFactory<Program>
         return c;
     }
 
-    public async Task WithDbAsync(Func<CinemaDbContext, Task> action)
-    {
-        using var scope = Services.CreateScope();
-        await action(scope.ServiceProvider.GetRequiredService<CinemaDbContext>());
-    }
+    public Task WithDbAsync(Func<CinemaDbContext, Task> action) => WithDbAsync(async db => { await action(db); return 0; });
 
     public async Task<T> WithDbAsync<T>(Func<CinemaDbContext, Task<T>> action)
     {
@@ -160,19 +151,21 @@ public sealed class TestAuthHandler(
 }
 
 /// <summary>Fixture di classe: un host + database per classe di test, creato solo se Postgres è disponibile.</summary>
-public sealed class ApiFixture : IDisposable
+public class HostFixture<T> : IDisposable where T : ApiFactory, new()
 {
-    private readonly Lazy<ApiFactory> _factory = new(() =>
+    private readonly Lazy<T> _factory = new(() =>
     {
-        var f = new ApiFactory();
+        var f = new T();
         f.CreateClient().Dispose(); // avvia l'host e applica le migrazioni
         return f;
     });
 
-    public ApiFactory Factory => _factory.Value;
+    public T Factory => _factory.Value;
 
     public void Dispose()
     {
         if (_factory.IsValueCreated) _factory.Value.Dispose();
     }
 }
+
+public sealed class ApiFixture : HostFixture<ApiFactory>;

@@ -93,10 +93,13 @@ public static class HostingSetup
         var pairGlobal = cfg.GetValue("RateLimit:PairGlobal", 30);
         var lookupPerDevice = cfg.GetValue("RateLimit:LookupPerDevice", 60);
 
-        static FixedWindowRateLimiterOptions PerMinute(int n) => new()
-        {
-            PermitLimit = n, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
-        };
+        static PartitionedRateLimiter<HttpContext> PerMinute(Func<HttpContext, bool> applies, Func<HttpContext, string> key, int n) =>
+            PartitionedRateLimiter.Create<HttpContext, string>(ctx => applies(ctx)
+                ? RateLimitPartition.GetFixedWindowLimiter(key(ctx), _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = n, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+                })
+                : RateLimitPartition.GetNoLimiter(""));
         static string Ip(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         static bool IsPair(HttpContext ctx) =>
             ctx.Request.Path.Equals("/api/app/pair", StringComparison.OrdinalIgnoreCase);
@@ -108,18 +111,10 @@ public static class HostingSetup
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             o.GlobalLimiter = PartitionedRateLimiter.CreateChained(
-                PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-                    RateLimitPartition.GetFixedWindowLimiter("ip:" + Ip(ctx), _ => PerMinute(perMinute))),
-                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsPair(ctx)
-                    ? RateLimitPartition.GetFixedWindowLimiter("pair-ip:" + Ip(ctx), _ => PerMinute(pairPerIp))
-                    : RateLimitPartition.GetNoLimiter("")),
-                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsPair(ctx)
-                    ? RateLimitPartition.GetFixedWindowLimiter("pair", _ => PerMinute(pairGlobal))
-                    : RateLimitPartition.GetNoLimiter("")),
-                PartitionedRateLimiter.Create<HttpContext, string>(ctx => IsLookup(ctx)
-                    ? RateLimitPartition.GetFixedWindowLimiter("lookup:" + Ip(ctx) + "|" + (UnverifiedDeviceKey(ctx) ?? "-"),
-                        _ => PerMinute(lookupPerDevice))
-                    : RateLimitPartition.GetNoLimiter("")));
+                PerMinute(_ => true, ctx => "ip:" + Ip(ctx), perMinute),
+                PerMinute(IsPair, ctx => "pair-ip:" + Ip(ctx), pairPerIp),
+                PerMinute(IsPair, _ => "pair", pairGlobal),
+                PerMinute(IsLookup, ctx => "lookup:" + Ip(ctx) + "|" + (UnverifiedDeviceKey(ctx) ?? "-"), lookupPerDevice));
             o.OnRejected = async (ctx, ct) =>
             {
                 if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))

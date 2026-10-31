@@ -41,11 +41,8 @@ builder.Services.AddScoped<ArrivalService>();
 // Corpo massimo di default 1 MB; gli import alzano il limite con [RequestSizeLimit].
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 1024 * 1024);
 
-if (!builder.Environment.IsDevelopment())
-{
-    if (string.IsNullOrWhiteSpace(builder.Configuration["Covers:Path"]))
-        throw new InvalidOperationException("Covers__Path mancante.");
-}
+if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(builder.Configuration["Covers:Path"]))
+    throw new InvalidOperationException("Covers__Path mancante.");
 
 builder.AddCineForwardedHeaders();
 builder.AddCineDataProtection();

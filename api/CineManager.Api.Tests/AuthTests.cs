@@ -86,17 +86,7 @@ public sealed class ProductionFactory : ApiFactory
     }
 }
 
-public sealed class ProductionFixture : IDisposable
-{
-    private readonly Lazy<ProductionFactory> _f = new(() =>
-    {
-        var f = new ProductionFactory();
-        f.CreateClient().Dispose();
-        return f;
-    });
-    public ProductionFactory Factory => _f.Value;
-    public void Dispose() { if (_f.IsValueCreated) _f.Value.Dispose(); }
-}
+public sealed class ProductionFixture : HostFixture<ProductionFactory>;
 
 public class ProductionAuthTests(ProductionFixture fx) : IClassFixture<ProductionFixture>
 {

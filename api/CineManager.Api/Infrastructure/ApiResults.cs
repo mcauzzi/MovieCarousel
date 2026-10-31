@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using CineManager.Api.Auth;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace CineManager.Api.Infrastructure;
 
@@ -12,4 +14,9 @@ public static class ApiResults
 
     /// <summary><c>sub</c> dell'utente autenticato (sito o proprietario del dispositivo).</summary>
     public static string Sub(this ClaimsPrincipal user) => user.FindFirst(CmClaims.Sub)!.Value;
+
+    /// <summary>Violazione di un vincolo unique (di <paramref name="constraint"/>, se indicato).</summary>
+    public static bool IsUniqueViolation(this DbUpdateException ex, string? constraint = null) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg &&
+        (constraint is null || pg.ConstraintName == constraint);
 }

@@ -69,10 +69,13 @@ public static class AuthSetup
             // Durata assoluta: senza rinnovo i gruppi vengono riletti almeno ogni 12 ore (§4.1).
             o.ExpireTimeSpan = SessionLifetime;
             o.SlidingExpiration = false;
-            o.Events.OnRedirectToLogin = ctx => WriteStatus(ctx.HttpContext, StatusCodes.Status401Unauthorized);
-            o.Events.OnRedirectToAccessDenied = ctx => WriteStatus(ctx.HttpContext, StatusCodes.Status403Forbidden);
-            o.Events.OnRedirectToLogout = ctx => { ctx.Response.StatusCode = 204; return Task.CompletedTask; };
-            o.Events.OnRedirectToReturnUrl = ctx => { ctx.Response.StatusCode = 204; return Task.CompletedTask; };
+            // Solo lo stato: il corpo problem+json di 401/403 lo scrive UseStatusCodePages.
+            static Func<RedirectContext<CookieAuthenticationOptions>, Task> Status(int code) =>
+                ctx => { ctx.Response.StatusCode = code; return Task.CompletedTask; };
+            o.Events.OnRedirectToLogin = Status(StatusCodes.Status401Unauthorized);
+            o.Events.OnRedirectToAccessDenied = Status(StatusCodes.Status403Forbidden);
+            o.Events.OnRedirectToLogout = Status(StatusCodes.Status204NoContent);
+            o.Events.OnRedirectToReturnUrl = Status(StatusCodes.Status204NoContent);
             o.Events.OnSigningIn = OnSigningIn;
             o.Events.OnValidatePrincipal = OnValidatePrincipal;
         });
@@ -145,12 +148,6 @@ public static class AuthSetup
         var mode = new AuthMode(devAuth, oidcEnabled);
         builder.Services.AddSingleton(mode);
         return mode;
-    }
-
-    private static Task WriteStatus(HttpContext ctx, int status)
-    {
-        ctx.Response.StatusCode = status;
-        return Task.CompletedTask; // il corpo problem+json lo scrive UseStatusCodePages
     }
 
     /// <summary>

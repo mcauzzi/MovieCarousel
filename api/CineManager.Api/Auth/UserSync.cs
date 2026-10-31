@@ -1,7 +1,7 @@
 using CineManager.Api.Data;
+using CineManager.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Npgsql;
 
 namespace CineManager.Api.Auth;
 
@@ -33,8 +33,7 @@ public sealed class UserSync(CinemaDbContext db, IMemoryCache cache, TimeProvide
                 cache.Set(StampKey(sub), user.SecurityStamp, TimeSpan.FromMinutes(1));
                 return user.SecurityStamp;
             }
-            catch (DbUpdateException ex) when (attempt == 0 && ex.InnerException is PostgresException
-                                                   { SqlState: PostgresErrorCodes.UniqueViolation })
+            catch (DbUpdateException ex) when (attempt == 0 && ex.IsUniqueViolation())
             {
                 // Due login simultanei dello stesso utente: si riprova come aggiornamento.
                 db.ChangeTracker.Clear();

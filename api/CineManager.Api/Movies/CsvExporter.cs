@@ -77,17 +77,8 @@ public static class CsvExporter
         return s;
     }
 
-    private static void AppendLine(StringBuilder sb, IEnumerable<string> cells)
-    {
-        var first = true;
-        foreach (var c in cells)
-        {
-            if (!first) sb.Append(',');
-            first = false;
-            sb.Append(Quote(c));
-        }
-        sb.Append("\r\n");
-    }
+    private static void AppendLine(StringBuilder sb, IEnumerable<string> cells) =>
+        sb.AppendJoin(',', cells.Select(Quote)).Append("\r\n");
 
     /// <summary>Quoting RFC 4180: tra virgolette se contiene virgola, virgolette, a capo o spazi ai bordi.</summary>
     public static string Quote(string value)

@@ -171,21 +171,17 @@ public static class StateEndpoints
     private static bool TryParseId(string s, out int id) =>
         int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out id) && id > 0;
 
+    /// <summary>null oppure uno stato valido.</summary>
     private static bool TryReadStatus(JsonElement el, out string? status)
     {
-        status = null;
-        if (el.ValueKind == JsonValueKind.Null) return true;
-        if (el.ValueKind != JsonValueKind.String) return false;
-        status = el.GetString();
-        return status is Seen or Watchlist;
+        status = el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+        return el.ValueKind == JsonValueKind.Null || status is Seen or Watchlist;
     }
 
+    /// <summary>null oppure un intero da 1 a 5.</summary>
     private static bool TryReadRating(JsonElement el, out short? rating)
     {
-        rating = null;
-        if (el.ValueKind == JsonValueKind.Null) return true;
-        if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt16(out var v) || v is < 1 or > 5) return false;
-        rating = v;
-        return true;
+        rating = el.ValueKind == JsonValueKind.Number && el.TryGetInt16(out var v) && v is >= 1 and <= 5 ? v : null;
+        return el.ValueKind == JsonValueKind.Null || rating is not null;
     }
 }

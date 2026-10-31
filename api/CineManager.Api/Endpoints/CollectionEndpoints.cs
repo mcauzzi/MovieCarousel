@@ -48,12 +48,7 @@ public static class CollectionEndpoints
         {
             var rows = await db.Movies.AsNoTracking().OrderBy(m => m.Id)
                 .Select(m => new { m.Id, m.Data }).ToListAsync(ct);
-            var movies = rows.Select(r =>
-            {
-                var obj = JsonNode.Parse(r.Data) as JsonObject ?? new JsonObject();
-                obj["id"] = r.Id;
-                return obj;
-            }).ToList();
+            var movies = rows.Select(r => Movie.ToJson(r.Id, r.Data)).ToList();
             // Stesso catalogo di /api/fields (campi standard prima del primo import).
             var fields = (await FieldCatalog.LoadAsync(db, ct)).Select(FieldEndpoints.ToDto).ToList();
             return new CollectionResponse(movies, fields);

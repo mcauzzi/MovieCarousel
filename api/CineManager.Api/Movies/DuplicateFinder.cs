@@ -25,7 +25,7 @@ public static class DuplicateFinder
     }
 
     public static async Task<List<DuplicateCandidate>> FindAsync(CinemaDbContext db, JsonObject draft, int? tmdbId,
-        string? ean, CancellationToken ct, int? excludeId = null)
+        string? ean, CancellationToken ct)
     {
         var key = TitleNormalizer.Key(draft);
         if (key is null && tmdbId is null && ean is null) return [];
@@ -35,25 +35,18 @@ public static class DuplicateFinder
         // (YearOf ne prende la parte intera). Senza anno serve leggere tutti i titoli.
         var conditions = new List<string>();
         var parameters = new List<object>();
-        if (tmdbId is not null)
+        void Add(string condition, NpgsqlParameter? parameter = null)
         {
-            conditions.Add("tmdb_id = @tmdb");
-            parameters.Add(new NpgsqlParameter("tmdb", tmdbId.Value));
+            conditions.Add(condition);
+            if (parameter is not null) parameters.Add(parameter);
         }
-        if (ean is not null)
-        {
-            conditions.Add("ean = @ean");
-            parameters.Add(new NpgsqlParameter("ean", ean));
-        }
+        if (tmdbId is not null) Add("tmdb_id = @tmdb", new NpgsqlParameter("tmdb", tmdbId.Value));
+        if (ean is not null) Add("ean = @ean", new NpgsqlParameter("ean", ean));
         if (key is not null)
         {
             var year = TitleNormalizer.YearOf(draft);
-            if (year.Length == 0) conditions.Add("TRUE");
-            else
-            {
-                conditions.Add("strpos(COALESCE(data->>'year', ''), @year) > 0");
-                parameters.Add(new NpgsqlParameter("year", year));
-            }
+            if (year.Length == 0) Add("TRUE");
+            else Add("strpos(COALESCE(data->>'year', ''), @year) > 0", new NpgsqlParameter("year", year));
         }
         // Solo condizioni costanti scritte qui sopra; i valori viaggiano come parametri.
         var sql = """
@@ -67,7 +60,6 @@ public static class DuplicateFinder
         var result = new List<DuplicateCandidate>();
         foreach (var r in rows)
         {
-            if (r.Id == excludeId) continue;
             var same = (tmdbId is not null && r.TmdbId == tmdbId) || (ean is not null && r.Ean == ean);
             if (!same && key is not null)
                 same = TitleNormalizer.Key(new JsonObject { ["title"] = r.Title, ["year"] = r.Year }) == key;

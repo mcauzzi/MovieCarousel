@@ -72,11 +72,7 @@ public sealed class DeviceAuthHandler(
         if (!string.Equals(token.Htu, RequestTarget(), StringComparison.Ordinal)) return Reject("htu_mismatch");
 
         var body = await ReadBodyAsync(ct);
-        if (body is null)
-        {
-            Context.Items[FailureKey] = Failure.TooLarge;
-            return AuthenticateResult.Fail("body_too_large");
-        }
+        if (body is null) return Fail(Failure.TooLarge, "body_too_large");
         if (body.Length > 0 && token.Bh is null) return Reject("bh_missing");
         if (token.Bh is not null &&
             !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(token.Bh),
@@ -90,17 +86,15 @@ public sealed class DeviceAuthHandler(
         var owner = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Sub == device.UserSub, ct);
         if (owner is null || !OwnerAuthorized(owner, clock.GetUtcNow()))
         {
-            Context.Items[FailureKey] = Failure.OwnerInactive;
             Logger.LogInformation("Dispositivo {Device}: proprietario {Sub} non più autorizzato", device.Id, device.UserSub);
-            return AuthenticateResult.Fail("owner_inactive");
+            return Fail(Failure.OwnerInactive, "owner_inactive");
         }
 
         // 6. versione minima dell'app (§11.1)
         if (await versions.GetMinSupportedCodeAsync(ct) is { } min && token.Av < min)
         {
-            Context.Items[FailureKey] = Failure.UpgradeRequired;
             Context.Items[MinVersionKey] = min;
-            return AuthenticateResult.Fail("upgrade_required");
+            return Fail(Failure.UpgradeRequired, "upgrade_required");
         }
 
         // 7. ultimo utilizzo
@@ -161,43 +155,34 @@ public sealed class DeviceAuthHandler(
 
     private AuthenticateResult Reject(string reason)
     {
-        Context.Items[FailureKey] = Failure.Unauthorized;
-        Context.Items[ReasonKey] = reason;
         Logger.LogInformation("Richiesta firmata rifiutata: {Reason}", reason);
+        return Fail(Failure.Unauthorized, reason);
+    }
+
+    private AuthenticateResult Fail(Failure kind, string reason)
+    {
+        Context.Items[FailureKey] = kind;
+        Context.Items[ReasonKey] = reason;
         return AuthenticateResult.Fail(reason);
     }
 
-    protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         var failure = Context.Items.TryGetValue(FailureKey, out var f) && f is Failure kind ? kind : Failure.Unauthorized;
-        switch (failure)
+        var ext = new Dictionary<string, object?>();
+        if (failure == Failure.UpgradeRequired) ext["minSupportedCode"] = Context.Items[MinVersionKey];
+        ext["reason"] = Context.Items.TryGetValue(ReasonKey, out var r) && r is string s ? s : "missing_token";
+        if (failure == Failure.Unauthorized) Response.Headers.WWWAuthenticate = "CM-Device";
+        var (status, title, detail) = failure switch
         {
-            case Failure.OwnerInactive:
-                await Problem(StatusCodes.Status403Forbidden, "Proprietario non autorizzato",
-                    "Il proprietario del dispositivo deve accedere di nuovo al sito.", "owner_inactive");
-                break;
-            case Failure.UpgradeRequired:
-                await Problem(StatusCodes.Status426UpgradeRequired, "Aggiornamento necessario",
-                    "Questa versione dell'app non è più supportata: installa l'aggiornamento.", "upgrade_required",
-                    new() { ["minSupportedCode"] = Context.Items[MinVersionKey] });
-                break;
-            case Failure.TooLarge:
-                await Problem(StatusCodes.Status413PayloadTooLarge, "Corpo troppo grande",
-                    $"Massimo {MaxBodyBytes / 1024} KB.", "body_too_large");
-                break;
-            default:
-                Response.Headers.WWWAuthenticate = "CM-Device";
-                var reason = Context.Items.TryGetValue(ReasonKey, out var r) && r is string s ? s : "missing_token";
-                await Problem(StatusCodes.Status401Unauthorized, "Richiesta firmata non valida",
-                    "Firma del dispositivo mancante, non valida, scaduta o già usata; o dispositivo revocato.", reason);
-                break;
-        }
-    }
-
-    private Task Problem(int status, string title, string detail, string reason, Dictionary<string, object?>? extra = null)
-    {
-        var ext = extra ?? new Dictionary<string, object?>();
-        ext["reason"] = reason;
+            Failure.OwnerInactive => (StatusCodes.Status403Forbidden, "Proprietario non autorizzato",
+                "Il proprietario del dispositivo deve accedere di nuovo al sito."),
+            Failure.UpgradeRequired => (StatusCodes.Status426UpgradeRequired, "Aggiornamento necessario",
+                "Questa versione dell'app non è più supportata: installa l'aggiornamento."),
+            Failure.TooLarge => (StatusCodes.Status413PayloadTooLarge, "Corpo troppo grande", $"Massimo {MaxBodyBytes / 1024} KB."),
+            _ => (StatusCodes.Status401Unauthorized, "Richiesta firmata non valida",
+                "Firma del dispositivo mancante, non valida, scaduta o già usata; o dispositivo revocato."),
+        };
         return Results.Problem(statusCode: status, title: title, detail: detail, extensions: ext).ExecuteAsync(Context);
     }
 }

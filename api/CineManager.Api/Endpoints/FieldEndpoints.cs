@@ -131,16 +131,12 @@ public static partial class FieldEndpoints
                     f.Title = t;
                     break;
                 case "multiple" when creating:
-                    if (v.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return "'multiple' deve essere un booleano.";
-                    f.Multiple = v.GetBoolean();
-                    break;
                 case "groupable":
-                    if (v.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return "'groupable' deve essere un booleano.";
-                    f.Groupable = v.GetBoolean();
-                    break;
                 case "inForm":
-                    if (v.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return "'inForm' deve essere un booleano.";
-                    f.InForm = v.GetBoolean();
+                    if (v.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"'{p.Name}' deve essere un booleano.";
+                    if (p.Name == "multiple") f.Multiple = v.GetBoolean();
+                    else if (p.Name == "groupable") f.Groupable = v.GetBoolean();
+                    else f.InForm = v.GetBoolean();
                     break;
                 case "groupMinSize":
                     if (v.ValueKind != JsonValueKind.Number || !v.TryGetInt32(out var g) || g is < 1 or > 1000)

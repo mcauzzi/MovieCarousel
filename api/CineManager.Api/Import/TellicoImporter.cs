@@ -28,7 +28,7 @@ public sealed class TellicoImporter(
         public Movie Movie { get; } = movie;
         public bool Claimed { get; set; }
         private JsonObject? _data;
-        public JsonObject Data => _data ??= JsonNode.Parse(Movie.Data) as JsonObject ?? new JsonObject();
+        public JsonObject Data => _data ??= Movie.ParseData(Movie.Data);
         public void SetData(JsonObject data)
         {
             Movie.Data = data.ToJsonString();
@@ -62,7 +62,7 @@ public sealed class TellicoImporter(
         var preservedLocal = existingFields.Values
             .Where(f => f.Origin == FieldOrigins.Local && !incomingNames.Contains(f.Name))
             .Select(f => f.Name).ToList();
-        var fieldsUpdated = UpsertFields(fields, existingFields);
+        var fieldsUpdated = UpsertFields(fields, incomingNames, existingFields);
 
         // --- Film ----------------------------------------------------------------------------
         var all = (await db.Movies.ToListAsync(ct)).Select(m => new Tracked(m)).ToList();
@@ -133,7 +133,7 @@ public sealed class TellicoImporter(
                 if (ean is not null) await ReleaseEanAsync(ean, null, tid);
                 var id = tid;
                 while (byId.ContainsKey(id)) id = await db.NextMovieIdAsync(ct);
-                SetBarcode(newData, barcodeField, ean);
+                Movie.SetBarcode(newData, barcodeField, ean);
                 var movie = new Movie
                 {
                     Id = id, TellicoId = tid, Source = MovieSources.Tellico, Ean = ean,
@@ -180,7 +180,7 @@ public sealed class TellicoImporter(
                 await db.SaveChangesAsync(ct); // libera subito il vecchio EAN (vincolo unique)
                 changed = true;
             }
-            SetBarcode(newData, barcodeField, m.Ean);
+            Movie.SetBarcode(newData, barcodeField, m.Ean);
             if (m.Source != MovieSources.Tellico) { m.Source = MovieSources.Tellico; changed = true; }
             if (!JsonNode.DeepEquals(old, newData))
             {
@@ -249,13 +249,6 @@ public sealed class TellicoImporter(
         return result;
     }
 
-    /// <summary><c>data.&lt;campo codice a barre&gt;</c> coerente con la colonna <c>ean</c>.</summary>
-    private static void SetBarcode(JsonObject data, string barcodeField, string? ean)
-    {
-        if (ean is null) data.Remove(barcodeField);
-        else data[barcodeField] = ean;
-    }
-
     /// <summary>
     /// Cambia il <c>tellico_id</c> di un film tenendo aggiornato l'indice e salvando subito, così
     /// il valore liberato è riutilizzabile nella stessa transazione senza violare il vincolo unique.
@@ -287,7 +280,7 @@ public sealed class TellicoImporter(
     /// le preferenze del sito (groupable, group_min_size, in_form, ordinal) restano se già presenti.
     /// Un campo `local` omonimo diventa `tellico`; i campi `tellico` spariti dal .tc vengono rimossi.
     /// </summary>
-    private int UpsertFields(List<TellicoField> fields, Dictionary<string, CollectionField> existing)
+    private int UpsertFields(List<TellicoField> fields, HashSet<string> incoming, Dictionary<string, CollectionField> existing)
     {
         var count = 0;
         var nextOrdinal = existing.Count == 0 ? 0 : existing.Values.Max(f => f.Ordinal) + 1;
@@ -327,7 +320,6 @@ public sealed class TellicoImporter(
             count++;
         }
 
-        var incoming = fields.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var gone in existing.Values.Where(f => f.Origin == FieldOrigins.Tellico && !incoming.Contains(f.Name)))
         {
             db.CollectionFields.Remove(gone);

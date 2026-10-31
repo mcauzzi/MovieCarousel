@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
@@ -70,7 +69,7 @@ public static partial class ArrivalEndpoints
                 await tx.CommitAsync(ct);
             }
             var csv = CsvExporter.Write(fields, tellico.Value.BarcodeField,
-                movies.Select(m => new CsvExporter.Row(m.Ean, JsonNode.Parse(m.Data) as JsonObject ?? new JsonObject())));
+                movies.Select(m => new CsvExporter.Row(m.Ean, Movie.ParseData(m.Data))));
 
             var file = $"cinemanager-{scope}-{clock.GetLocalNow():yyyyMMdd-HHmm}.csv";
             ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{file}\"";
@@ -116,11 +115,8 @@ public static partial class ArrivalEndpoints
     private static bool TryParseCutoff(string s, out DateTimeOffset cutoff)
     {
         cutoff = default;
-        if (!IsoRegex().IsMatch(s) ||
-            !DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var parsed))
-            return false;
-        cutoff = parsed.ToUniversalTime();
-        return true;
+        return IsoRegex().IsMatch(s) &&
+               DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out cutoff);
     }
 
     /// <summary>Traduzione HTTP degli esiti di <see cref="ArrivalService"/>.</summary>
@@ -142,5 +138,4 @@ public static partial class ArrivalEndpoints
             title: "Non è un arrivo dall'app", detail: "Si possono correggere o eliminare solo i film con source = app."),
         _ => throw new InvalidOperationException("Esito sconosciuto: " + outcome),
     };
-
 }

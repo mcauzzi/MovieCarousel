@@ -63,9 +63,7 @@ public sealed partial class CoverStore(IOptions<CoversOptions> options, IWebHost
         return new ImagesImportResult(written, skipped);
     }
 
-    /// <summary>
-    /// Scrive (o sostituisce) un file in modo atomico: file temporaneo nella stessa cartella + rename.
-    /// </summary>
+    /// <summary>Scrive (o sostituisce) un file in modo atomico.</summary>
     public async Task WriteAtomicAsync(string name, ReadOnlyMemory<byte> bytes, CancellationToken ct)
     {
         if (!IsSafeName(name)) throw new ArgumentException("Nome file non valido.", nameof(name));
@@ -96,23 +94,20 @@ public sealed partial class CoverStore(IOptions<CoversOptions> options, IWebHost
     public static string AppCoverName(int movieId, string ext) => $"cm-{movieId}{ext}";
 
     /// <summary>Cancella le copertine <c>cm-&lt;id&gt;.*</c> di un film, tranne <paramref name="keep"/>.</summary>
-    public int DeleteAppCovers(int movieId, string? keep = null)
+    public void DeleteAppCovers(int movieId, string? keep = null)
     {
         var root = Root;
-        var deleted = 0;
         foreach (var ext in AppCoverExtensions)
         {
             var name = AppCoverName(movieId, ext);
             if (name == keep) continue;
             var path = Path.Combine(root, name);
-            try
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                if (File.Exists(path)) { File.Delete(path); deleted++; }
+                log.LogWarning(ex, "Copertina {Name} non cancellata", name);
             }
-            catch (IOException ex) { log.LogWarning(ex, "Copertina {Name} non cancellata", name); }
-            catch (UnauthorizedAccessException ex) { log.LogWarning(ex, "Copertina {Name} non cancellata", name); }
         }
-        return deleted;
     }
 
     private static string Truncate(string s) => s.Length <= 60 ? s : s[..60] + "…";

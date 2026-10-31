@@ -74,16 +74,8 @@ public sealed class MovieValidator
                 Err("Campo impostato dal server: non scrivibile.");
                 continue;
             }
-            if (!_fields.TryGetValue(name, out var field))
-            {
-                Err("Campo sconosciuto.");
-                continue;
-            }
-            if (field.Type is FieldTypes.Dependent or FieldTypes.Image)
-            {
-                Err("Campo non scrivibile.");
-                continue;
-            }
+            if (!_fields.TryGetValue(name, out var field)) { Err("Campo sconosciuto."); continue; }
+            if (field.Type is FieldTypes.Dependent or FieldTypes.Image) { Err("Campo non scrivibile."); continue; }
 
             if (IsEmptyValue(node)) { values[name] = null; continue; }
             var (value, error) = field.Type == FieldTypes.Table ? Table(field, node!) : MaybeMultiple(field, node!);
@@ -106,11 +98,7 @@ public sealed class MovieValidator
 
     private (JsonNode? Value, string? Error) MaybeMultiple(CollectionField field, JsonNode node)
     {
-        if (!field.Multiple)
-        {
-            if (node is JsonArray) return (null, "Il campo ammette un solo valore.");
-            return Scalar(field, node);
-        }
+        if (!field.Multiple) return node is JsonArray ? (null, "Il campo ammette un solo valore.") : Scalar(field, node);
         var items = node is JsonArray arr ? arr : new JsonArray(node.DeepClone());
         if (items.Count > MaxItems) return (null, $"Al massimo {MaxItems} valori.");
         var result = new JsonArray();
@@ -159,28 +147,22 @@ public sealed class MovieValidator
                     (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
                     return (null, "Serve un URL http(s) assoluto.");
                 return (JsonValue.Create(str), null);
-            case FieldTypes.Choice:
+            default: // choice, para, line e tipi sconosciuti
             {
                 if (str is null) return (null, "Serve un testo.");
-                if (str.Length > MaxLine) return (null, $"Al massimo {MaxLine} caratteri.");
-                if (field.Allowed is { Count: > 0 } allowed)
+                var max = field.Type == FieldTypes.Para ? MaxPara : MaxLine;
+                if (str.Length > max) return (null, $"Al massimo {max} caratteri.");
+                if (field.Type == FieldTypes.Choice && field.Allowed is { Count: > 0 } allowed)
                 {
                     var match = allowed.FirstOrDefault(a => a == str) ??
                                 allowed.FirstOrDefault(a => string.Equals(a, str, StringComparison.OrdinalIgnoreCase));
                     if (match is null) return (null, "Valore non ammesso: " + string.Join(", ", allowed) + ".");
                     str = match;
                 }
+                else if (field.Type is not (FieldTypes.Choice or FieldTypes.Para) && str.Any(char.IsControl))
+                    return (null, "Caratteri di controllo non ammessi.");
                 return (JsonValue.Create(str), null);
             }
-            case FieldTypes.Para:
-                if (str is null) return (null, "Serve un testo.");
-                if (str.Length > MaxPara) return (null, $"Al massimo {MaxPara} caratteri.");
-                return (JsonValue.Create(str), null);
-            default: // line e tipi sconosciuti
-                if (str is null) return (null, "Serve un testo.");
-                if (str.Length > MaxLine) return (null, $"Al massimo {MaxLine} caratteri.");
-                if (str.Any(char.IsControl)) return (null, "Caratteri di controllo non ammessi.");
-                return (JsonValue.Create(str), null);
         }
     }
 

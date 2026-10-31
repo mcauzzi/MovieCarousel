@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace CineManager.Api.Data;
 
 /// <summary>Film della collezione (§5, tabella <c>movies</c>).</summary>
@@ -24,6 +26,24 @@ public class Movie
     public string? CreatedBy { get; set; }
     public Guid? CreatedByDevice { get; set; }
     public DateTimeOffset? ExportedAt { get; set; }
+
+    /// <summary><paramref name="data"/> (colonna jsonb) come oggetto; vuoto se non lo è.</summary>
+    public static JsonObject ParseData(string data) => JsonNode.Parse(data) as JsonObject ?? new JsonObject();
+
+    /// <summary>Oggetto <c>Movie</c> del sito: <paramref name="data"/> più <c>id</c>.</summary>
+    public static JsonObject ToJson(int id, string data)
+    {
+        var obj = ParseData(data);
+        obj["id"] = id;
+        return obj;
+    }
+
+    /// <summary><c>data.&lt;campo codice a barre&gt;</c> coerente con la colonna <c>ean</c>.</summary>
+    public static void SetBarcode(JsonObject data, string barcodeField, string? ean)
+    {
+        if (ean is null) data.Remove(barcodeField);
+        else data[barcodeField] = ean;
+    }
 }
 
 public static class MovieSources

@@ -31,10 +31,7 @@ public class CinemaDbContext(DbContextOptions<CinemaDbContext> options)
 
         b.Entity<Movie>(e =>
         {
-            e.ToTable(t =>
-            {
-                t.HasCheckConstraint("ck_movies_source", "source IN ('tellico', 'app')");
-            });
+            e.ToTable(t => t.HasCheckConstraint("ck_movies_source", "source IN ('tellico', 'app')"));
             e.HasKey(m => m.Id);
             e.Property(m => m.Id).ValueGeneratedNever();
             e.Property(m => m.Data).HasColumnType("jsonb").IsRequired();

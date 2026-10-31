@@ -90,23 +90,7 @@ public class AppFactory : ApiFactory
     public HttpClient AppClient() => Client(user: null, csrf: false);
 }
 
-/// <summary>Fixture di classe per <see cref="AppFactory"/>.</summary>
-public sealed class AppFixture : IDisposable
-{
-    private readonly Lazy<AppFactory> _factory = new(() =>
-    {
-        var f = new AppFactory();
-        f.CreateClient().Dispose();
-        return f;
-    });
-
-    public AppFactory Factory => _factory.Value;
-
-    public void Dispose()
-    {
-        if (_factory.IsValueCreated) _factory.Value.Dispose();
-    }
-}
+public sealed class AppFixture : HostFixture<AppFactory>;
 
 /// <summary>Risposte TMDb registrate (ridotte) per "Il padrino".</summary>
 public static class TmdbFixtures

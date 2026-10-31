@@ -108,8 +108,8 @@ public static class TmdbMapper
                 if (name == "cast") draft[name] = value.DeepClone();
                 continue;
             }
-            var items = value is JsonArray a ? a.Select(Convert(field)).Where(v => v is not null).ToList() : [Convert(field)(value)];
-            items = items.Where(v => v is not null).ToList();
+            IEnumerable<JsonNode?> values = value is JsonArray a ? a : new[] { value };
+            var items = values.Select(Convert(field)).Where(v => v is not null).ToList();
             if (items.Count == 0) continue;
             draft[name] = field.Multiple ? new JsonArray(items.ToArray()) : items[0];
         }
