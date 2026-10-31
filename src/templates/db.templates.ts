@@ -37,13 +37,7 @@ export function confirmDialogTemplate(v: ConfirmView, onYes: () => void, onNo: (
     </div>`;
 }
 
-export function sessionNoticeTemplate(
-  visible: boolean,
-  message: string,
-  onLogin: () => void,
-  onDismiss: () => void
-): TemplateResult {
-  if (!visible) return html``;
+export function sessionNoticeTemplate(message: string, onLogin: () => void, onDismiss: () => void): TemplateResult {
   return html`
     <div class="cm-session-notice" role="alert">
       <span class="cm-session-msg">${message}</span>

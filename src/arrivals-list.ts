@@ -5,7 +5,7 @@ import { listTemplate } from './templates/arrivals-list.templates';
 import type { DraftValue, FormField, ListView } from './templates/arrivals-list.templates';
 import { confirmDialog } from './db-ui';
 import { coverUrl, isTrueValue } from './utils';
-import { sectionRoot, noticeFrom, reloadCollection } from './arrivals-shared';
+import { sectionRoot, noticeFrom, formError, reloadCollection, setError } from './arrivals-shared';
 import type { Section, SectionContext } from './arrivals-shared';
 
 /* Scheda ARRIVI: lista dei film dall'app (propri per l'utente, tutti per
@@ -58,7 +58,6 @@ function draftOf(f: FormField, raw: unknown): DraftValue {
     case 'bool': return isTrueValue(raw);
     case 'table':
       return rowsOf(raw).map(r => r.join('::').replace(/(::)+$/, '')).filter(Boolean).join('; ');
-    case 'list': return Array.isArray(raw) ? raw.map(String).join('; ') : raw == null ? '' : String(raw);
     default: return raw == null ? '' : Array.isArray(raw) ? raw.map(String).join('; ') : String(raw);
   }
 }
@@ -132,8 +131,7 @@ export function createListSection(ctx: SectionContext): ListSection {
       const items = await getArrivals(view.scope);
       if (n !== seq) return;
       view.items = items; // già dal più recente (API)
-      view.error = null;
-      view.sessionExpired = false;
+      setError(view, null);
     } catch (err) {
       if (n !== seq) return;
       view.items = view.items ?? [];
@@ -211,15 +209,11 @@ export function createListSection(ctx: SectionContext): ListSection {
       view.status = `«${updated?.movie?.title || title}» aggiornato.`;
       rerender();
       focusItemButton(e.movieId);
-      const warn = await reloadCollection(ctx);
-      if (warn) { view.error = warn; view.sessionExpired = false; }
+      await reloadCollection(ctx, view);
       if (stale) await load(); else rerender();
     } catch (err) {
       e.saving = false;
-      const n = noticeFrom(err, ctx);
-      e.error = n.error;
-      view.sessionExpired = n.sessionExpired;
-      if (n.sessionExpired) view.error = n.error;
+      e.error = formError(err, ctx, view);
       rerender();
     }
   }
@@ -244,8 +238,7 @@ export function createListSection(ctx: SectionContext): ListSection {
       view.busyId = null;
       rerender();
       el.querySelector<HTMLElement>('#arrivalsListTitle')?.focus();
-      const warn = await reloadCollection(ctx);
-      if (warn) { view.error = warn; view.sessionExpired = false; rerender(); }
+      if (await reloadCollection(ctx, view)) rerender();
     } catch (err) {
       view.busyId = null;
       Object.assign(view, noticeFrom(err, ctx));

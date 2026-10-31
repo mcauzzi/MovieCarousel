@@ -55,14 +55,13 @@ export interface ThemeCopy {
   statusExtracting: string;
   statusParsing: string;
   statusLoaded: (n: number) => string;
-  /** Pannello ARRIVI (modalità DB): parola accentata del titolo, frase sotto
-   *  "IMPORTA DA TELLICO", intestazione del riepilogo a import riuscito. */
+  /** Pannello ARRIVI (modalità DB): parola accentata del titolo; frase e
+   *  riepilogo di IMPORTA DA TELLICO; frase di COLLEGA UN TELEFONO e lista
+   *  senza dispositivi; frase e lista vuota della scheda ARRIVI; frase e
+   *  riepilogo di ESPORTA CSV. */
   arrivalsAccent: string;
   arrivalsLede: string;
   arrivalsDone: string;
-  /** Pannello ARRIVI, fase 3: frase sotto "COLLEGA UN TELEFONO", lista senza
-   *  dispositivi, frase e lista vuota della scheda ARRIVI, frase e intestazione
-   *  del riepilogo di ESPORTA CSV. */
   arrivalsPhoneLede: string;
   devicesEmpty: string;
   arrivalsListLede: string;

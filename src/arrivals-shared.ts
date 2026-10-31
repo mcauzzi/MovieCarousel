@@ -1,4 +1,5 @@
 import { ApiError, SessionExpiredError } from './api';
+import type { Notice } from './templates/arrivals-common.templates';
 
 /* Contratto comune alle sezioni del pannello ARRIVI (arrivals-*.ts).
    Ogni sezione possiede un elemento radice in cui lit-renderizza il proprio
@@ -55,14 +56,31 @@ export function noticeFrom(err: unknown, ctx: SectionContext): { error: string; 
   return { error: errorMessage(err), sessionExpired };
 }
 
+/** Errore di un modulo (mostrato nel modulo stesso): restituisce il messaggio;
+ *  con la sessione scaduta va anche nella sezione, che offre ACCEDI. */
+export function formError(err: unknown, ctx: SectionContext, view: Notice): string {
+  const n = noticeFrom(err, ctx);
+  view.sessionExpired = n.sessionExpired;
+  if (n.sessionExpired) view.error = n.error;
+  return n.error;
+}
+
+/** Imposta (o azzera, con null) l'errore di una sezione, senza ACCEDI. */
+export function setError(view: Notice, error: string | null): void {
+  view.error = error;
+  view.sessionExpired = false;
+}
+
 /** Ricarica la collezione dopo una modifica; un errore qui non annulla la
- *  modifica già salvata, quindi diventa solo un avviso. */
-export async function reloadCollection(ctx: SectionContext): Promise<string | null> {
+ *  modifica già salvata, quindi diventa solo un avviso in `view`.
+ *  true = avviso impostato (serve un nuovo render). */
+export async function reloadCollection(ctx: SectionContext, view: Notice): Promise<boolean> {
   try {
     await ctx.onCollectionChanged();
-    return null;
+    return false;
   } catch (err) {
     console.error(err);
-    return 'Salvato, ma la ricarica della collezione non è riuscita: usa ↻ Reload. (' + errorMessage(err) + ')';
+    setError(view, 'Salvato, ma la ricarica della collezione non è riuscita: usa ↻ Reload. (' + errorMessage(err) + ')');
+    return true;
   }
 }

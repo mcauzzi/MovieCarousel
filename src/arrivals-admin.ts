@@ -1,10 +1,10 @@
 import { render } from 'lit';
 import { exportCsv, markExported, getFields, createField, patchField, deleteField, goToLogin } from './api';
 import type { ApiField, ArrivalScope, FieldPatch } from './api';
-import { exportTemplate, fieldsTemplate, isDirty } from './templates/arrivals-admin.templates';
+import { exportTemplate, fieldsTemplate, fieldDraft, isDirty } from './templates/arrivals-admin.templates';
 import type { ExportView, FieldDraft, FieldsView, NewFieldDraft } from './templates/arrivals-admin.templates';
 import { confirmWithOption } from './db-ui';
-import { sectionRoot, noticeFrom, errorMessage, reloadCollection } from './arrivals-shared';
+import { sectionRoot, noticeFrom, formError, errorMessage, reloadCollection, setError } from './arrivals-shared';
 import type { Section, SectionContext } from './arrivals-shared';
 
 /* Schede solo amministratore: ESPORTA CSV e CAMPI.
@@ -84,18 +84,16 @@ export function createExportSection(ctx: SectionContext, onMarked: () => void): 
       view.summary = { filename: res.filename, count: res.count, scope, marked: null, markFailed: false };
       view.status = `CSV scaricato: ${res.filename}.`;
       view.busy = false;
-      if (scope !== 'all') {
-        if (!res.cutoff) {
-          // Header mancante (API vecchia o proxy che lo filtra): non si può segnare.
-          view.summary.markFailed = true;
-          view.error = 'CSV scaricato, ma l\'API non ha indicato il cutoff dell\'export: film non segnati come esportati.';
-          rerender();
-        } else {
-          pendingMark = { scope, cutoff: res.cutoff };
-          await mark();
-        }
-      } else {
+      if (scope === 'all') {
         rerender();
+      } else if (!res.cutoff) {
+        // Header mancante (API vecchia o proxy che lo filtra): non si può segnare.
+        view.summary.markFailed = true;
+        view.error = 'CSV scaricato, ma l\'API non ha indicato il cutoff dell\'export: film non segnati come esportati.';
+        rerender();
+      } else {
+        pendingMark = { scope, cutoff: res.cutoff };
+        await mark();
       }
       el.querySelector<HTMLElement>('.arrivals-summary')?.focus();
     } catch (err) {
@@ -116,10 +114,6 @@ export function createExportSection(ctx: SectionContext, onMarked: () => void): 
 const NAME_RE = /^[a-z][a-z0-9-]{0,40}$/;
 const EMPTY_NEW: NewFieldDraft = { name: '', title: '', type: 'line', multiple: false, allowed: '' };
 
-function draftOf(f: ApiField): FieldDraft {
-  return { title: f.title ?? '', groupable: !!f.groupable, groupMinSize: String(f.groupMinSize ?? ''), inForm: !!f.inForm };
-}
-
 export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => void): Section {
   const el = sectionRoot('arrivals-fields');
   const view: FieldsView = {
@@ -133,7 +127,7 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
       onDraft: (name, patch) => {
         const f = view.fields?.find(x => x.name === name);
         if (!f) return;
-        view.drafts[name] = { ...(view.drafts[name] ?? draftOf(f)), ...patch };
+        view.drafts[name] = { ...(view.drafts[name] ?? fieldDraft(f)), ...patch };
         rerender();
       },
       onSave: f => { void save(f); },
@@ -156,7 +150,7 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     const keep = dirtyNames();
     if (saved) keep.delete(saved);
     const drafts: Record<string, FieldDraft> = {};
-    for (const f of list) drafts[f.name] = keep.has(f.name) ? view.drafts[f.name] : draftOf(f);
+    for (const f of list) drafts[f.name] = keep.has(f.name) ? view.drafts[f.name] : fieldDraft(f);
     view.fields = list;
     view.drafts = drafts;
   }
@@ -167,8 +161,7 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
       const list = await getFields();
       if (n !== seq) return;
       setFields(list, saved);
-      view.error = null;
-      view.sessionExpired = false;
+      setError(view, null);
     } catch (err) {
       if (n !== seq) return;
       view.fields = view.fields ?? [];
@@ -177,14 +170,40 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     rerender();
   }
 
-  /** Dopo una modifica riuscita: rilegge i campi, avvisa le altre schede e
-   *  ricarica la collezione (raggruppamenti e scheda film dipendono dai campi). */
-  async function afterChange(status: string, saved?: string): Promise<void> {
+  /** Azione sul campo `busy` ('__new__' = creazione): disabilita i controlli,
+   *  poi mostra l'errore (`onError` per il modulo del nuovo campo) oppure, se
+   *  riesce, rilegge i campi, avvisa le altre schede e ricarica la collezione
+   *  (raggruppamenti e scheda film dipendono dai campi). `done` dà lo stato da
+   *  annunciare e la riga appena salvata, che riparte dal valore del server. */
+  async function mutate(
+    busy: string, action: () => Promise<unknown>, done: () => [status: string, saved?: string],
+    onError = (err: unknown): void => { Object.assign(view, noticeFrom(err, ctx)); },
+  ): Promise<boolean> {
+    view.busy = busy;
+    view.error = null;
+    view.status = '';
+    rerender();
+    try {
+      await action();
+    } catch (err) {
+      view.busy = null;
+      onError(err);
+      rerender();
+      return false;
+    }
+    view.busy = null;
+    const [status, saved] = done();
     view.status = status;
     onFieldsChanged();
     await load(saved);
-    const warn = await reloadCollection(ctx);
-    if (warn) { view.error = warn; view.sessionExpired = false; rerender(); }
+    if (await reloadCollection(ctx, view)) rerender();
+    return true;
+  }
+
+  /** Errore di validazione di una riga: niente richiesta. */
+  function invalid(message: string): void {
+    setError(view, message);
+    rerender();
   }
 
   async function save(f: ApiField): Promise<void> {
@@ -193,39 +212,18 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
     const patch: FieldPatch = {};
     const title = d.title.trim();
     if (title !== (f.title ?? '')) {
-      if (!title) {
-        view.error = `«${f.name}»: il titolo non può essere vuoto.`;
-        view.sessionExpired = false;
-        rerender();
-        return;
-      }
+      if (!title) return invalid(`«${f.name}»: il titolo non può essere vuoto.`);
       patch.title = title;
     }
     if (d.groupable !== !!f.groupable) patch.groupable = d.groupable;
     if (d.inForm !== !!f.inForm) patch.inForm = d.inForm;
     if (d.groupMinSize.trim() !== String(f.groupMinSize ?? '')) {
       const n = Number(d.groupMinSize);
-      if (!Number.isInteger(n) || n < 1 || n > 1000) {
-        view.error = `«${f.title || f.name}»: la soglia deve essere un numero intero da 1 a 1000.`;
-        view.sessionExpired = false;
-        rerender();
-        return;
-      }
+      if (!Number.isInteger(n) || n < 1 || n > 1000)
+        return invalid(`«${f.title || f.name}»: la soglia deve essere un numero intero da 1 a 1000.`);
       patch.groupMinSize = n;
     }
-    view.busy = f.name;
-    view.error = null;
-    view.status = '';
-    rerender();
-    try {
-      await patchField(f.name, patch);
-      view.busy = null;
-      await afterChange(`Campo «${f.title || f.name}» aggiornato.`, f.name);
-    } catch (err) {
-      view.busy = null;
-      Object.assign(view, noticeFrom(err, ctx));
-      rerender();
-    }
+    await mutate(f.name, () => patchField(f.name, patch), () => [`Campo «${f.title || f.name}» aggiornato.`, f.name]);
   }
 
   async function remove(f: ApiField): Promise<void> {
@@ -238,20 +236,9 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
       yesLabel: 'ELIMINA', noLabel: 'ANNULLA',
     });
     if (!yes) return;
-    view.busy = f.name;
-    view.error = null;
-    view.status = '';
-    rerender();
-    try {
-      await deleteField(f.name, checked);
-      view.busy = null;
-      await afterChange(`Campo «${label}» eliminato${checked ? ' insieme ai suoi valori' : ''}.`, f.name);
-      el.querySelector<HTMLElement>('#arrivalsFieldsTitle')?.focus();
-    } catch (err) {
-      view.busy = null;
-      Object.assign(view, noticeFrom(err, ctx));
-      rerender();
-    }
+    const ok = await mutate(f.name, () => deleteField(f.name, checked),
+      () => [`Campo «${label}» eliminato${checked ? ' insieme ai suoi valori' : ''}.`, f.name]);
+    if (ok) el.querySelector<HTMLElement>('#arrivalsFieldsTitle')?.focus();
   }
 
   async function create(): Promise<void> {
@@ -272,24 +259,10 @@ export function createFieldsSection(ctx: SectionContext, onFieldsChanged: () => 
         : problem.startsWith('Il titolo') ? '#nfTitle' : '#nfAllowed')?.focus();
       return;
     }
-    view.busy = '__new__';
     view.newError = null;
-    view.error = null;
-    view.status = '';
-    rerender();
-    try {
-      await createField({ name, title, type: n.type, multiple: n.multiple, allowed });
-      view.busy = null;
-      view.newField = { ...EMPTY_NEW };
-      await afterChange(`Campo «${title}» aggiunto.`);
-    } catch (err) {
-      view.busy = null;
-      const notice = noticeFrom(err, ctx);
-      view.newError = notice.error;
-      view.sessionExpired = notice.sessionExpired;
-      if (notice.sessionExpired) view.error = notice.error;
-      rerender();
-    }
+    await mutate('__new__', () => createField({ name, title, type: n.type, multiple: n.multiple, allowed }),
+      () => { view.newField = { ...EMPTY_NEW }; return [`Campo «${title}» aggiunto.`]; },
+      err => { view.newError = formError(err, ctx, view); });
   }
 
   rerender();

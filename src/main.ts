@@ -276,10 +276,7 @@ function initUI(preserveView = false): void {
     watchFilter = 'all';
     isIntelView = false;
   }
-  filterSelections = new Map(groupers.map(g => [
-    g.name,
-    preserveView ? prevSelections.get(g.name) ?? new Set<string>() : new Set<string>(),
-  ]));
+  filterSelections = new Map(groupers.map(g => [g.name, (preserveView && prevSelections.get(g.name)) || new Set<string>()]));
   resetFilterPopup();
   litRender(countLabelTemplate(movies.length), document.getElementById('countLabel')!);
 

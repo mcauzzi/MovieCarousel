@@ -1,5 +1,5 @@
 import type { StoreAdapter, WatchStatus, Rating } from './store';
-import { getState, putStatus, putRating } from './api';
+import { getState, putState } from './api';
 import type { StateResponse } from './api';
 
 /* StoreAdapter della modalità DB: visto/voto dell'utente corrente nel DB.
@@ -115,7 +115,7 @@ export class ApiStoreAdapter implements StoreAdapter {
       const id = Number(idText);
       if (slot.inFlight || slot.queued || slot.doneAt > writesAtStart) {
         // Snapshot forse precedente a queste scritture: resta il valore locale.
-        const local = kind === 'status' ? this.status.get(id) : this.rating.get(id);
+        const local = this.get(kind, id);
         const target: Map<number, Value> = kind === 'status' ? status : rating;
         if (local) target.set(id, local); else target.delete(id);
       } else {
@@ -174,10 +174,8 @@ export class ApiStoreAdapter implements StoreAdapter {
 
   private send(kind: Kind, id: number, slot: Slot, value: Value): void {
     slot.inFlight = true;
-    const request = kind === 'status'
-      ? putStatus(id, value as WatchStatus)
-      : putRating(id, value as Rating);
-    request.then(
+    const patch = kind === 'status' ? { status: value as WatchStatus } : { rating: value as Rating };
+    putState(id, patch).then(
       () => { slot.confirmed = value; return null; },
       (err: unknown) => err ?? new Error('PUT non riuscito'),
     ).then(failure => {

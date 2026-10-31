@@ -36,18 +36,15 @@ export interface ImportHandlers {
   onLogin: () => void;
 }
 
-function busy(phase: ImportPhase): boolean {
+export function importBusy(phase: ImportPhase): boolean {
   return phase === 'reading' || phase === 'images' || phase === 'movies' || phase === 'reloading';
 }
 
 function progressText(v: ImportView): string {
   switch (v.phase) {
     case 'reading': return `Lettura di ${v.fileName ?? 'file'}…`;
-    case 'images': {
-      const p = v.progress;
-      if (!p || p.total === 0) return 'Invio immagini…';
-      return `Invio immagini: ${p.sent} di ${p.total}…`;
-    }
+    case 'images':
+      return v.progress?.total ? `Invio immagini: ${v.progress.sent} di ${v.progress.total}…` : 'Invio immagini…';
     case 'movies': return 'Import di campi e film…';
     case 'reloading': return 'Import completato. Ricarico la collezione…';
     case 'done': return 'Import completato.';
@@ -88,7 +85,7 @@ function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult 
 }
 
 export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): TemplateResult {
-  const isBusy = busy(v.phase);
+  const isBusy = importBusy(v.phase);
   const p = v.progress;
   const onChange = (e: Event): void => {
     const input = e.currentTarget as HTMLInputElement;
@@ -148,14 +145,12 @@ export interface ArrivalsTab {
   el: HTMLElement;
 }
 
-export interface TabsHandlers {
-  onSelect: (id: string, focus: boolean) => void;
-}
-
 /** Schede accessibili (role="tablist", tab a focus mobile, frecce/Home/Fine)
  *  con i pannelli delle sezioni interpolati come nodi DOM: lit li mantiene al
  *  loro posto tra un render e l'altro, conservandone lo stato interno. */
-export function arrivalsShellTemplate(tabs: ArrivalsTab[], active: string, h: TabsHandlers): TemplateResult {
+export function arrivalsShellTemplate(
+  tabs: ArrivalsTab[], active: string, onSelect: (id: string, focus: boolean) => void,
+): TemplateResult {
   const onKeydown = (e: KeyboardEvent): void => {
     const i = tabs.findIndex(t => t.id === active);
     let next = -1;
@@ -165,7 +160,7 @@ export function arrivalsShellTemplate(tabs: ArrivalsTab[], active: string, h: Ta
     else if (e.key === 'End') next = tabs.length - 1;
     if (next < 0) return;
     e.preventDefault();
-    h.onSelect(tabs[next].id, true);
+    onSelect(tabs[next].id, true);
   };
   return html`
     ${tabs.length > 1 ? html`
@@ -174,7 +169,7 @@ export function arrivalsShellTemplate(tabs: ArrivalsTab[], active: string, h: Ta
           <button type="button" role="tab" class="arrivals-tab ${t.id === active ? 'active' : ''}"
             id=${`arrivalsTab-${t.id}`} aria-controls=${`arrivalsPanel-${t.id}`}
             aria-selected=${t.id === active ? 'true' : 'false'} tabindex=${t.id === active ? '0' : '-1'}
-            @click=${() => h.onSelect(t.id, false)}>${t.label}</button>`)}
+            @click=${() => onSelect(t.id, false)}>${t.label}</button>`)}
       </div>` : nothing}
     ${tabs.map(t => html`
       <div class="arrivals-tabpanel" role=${tabs.length > 1 ? 'tabpanel' : nothing}

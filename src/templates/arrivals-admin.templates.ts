@@ -122,7 +122,7 @@ export interface FieldsHandlers {
 }
 
 /** Tipi selezionabili per un nuovo campo `local`. */
-export const NEW_FIELD_TYPES: { id: string; label: string }[] = [
+const NEW_FIELD_TYPES: { id: string; label: string }[] = [
   { id: 'line', label: 'Testo breve' },
   { id: 'para', label: 'Testo lungo' },
   { id: 'choice', label: 'Scelta (valori ammessi)' },
@@ -133,6 +133,11 @@ export const NEW_FIELD_TYPES: { id: string; label: string }[] = [
   { id: 'rating', label: 'Voto (1–10)' },
 ];
 
+/** Bozza di una riga con i valori del server. */
+export function fieldDraft(f: ApiField): FieldDraft {
+  return { title: f.title ?? '', groupable: !!f.groupable, groupMinSize: String(f.groupMinSize ?? ''), inForm: !!f.inForm };
+}
+
 export function isDirty(f: ApiField, d: FieldDraft | undefined): boolean {
   if (!d) return false;
   return d.title.trim() !== (f.title ?? '')
@@ -142,7 +147,7 @@ export function isDirty(f: ApiField, d: FieldDraft | undefined): boolean {
 }
 
 function fieldRow(f: ApiField, v: FieldsView, h: FieldsHandlers): TemplateResult {
-  const d = v.drafts[f.name] ?? { title: f.title ?? '', groupable: !!f.groupable, groupMinSize: String(f.groupMinSize ?? ''), inForm: !!f.inForm };
+  const d = v.drafts[f.name] ?? fieldDraft(f);
   const label = f.title || f.name;
   const busy = v.busy !== null;
   const dirty = isDirty(f, d);
@@ -223,7 +228,7 @@ function newFieldForm(v: FieldsView, h: FieldsHandlers): TemplateResult {
             <span class="arrivals-hint" id="nfAllowedHint">Separati da «;» (es. DVD; Blu-ray; 4K).</span>
           </div>` : nothing}
       </div>
-      ${v.newError ? html`<div class="arrivals-error" role="alert"><span>✕ ${v.newError}</span></div>` : nothing}
+      ${errorTemplate({ error: v.newError, sessionExpired: false }, h.onLogin)}
       <div class="arrivals-actions">
         <button type="submit" class="random-extract-btn" ?disabled=${busy}>
           ${v.busy === '__new__' ? 'CREAZIONE…' : '＋ AGGIUNGI CAMPO'}

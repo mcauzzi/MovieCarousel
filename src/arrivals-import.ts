@@ -1,8 +1,8 @@
 import { render } from 'lit';
 import { readTellicoFile, imageBase64, IMAGE_NAME_RE } from './tellico-file';
-import type { TellicoFile, ZipImage } from './tellico-file';
+import type { ZipImage } from './tellico-file';
 import { uploadTellicoImages, importTellico, goToLogin } from './api';
-import { arrivalsBodyTemplate } from './templates/arrivals.templates';
+import { arrivalsBodyTemplate, importBusy } from './templates/arrivals.templates';
 import type { ImportView } from './templates/arrivals.templates';
 import { sectionRoot, noticeFrom, reloadCollection } from './arrivals-shared';
 import type { Section, SectionContext } from './arrivals-shared';
@@ -18,14 +18,6 @@ import type { Section, SectionContext } from './arrivals-shared';
  *  JSON e chiavi). */
 const BATCH_BUDGET = 16 * 1024 * 1024;
 
-/** Immagini da inviare (incorporate nell'XML e dello zip) e quante sono state
- *  scartate perché il nome non è accettato dall'API (che rifiuterebbe il lotto). */
-function uploadableImages(tc: TellicoFile): { images: [string, string | ZipImage][]; invalid: number } {
-  const all: [string, string | ZipImage][] = [...tc.embeddedImages, ...tc.zipImages];
-  const images = all.filter(([name]) => IMAGE_NAME_RE.test(name));
-  return { images, invalid: all.length - images.length };
-}
-
 export function createImportSection(ctx: SectionContext): Section {
   const body = sectionRoot('arrivals-import');
 
@@ -33,8 +25,6 @@ export function createImportSection(ctx: SectionContext): Section {
     phase: 'idle', fileName: null, progress: null, summary: null,
     error: null, sessionExpired: false, dragover: false,
   };
-
-  const isBusy = (): boolean => ['reading', 'images', 'movies', 'reloading'].includes(view.phase);
 
   function rerender(): void {
     render(arrivalsBodyTemplate(view, {
@@ -47,6 +37,8 @@ export function createImportSection(ctx: SectionContext): Section {
   /** Invia le immagini a lotti entro il budget, leggendo i byte di una alla
    *  volta (un'immagine più grande del budget va da sola). */
   async function uploadImages(images: [string, string | ZipImage][]): Promise<{ written: number; skipped: number; invalid: number }> {
+    const progress = view.progress = { sent: 0, total: images.length };
+    rerender();
     let written = 0;
     let skipped = 0;
     let invalid = 0;
@@ -58,7 +50,7 @@ export function createImportSection(ctx: SectionContext): Section {
       const r = await uploadTellicoImages(batch);
       written += r.written;
       skipped += r.skipped;
-      view.progress = { sent: (view.progress?.sent ?? 0) + count, total: view.progress?.total ?? images.length };
+      progress.sent += count;
       rerender();
       batch = {};
       count = 0;
@@ -69,7 +61,7 @@ export function createImportSection(ctx: SectionContext): Section {
       if (!b64) {
         // Data URL non base64: l'API non saprebbe decodificarla.
         invalid++;
-        view.progress = { sent: view.progress?.sent ?? 0, total: (view.progress?.total ?? images.length) - 1 };
+        progress.total--;
         continue;
       }
       const cost = b64.length + name.length + 8;
@@ -83,7 +75,7 @@ export function createImportSection(ctx: SectionContext): Section {
   }
 
   async function runImport(file: File): Promise<void> {
-    if (isBusy()) return;
+    if (importBusy(view.phase)) return;
     Object.assign(view, {
       phase: 'reading', fileName: file.name, progress: null, summary: null,
       error: null, sessionExpired: false, dragover: false,
@@ -93,11 +85,11 @@ export function createImportSection(ctx: SectionContext): Section {
       const tc = await readTellicoFile(file);
       if (!tc.movies.length) throw new Error('Nessun film trovato nel file');
 
-      // 1. Immagini a lotti (prima e fuori dalla transazione dei film, §8).
-      const { images, invalid } = uploadableImages(tc);
+      // 1. Immagini a lotti (prima e fuori dalla transazione dei film, §8),
+      //    senza quelle con un nome che l'API rifiuterebbe (con tutto il lotto).
+      const all = [...tc.embeddedImages, ...tc.zipImages];
+      const images = all.filter(([name]) => IMAGE_NAME_RE.test(name));
       view.phase = 'images';
-      view.progress = { sent: 0, total: images.length };
-      rerender();
       const up = await uploadImages(images);
 
       // 2. Campi e film in una sola richiesta.
@@ -107,16 +99,15 @@ export function createImportSection(ctx: SectionContext): Section {
       const res = await importTellico(tc.fields, tc.movies);
       view.summary = {
         ...res, imagesWritten: up.written, imagesSkipped: up.skipped,
-        imagesInvalid: invalid + up.invalid, movieCount: tc.movies.length,
+        imagesInvalid: all.length - images.length + up.invalid, movieCount: tc.movies.length,
       };
 
       // 3. Ricarica la collezione nella vista principale (un errore qui non
       //    annulla l'import: diventa un avviso).
       view.phase = 'reloading';
       rerender();
-      const warn = await reloadCollection(ctx);
+      await reloadCollection(ctx, view);
       view.phase = 'done';
-      if (warn) { view.error = warn; view.sessionExpired = false; }
       rerender();
       body.querySelector<HTMLElement>('.arrivals-summary')?.focus();
     } catch (err) {

@@ -133,7 +133,7 @@ function editTemplate(a: Arrival, e: EditView, h: ListHandlers): TemplateResult 
       ${e.fields.length
         ? html`<div class="arrivals-form-grid">${e.fields.map(f => controlTemplate(f, e, h))}</div>`
         : html`<p class="arrivals-muted">Nessun campo modificabile (nessun campo con «nel modulo» attivo).</p>`}
-      ${e.error ? html`<div class="arrivals-error" role="alert"><span>✕ ${e.error}</span></div>` : nothing}
+      ${errorTemplate({ error: e.error, sessionExpired: false }, h.onLogin)}
       <div class="arrivals-actions">
         <button type="button" class="group-btn" @click=${h.onCancelEdit}>ANNULLA</button>
         <button type="submit" class="random-extract-btn arrivals-save" ?disabled=${e.saving || !e.fields.length}>

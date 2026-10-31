@@ -7,7 +7,8 @@ import type { Device } from './api';
 import { phoneTemplate, devicesTemplate } from './templates/arrivals-phone.templates';
 import type { PhoneView, DevicesView } from './templates/arrivals-phone.templates';
 import { confirmDialog } from './db-ui';
-import { sectionRoot, noticeFrom } from './arrivals-shared';
+import type { ConfirmView } from './templates/db.templates';
+import { sectionRoot, noticeFrom, setError } from './arrivals-shared';
 import type { Section, SectionContext } from './arrivals-shared';
 
 /* Scheda TELEFONO: "Collega un telefono" (§10.1) + dispositivi.
@@ -142,8 +143,7 @@ export function createPhoneSection(ctx: SectionContext): Section {
     if (!devices.showAll) {
       devicesSeq++;
       devices.devices = sortDevices(list);
-      devices.error = null;
-      devices.sessionExpired = false;
+      setError(devices, null);
       rerenderDevices();
     } else {
       void loadDevices();
@@ -175,8 +175,7 @@ export function createPhoneSection(ctx: SectionContext): Section {
   async function pair(): Promise<void> {
     if (phone.pairBusy) return;
     phone.pairBusy = true;
-    phone.error = null;
-    phone.sessionExpired = false;
+    setError(phone, null);
     rerenderPhone();
     try {
       // Dispositivi già abbinati: il controllo cerca quelli nuovi rispetto a questi.
@@ -222,11 +221,6 @@ export function createPhoneSection(ctx: SectionContext): Section {
     rerenderPhone();
   }
 
-  async function loadVersion(): Promise<void> {
-    phone.version = await getAppVersion();
-    rerenderPhone();
-  }
-
   // ------------------------------------------------------------ dispositivi
 
   async function loadDevices(): Promise<void> {
@@ -235,8 +229,7 @@ export function createPhoneSection(ctx: SectionContext): Section {
       const list = await getDevices(devices.showAll);
       if (n !== devicesSeq) return;
       devices.devices = sortDevices(list);
-      devices.error = null;
-      devices.sessionExpired = false;
+      setError(devices, null);
     } catch (err) {
       if (n !== devicesSeq) return;
       if (!devices.devices) devices.devices = [];
@@ -251,12 +244,15 @@ export function createPhoneSection(ctx: SectionContext): Section {
       Number(!!a.revokedAt) - Number(!!b.revokedAt) || (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   }
 
-  /** Esegue un'azione di revoca, poi ricarica la lista e porta il focus
-   *  sul titolo della sezione (il pulsante premuto sparisce). */
-  async function act(busy: string, action: () => Promise<void>, done: string): Promise<void> {
+  /** Chiede conferma ed esegue un'azione di revoca, poi ricarica la lista e
+   *  porta il focus sul titolo della sezione (il pulsante premuto sparisce). */
+  async function act(
+    confirm: Pick<ConfirmView, 'title' | 'accent' | 'message' | 'yesLabel'>,
+    busy: string, action: () => Promise<void>, done: string,
+  ): Promise<void> {
+    if (!await confirmDialog({ ...confirm, danger: true, noLabel: 'ANNULLA' })) return;
     devices.busy = busy;
-    devices.error = null;
-    devices.sessionExpired = false;
+    setError(devices, null);
     devices.status = '';
     rerenderDevices();
     let failure: ReturnType<typeof noticeFrom> | null = null;
@@ -277,35 +273,28 @@ export function createPhoneSection(ctx: SectionContext): Section {
     devicesHost.querySelector<HTMLElement>('#arrivalsDevicesTitle')?.focus();
   }
 
-  async function revoke(d: Device): Promise<void> {
+  function revoke(d: Device): Promise<void> {
     const name = d.name || 'Dispositivo senza nome';
-    const ok = await confirmDialog({
-      title: 'REVOCA', accent: 'DISPOSITIVO', danger: true,
+    return act({
+      title: 'REVOCA', accent: 'DISPOSITIVO', yesLabel: 'REVOCA',
       message: `Revocare «${name}»? Il telefono non potrà più inviare film finché non viene abbinato di nuovo.`,
-      yesLabel: 'REVOCA', noLabel: 'ANNULLA',
-    });
-    if (ok) await act(String(d.id), () => revokeDevice(d.id), `Dispositivo «${name}» revocato.`);
+    }, String(d.id), () => revokeDevice(d.id), `Dispositivo «${name}» revocato.`);
   }
 
-  async function revokeUser(sub: string, name: string): Promise<void> {
-    const ok = await confirmDialog({
-      title: 'REVOCA', accent: 'TUTTI', danger: true,
+  function revokeUser(sub: string, name: string): Promise<void> {
+    return act({
+      title: 'REVOCA', accent: 'TUTTI', yesLabel: 'REVOCA TUTTI',
       message: `Revocare tutti i dispositivi di ${name}? Dovrà abbinare di nuovo ogni telefono.`,
-      yesLabel: 'REVOCA TUTTI', noLabel: 'ANNULLA',
-    });
-    if (ok) await act('user:' + sub, () => revokeUserDevices(sub), `Dispositivi di ${name} revocati.`);
+    }, 'user:' + sub, () => revokeUserDevices(sub), `Dispositivi di ${name} revocati.`);
   }
 
-  async function logoutUser(sub: string, name: string): Promise<void> {
-    const self = sub === ctx.sub;
-    const ok = await confirmDialog({
-      title: 'LOGOUT', accent: 'FORZATO', danger: true,
-      message: self
+  function logoutUser(sub: string, name: string): Promise<void> {
+    return act({
+      title: 'LOGOUT', accent: 'FORZATO', yesLabel: 'LOGOUT',
+      message: sub === ctx.sub
         ? 'Chiudere tutte le tue sessioni del sito, compresa questa? Dovrai accedere di nuovo.'
         : `Chiudere tutte le sessioni del sito di ${name}? Dovrà accedere di nuovo (i telefoni restano abbinati).`,
-      yesLabel: 'LOGOUT', noLabel: 'ANNULLA',
-    });
-    if (ok) await act('user:' + sub, () => revokeUserSessions(sub), `Sessioni del sito di ${name} chiuse.`);
+    }, 'user:' + sub, () => revokeUserSessions(sub), `Sessioni del sito di ${name} chiuse.`);
   }
 
   rerender();
@@ -313,7 +302,10 @@ export function createPhoneSection(ctx: SectionContext): Section {
     el,
     activate: () => {
       visible = true;
-      if (!versionRequested) { versionRequested = true; void loadVersion(); }
+      if (!versionRequested) {
+        versionRequested = true;
+        void getAppVersion().then(v => { phone.version = v; rerenderPhone(); });
+      }
       void loadDevices();
       if (phone.pairing) { tick(); startTimer(); }
     },

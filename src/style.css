@@ -2660,7 +2660,6 @@ main{
   transition:border-color 0.15s, background 0.15s;
 }
 .arrivals-drop:hover,.arrivals-drop.dragover{border-color:var(--hot);border-style:solid}
-.arrivals-drop:focus-within{outline:3px solid var(--hot);outline-offset:3px}
 .arrivals-drop.busy{cursor:progress;opacity:0.75}
 .arrivals-drop-text{font-family:var(--f-head);font-size:1rem;color:var(--ink);overflow-wrap:anywhere}
 .arrivals-drop-cta{pointer-events:none;white-space:nowrap}
@@ -2690,8 +2689,10 @@ main{
   box-shadow:6px 6px 0 var(--hot);
   transform:rotate(calc(-0.6deg * var(--tilt)));
 }
-.arrivals-summary:focus{outline:none}
+.arrivals-summary:focus,.arrivals-section-title:focus,.arrivals-form-title:focus{outline:none}
 .arrivals-summary:focus-visible{outline:3px solid var(--hot);outline-offset:4px}
+.arrivals-drop:focus-within,.arrivals-tab:focus-visible,
+.arrivals-section-title:focus-visible{outline:3px solid var(--hot);outline-offset:3px}
 .arrivals-summary-title{
   font-family:var(--f-display);font-weight:400;
   font-size:1.3rem;letter-spacing:0.12em;text-transform:uppercase;
@@ -2707,7 +2708,7 @@ main{
 .arrivals-stat dt{font-family:var(--f-mono);font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-dim)}
 .arrivals-stat dd{margin:0;font-family:var(--f-display);font-size:1.25rem;color:var(--ink)}
 .arrivals-missing{margin-top:0.9rem;color:var(--ink)}
-.arrivals-missing summary{cursor:pointer;font-size:0.9rem;color:var(--ink)}
+.arrivals-missing summary{cursor:pointer;font-size:0.9rem}
 .arrivals-missing summary:focus-visible{outline:2px solid var(--hot);outline-offset:3px}
 .arrivals-missing ul{margin:0.6rem 0 0;padding-left:1.1rem;max-height:14rem;overflow:auto;font-size:0.9rem;line-height:1.5}
 .arrivals-missing-id{font-family:var(--f-mono);font-size:0.78rem;color:var(--ink-dim)}
@@ -2718,6 +2719,7 @@ main{
 .cm-confirm-panel .random-title{margin:0;font-size:2rem}
 .cm-confirm-msg{padding:1.4rem 1.6rem;margin:0;font-size:1.1rem;line-height:1.45;color:var(--ink)}
 .cm-confirm-actions{justify-content:flex-end;gap:1rem}
+.cm-confirm-option{margin:0 1.6rem 1rem}
 
 /* Avviso "sessione scaduta": come il toast ma persistente e cliccabile */
 .cm-session-notice{
@@ -2746,9 +2748,7 @@ main{
 }
 .cm-empty-text{font-size:1.05rem;line-height:1.5;color:var(--ink-dim)}
 
-/* Pannello ARRIVI completo (fase 3): schede, telefono, dispositivi,
-   arrivi con modulo di correzione, export, campi. Stesse regole: token,
-   testo su --ink/--ink-dim, --hot per bordi/decorazioni. */
+/* Pannello ARRIVI: schede, telefono, dispositivi, arrivi, export, campi */
 .arrivals-tabs{
   display:flex;flex-wrap:wrap;gap:0.4rem;
   margin:0 0 1.2rem;padding-bottom:0.6rem;
@@ -2763,13 +2763,9 @@ main{
 }
 .arrivals-tab:hover{border-color:var(--hot)}
 .arrivals-tab.active{background:var(--hot);color:var(--on-hot);border-color:var(--ink)}
-.arrivals-tab:focus-visible{outline:3px solid var(--hot);outline-offset:3px}
 .arrivals-tab.active:focus-visible{outline-color:var(--ink)}
 .arrivals-tabpanel[hidden]{display:none}
 .arrivals-phone > div + div{margin-top:1.8rem}
-.arrivals-section-title:focus{outline:none}
-.arrivals-section-title:focus-visible,.arrivals-form-title:focus-visible{outline:3px solid var(--hot);outline-offset:3px}
-.arrivals-form-title:focus{outline:none}
 .arrivals-muted{color:var(--ink-dim);font-size:0.95rem;line-height:1.45;margin:0.4rem 0}
 .arrivals-note{color:var(--ink-dim);font-size:0.85rem;line-height:1.45;margin:0.6rem 0 0;max-width:62ch}
 .arrivals-status{
@@ -2814,12 +2810,10 @@ main{
   background:var(--bg);color:var(--ink-dim);
   font-family:var(--f-display);letter-spacing:0.2em;
 }
-.arrivals-pair.expired .arrivals-countdown{color:var(--ink)}
 .arrivals-countdown{margin:0.5rem 0 0;font-family:var(--f-mono);font-size:0.95rem;color:var(--ink)}
 .arrivals-countdown [role="timer"]{font-weight:700;font-variant-numeric:tabular-nums}
 .arrivals-app-version{margin:0;color:var(--ink);font-size:0.95rem}
 .arrivals-apk{text-decoration:none;display:inline-block}
-.arrivals-apk:focus-visible{outline:3px solid var(--hot);outline-offset:2px}
 .arrivals-sha{display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem;max-width:100%}
 .arrivals-sha-label{font-family:var(--f-mono);font-size:0.72rem;letter-spacing:0.1em;color:var(--ink-dim)}
 .arrivals-sha-value{
@@ -2912,16 +2906,12 @@ main{
 .arrivals-table tbody th{font-weight:400}
 .arrivals-table tr.dirty{background:var(--surface)}
 .arrivals-table tr.dirty th{box-shadow:inset 4px 0 0 var(--hot)}
-.arrivals-field-title{display:block;font-family:var(--f-head);color:var(--ink)}
 .arrivals-field-name{font-family:var(--f-mono);font-size:0.72rem;color:var(--ink-dim)}
 .arrivals-num{width:4.5rem}
 .arrivals-field-title-input{width:11rem;max-width:100%}
 .arrivals-field-actions{white-space:nowrap}
 .arrivals-field-actions .group-btn{padding:0.3rem 0.6rem;font-size:0.72rem}
 .arrivals-newfield{margin-top:1.4rem}
-
-/* Casella facoltativa nel dialog di conferma */
-.cm-confirm-option{margin:0 1.6rem 1rem}
 
 @media(max-width:600px){
   .arrivals-body{padding:1rem}

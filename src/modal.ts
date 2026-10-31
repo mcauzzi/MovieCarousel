@@ -39,8 +39,6 @@ const SHOWN_FIELDS = new Set([
   'director', 'genre', 'studio', 'writer', 'composer', 'producer', 'language',
   'rating', 'visto', 'cdate', 'mdate',
 ]);
-/** Tipi mai mostrati in "Altri campi" (le immagini non sono testo). */
-const HIDDEN_TYPES = new Set(['image']);
 
 /** Data `AAAA-MM-GG` (o `AAAA-MM`) in formato locale it-IT; il resto invariato. */
 function formatDate(v: string): string {
@@ -148,7 +146,7 @@ export function openModal(
   // mostra già, nell'ordine delle definizioni (senza `fields`, nessuna sezione).
   const extra: ExtraFieldData[] = [];
   for (const f of collectionFields ?? []) {
-    if (SHOWN_FIELDS.has(f.name) || HIDDEN_TYPES.has(f.type)) continue;
+    if (SHOWN_FIELDS.has(f.name) || f.type === 'image') continue; // le immagini non sono testo
     const x = extraField(m, f);
     if (x) extra.push(x);
   }

@@ -261,14 +261,10 @@ function parseFields(fieldsEl: Element | null): TellicoField[] {
     // `_default` (segnaposto "campi standard del tipo" dei modelli Tellico) non è un campo.
     if (!name || name === '_default' || seen.has(name)) continue;
     seen.add(name);
-    const flagsAttr = el.getAttribute('flags');
-    const flagsNum = flagsAttr !== null ? parseInt(flagsAttr, 10) : NaN;
+    const flagsNum = parseInt(el.getAttribute('flags') ?? '', 10);
     const hasFlags = Number.isFinite(flagsNum);
     const flags = hasFlags ? flagsNum : 0;
-    const allowedAttr = el.getAttribute('allowed');
-    const allowed = allowedAttr
-      ? allowedAttr.split(';').map(v => v.trim()).filter(Boolean)
-      : null;
+    const allowed = (el.getAttribute('allowed') ?? '').split(';').map(v => v.trim()).filter(Boolean);
     out.push({
       name,
       title: el.getAttribute('title') || name,
@@ -276,7 +272,7 @@ function parseFields(fieldsEl: Element | null): TellicoField[] {
       flags,
       multiple: hasFlags ? (flags & FLAG_ALLOW_MULTIPLE) !== 0 : MULTIVALUE_FIELDS.has(name),
       groupable: (flags & FLAG_ALLOW_GROUPED) !== 0,
-      allowed: allowed && allowed.length ? allowed : null,
+      allowed: allowed.length ? allowed : null,
     });
   }
   return out;

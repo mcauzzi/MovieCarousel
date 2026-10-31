@@ -30,15 +30,7 @@ export interface StateResponse {
   rating: Record<string, Exclude<Rating, null>>;
 }
 
-export interface MigrateRequest {
-  status: Record<string, Exclude<WatchStatus, null>>;
-  rating: Record<string, Exclude<Rating, null>>;
-}
-
-export interface ImagesResponse {
-  written: number;
-  skipped: number;
-}
+export type MigrateRequest = StateResponse;
 
 export interface ImportResponse {
   inserted: number;
@@ -81,23 +73,20 @@ export function setApiBase(base: string): void {
   apiBase = base.endsWith('/') ? base : base + '/';
 }
 
-/** URL di login con ritorno alla pagina corrente (solo percorso locale). */
-export function loginUrl(): string {
-  const returnUrl = location.pathname + location.search;
-  return new URL(apiBase + 'auth/login?returnUrl=' + encodeURIComponent(returnUrl), location.href).href;
-}
-
-/** Navigazione completa al login OIDC (una sola volta, anche con più letture in volo). */
+/** Navigazione completa al login OIDC con ritorno alla pagina corrente (solo
+ *  percorso locale); una sola volta, anche con più letture in volo. */
 export function goToLogin(): void {
   if (redirecting) return;
   redirecting = true;
-  location.assign(loginUrl());
+  location.assign(apiUrl('auth/login?returnUrl=' + encodeURIComponent(location.pathname + location.search)));
 }
 
 interface RequestOptions {
   /** Per le letture: false = in caso di sessione scaduta lancia invece di navigare
    *  (ricariche in background, dove una navigazione farebbe perdere il contesto). */
   navigateOnExpiry?: boolean;
+  /** Header Accept (default JSON). */
+  accept?: string;
 }
 
 async function problemFrom(res: Response): Promise<ApiError> {
@@ -132,14 +121,9 @@ async function problemFrom(res: Response): Promise<ApiError> {
   return new ApiError(res.status, title, detail);
 }
 
-interface SendOptions extends RequestOptions {
-  /** Header Accept (default JSON). */
-  accept?: string;
-}
-
 /** Invia una richiesta all'API e restituisce la risposta già verificata (2xx):
  *  sessione scaduta, errori di rete e problem+json diventano eccezioni. */
-async function send(method: string, path: string, body?: unknown, opts: SendOptions = {}): Promise<Response> {
+async function send(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<Response> {
   const isRead = method === 'GET';
   const headers: Record<string, string> = { Accept: opts.accept ?? 'application/json' };
   if (!isRead) headers['X-CM-Request'] = '1';
@@ -183,37 +167,22 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
   return await res.json() as T;
 }
 
-export function getMe(): Promise<Me> {
-  return request<Me>('GET', 'me');
-}
+export const getMe = (): Promise<Me> => request('GET', 'me');
+export const getCollection = (): Promise<CollectionResponse> => request('GET', 'collection');
+export const getState = (opts?: RequestOptions): Promise<StateResponse> => request('GET', 'state', undefined, opts);
 
-export function getCollection(): Promise<CollectionResponse> {
-  return request<CollectionResponse>('GET', 'collection');
-}
+/** Un solo campo per richiesta: `{ status }` oppure `{ rating }` (null = azzera). */
+export const putState = (id: number, patch: { status: WatchStatus } | { rating: Rating }): Promise<void> =>
+  request('PUT', `state/${id}`, patch);
 
-export function getState(opts?: RequestOptions): Promise<StateResponse> {
-  return request<StateResponse>('GET', 'state', undefined, opts);
-}
+export const migrateState = (data: MigrateRequest): Promise<{ imported: number }> =>
+  request('POST', 'state/migrate', data);
 
-export function putStatus(id: number, status: WatchStatus): Promise<void> {
-  return request<void>('PUT', `state/${id}`, { status });
-}
+export const uploadTellicoImages = (images: Record<string, string>): Promise<{ written: number; skipped: number }> =>
+  request('POST', 'import/tellico/images', { images });
 
-export function putRating(id: number, rating: Rating): Promise<void> {
-  return request<void>('PUT', `state/${id}`, { rating });
-}
-
-export function migrateState(data: MigrateRequest): Promise<{ imported: number }> {
-  return request<{ imported: number }>('POST', 'state/migrate', data);
-}
-
-export function uploadTellicoImages(images: Record<string, string>): Promise<ImagesResponse> {
-  return request<ImagesResponse>('POST', 'import/tellico/images', { images });
-}
-
-export function importTellico(fields: TellicoField[], movies: Movie[]): Promise<ImportResponse> {
-  return request<ImportResponse>('POST', 'import/tellico', { fields, movies });
-}
+export const importTellico = (fields: TellicoField[], movies: Movie[]): Promise<ImportResponse> =>
+  request('POST', 'import/tellico', { fields, movies });
 
 // --- Fase 3: abbinamento, dispositivi, arrivi, export, campi (§6.2) ---
 
@@ -291,40 +260,22 @@ export interface AppVersion {
 
 const seg = (v: string | number): string => encodeURIComponent(String(v));
 
-export function createPairing(): Promise<PairingResponse> {
-  return request<PairingResponse>('POST', 'pairing');
-}
+export const createPairing = (): Promise<PairingResponse> => request('POST', 'pairing');
 
 /** Dispositivi dell'utente; `all` (solo amministratore) quelli di tutti. */
-export function getDevices(all = false): Promise<Device[]> {
-  return request<Device[]>('GET', all ? 'devices?all=true' : 'devices');
-}
+export const getDevices = (all = false): Promise<Device[]> => request('GET', all ? 'devices?all=true' : 'devices');
+export const revokeDevice = (id: Device['id']): Promise<void> => request('DELETE', `devices/${seg(id)}`);
+export const revokeUserDevices = (sub: string): Promise<void> => request('DELETE', `users/${seg(sub)}/devices`);
+export const revokeUserSessions = (sub: string): Promise<void> => request('DELETE', `users/${seg(sub)}/sessions`);
 
-export function revokeDevice(id: Device['id']): Promise<void> {
-  return request<void>('DELETE', `devices/${seg(id)}`);
-}
-
-export function revokeUserDevices(sub: string): Promise<void> {
-  return request<void>('DELETE', `users/${seg(sub)}/devices`);
-}
-
-export function revokeUserSessions(sub: string): Promise<void> {
-  return request<void>('DELETE', `users/${seg(sub)}/sessions`);
-}
-
-export function getArrivals(scope: ArrivalScope): Promise<Arrival[]> {
-  return request<Arrival[]>('GET', `arrivals?scope=${scope}`);
-}
+export const getArrivals = (scope: ArrivalScope): Promise<Arrival[]> => request('GET', `arrivals?scope=${scope}`);
 
 /** Correzione di un arrivo: `movie` contiene solo i campi modificati
  *  (null = svuota un campo singolo, [] un campo multiplo). */
-export function patchMovie(id: number, movie: Record<string, unknown>): Promise<Arrival> {
-  return request<Arrival>('PATCH', `movies/${seg(id)}`, { movie });
-}
+export const patchMovie = (id: number, movie: Record<string, unknown>): Promise<Arrival> =>
+  request('PATCH', `movies/${seg(id)}`, { movie });
 
-export function deleteMovie(id: number): Promise<void> {
-  return request<void>('DELETE', `movies/${seg(id)}`);
-}
+export const deleteMovie = (id: number): Promise<void> => request('DELETE', `movies/${seg(id)}`);
 
 /** Nome del file da Content-Disposition (filename* RFC 5987 prima di filename). */
 function filenameFrom(header: string | null, fallback: string): string {
@@ -356,25 +307,15 @@ export async function exportCsv(scope: ExportScope): Promise<ExportResult> {
 
 /** Segna come esportati gli arrivi dello scope fino al cutoff restituito
  *  dall'export (header X-CM-Export-Cutoff, passato così com'è). */
-export function markExported(scope: ArrivalScope, cutoff: string): Promise<{ marked: number }> {
-  return request<{ marked: number }>('POST', 'export/mark', { scope, cutoff });
-}
+export const markExported = (scope: ArrivalScope, cutoff: string): Promise<{ marked: number }> =>
+  request('POST', 'export/mark', { scope, cutoff });
 
-export function getFields(): Promise<ApiField[]> {
-  return request<ApiField[]>('GET', 'fields');
-}
-
-export function createField(def: NewFieldRequest): Promise<ApiField> {
-  return request<ApiField>('POST', 'fields', def);
-}
-
-export function patchField(name: string, patch: FieldPatch): Promise<ApiField> {
-  return request<ApiField>('PATCH', `fields/${seg(name)}`, patch);
-}
-
-export function deleteField(name: string, purge: boolean): Promise<void> {
-  return request<void>('DELETE', `fields/${seg(name)}?purge=${purge}`);
-}
+export const getFields = (): Promise<ApiField[]> => request('GET', 'fields');
+export const createField = (def: NewFieldRequest): Promise<ApiField> => request('POST', 'fields', def);
+export const patchField = (name: string, patch: FieldPatch): Promise<ApiField> =>
+  request('PATCH', `fields/${seg(name)}`, patch);
+export const deleteField = (name: string, purge: boolean): Promise<void> =>
+  request('DELETE', `fields/${seg(name)}?purge=${purge}`);
 
 /** URL dell'APK e della sua versione: file statici dell'immagine del sito,
  *  relativi alla pagina (non passano dall'API). */
@@ -389,10 +330,7 @@ export async function getAppVersion(): Promise<AppVersion | null> {
     if (!res.ok) return null;
     const v = await res.json() as Partial<AppVersion>;
     if (!v || typeof v.version !== 'string' || !v.version) return null;
-    return {
-      version: v.version,
-      sha256: typeof v.sha256 === 'string' ? v.sha256 : '',
-    };
+    return { version: v.version, sha256: typeof v.sha256 === 'string' ? v.sha256 : '' };
   } catch {
     return null;
   }

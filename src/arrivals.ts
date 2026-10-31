@@ -20,17 +20,8 @@ import { createImportSection } from './arrivals-import';
    qui: le modifiche alla collezione passano da `onCollectionChanged` (main.ts),
    che ricarica collezione e stato dall'API e ri-renderizza. */
 
-export interface ArrivalsParams {
-  /** Ruolo amministratore (da GET me): abilita ESPORTA, CAMPI, IMPORTA. */
-  isAdmin: boolean;
-  /** `sub` dell'utente corrente. */
-  sub: string;
-  /** Cartella delle copertine (config.json → imgDir). */
-  imgDir: string;
-  /** Chiamato dopo una modifica alla collezione: la ricarica dall'API. */
-  onCollectionChanged: () => Promise<void>;
-  /** Sessione scaduta durante una scrittura (avviso ACCEDI di main). */
-  onSessionExpired: () => void;
+/** `isAdmin` (da GET me) abilita ESPORTA, CAMPI, IMPORTA. */
+export interface ArrivalsParams extends SectionContext {
   /** Elemento a cui restituire il focus alla chiusura. */
   returnFocusTo: () => HTMLElement | null;
 }
@@ -84,14 +75,7 @@ function buildArrivals(params: ArrivalsParams): ArrivalsPanel {
   body.className = 'arrivals-body';
   panelEl.appendChild(body);
 
-  const ctx: SectionContext = {
-    isAdmin: params.isAdmin,
-    sub: params.sub,
-    imgDir: params.imgDir,
-    onCollectionChanged: params.onCollectionChanged,
-    onSessionExpired: params.onSessionExpired,
-  };
-
+  const ctx: SectionContext = params;
   const list = createListSection(ctx);
   const tabs: TabDef[] = [
     { id: 'phone', label: 'TELEFONO', section: createPhoneSection(ctx) },
@@ -106,19 +90,19 @@ function buildArrivals(params: ArrivalsParams): ArrivalsPanel {
   }
   // §10.1: il pannello apre su "Collega un telefono".
   let active = 'phone';
+  const current = (): Section | undefined => tabs.find(t => t.id === active)?.section;
 
   function select(id: string, focus: boolean): void {
-    if (id !== active) tabs.find(t => t.id === active)?.section.deactivate?.();
+    if (id !== active) current()?.deactivate?.();
     active = id;
     rerenderShell();
-    const tab = tabs.find(t => t.id === id);
-    tab?.section.activate();
+    current()?.activate();
     if (focus) body.querySelector<HTMLElement>(`#arrivalsTab-${id}`)?.focus();
   }
 
   function rerenderShell(): void {
     const view: ArrivalsTab[] = tabs.map(t => ({ id: t.id, label: t.label, el: t.section.el }));
-    render(arrivalsShellTemplate(view, active, { onSelect: select }), body);
+    render(arrivalsShellTemplate(view, active, select), body);
   }
 
   function rerender(): void {
@@ -130,13 +114,12 @@ function buildArrivals(params: ArrivalsParams): ArrivalsPanel {
   const onKeydown = (e: KeyboardEvent): void => { if (e.key === 'Tab') trapTab(panelEl, e); };
   panelEl.addEventListener('keydown', onKeydown);
   const observer = new MutationObserver(() => {
-    const open = backdrop.classList.contains('show');
-    if (open) {
+    if (backdrop.classList.contains('show')) {
       // Apertura/riapertura: carica o aggiorna i dati della scheda visibile.
-      tabs.find(t => t.id === active)?.section.activate();
+      current()?.activate();
       return;
     }
-    tabs.find(t => t.id === active)?.section.deactivate?.();
+    current()?.deactivate?.();
     if (backdrop.contains(document.activeElement)) params.returnFocusTo()?.focus();
   });
   observer.observe(backdrop, { attributes: true, attributeFilter: ['class'] });

@@ -27,8 +27,6 @@ export interface TellicoFile extends ParseResult {
   zipImages: Map<string, ZipImage>;
 }
 
-export type TellicoPhase = 'extracting' | 'parsing';
-
 /** Nome immagine accettato dall'API (docs/api.md, import delle immagini). */
 export const IMAGE_NAME_RE = /^(?!\.)[A-Za-z0-9._-]{1,200}$/;
 
@@ -37,18 +35,13 @@ const MIME_BY_EXT: Record<string, string> = {
   webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif',
 };
 
-function mimeFor(name: string): string | null {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return MIME_BY_EXT[ext] ?? null;
-}
-
 function zipImageEntries(zip: JSZip): Map<string, ZipImage> {
   const out = new Map<string, ZipImage>();
   zip.forEach((path, entry) => {
     if (entry.dir) return;
     const m = /^images\/([^/]+)$/.exec(path);
     if (!m) return;
-    const mime = mimeFor(m[1]);
+    const mime = MIME_BY_EXT[m[1].split('.').pop()?.toLowerCase() ?? ''];
     if (mime) out.set(m[1], { mime, entry });
   });
   return out;
@@ -56,7 +49,7 @@ function zipImageEntries(zip: JSZip): Map<string, ZipImage> {
 
 export async function readTellicoFile(
   file: Blob,
-  onPhase?: (phase: TellicoPhase) => void
+  onPhase?: (phase: 'extracting' | 'parsing') => void
 ): Promise<TellicoFile> {
   const arrayBuf = await file.arrayBuffer();
   let xmlString: string;
@@ -94,13 +87,10 @@ export async function zipImageUrls(
   return { urls, revoke: () => { for (const u of urls.values()) URL.revokeObjectURL(u); } };
 }
 
-/** Base64 puro da un data URL (`data:<mime>;base64,<dati>`); null se non è base64. */
-export function base64FromDataUrl(url: string): string | null {
-  const i = url.indexOf(';base64,');
-  return url.startsWith('data:') && i !== -1 ? url.slice(i + 8) : null;
-}
-
-/** Base64 di un'immagine del file (incorporata o dello zip), per l'invio all'API. */
+/** Base64 di un'immagine del file, per l'invio all'API: dello zip, o incorporata
+ *  come data URL (`data:<mime>;base64,<dati>`; null se non è base64). */
 export async function imageBase64(img: string | ZipImage): Promise<string | null> {
-  return typeof img === 'string' ? base64FromDataUrl(img) : img.entry.async('base64');
+  if (typeof img !== 'string') return img.entry.async('base64');
+  const i = img.indexOf(';base64,');
+  return img.startsWith('data:') && i !== -1 ? img.slice(i + 8) : null;
 }

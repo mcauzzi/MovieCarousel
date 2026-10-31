@@ -1,4 +1,4 @@
-import { render } from 'lit';
+import { render, nothing } from 'lit';
 import { confirmDialogTemplate, sessionNoticeTemplate } from './templates/db.templates';
 import type { ConfirmView } from './templates/db.templates';
 import { trapTab } from './utils';
@@ -57,5 +57,5 @@ export function showSessionExpired(
     document.body.appendChild(noticeHost);
   }
   const host = noticeHost;
-  render(sessionNoticeTemplate(true, message, onLogin, () => render(sessionNoticeTemplate(false, message, onLogin, () => {}), host)), host);
+  render(sessionNoticeTemplate(message, onLogin, () => render(nothing, host)), host);
 }
