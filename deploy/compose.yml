@@ -1,18 +1,21 @@
 # Stack Komodo "cinemalometti": sito (nginx), API CineManager, Postgres, backup notturno.
 # Guida operativa: deploy/README.md. Design: docs/scanner-dvd.md §12.
 #
-# SEGRETI: non passano dall'Environment di Komodo né dall'interpolazione del compose, ma da due file
-# env sul NAS, nella cartella SECRETS_DIR (fuori dal repo, chmod 600), caricati con env_file: i valori
-# arrivano ai container così come sono, qualunque carattere contengano.
+# SEGRETI: due modi, anche insieme (a parità di nome vince il file in SECRETS_DIR).
+#   1. Komodo: nell'Environment dello stack, di solito come Secret interpolati, es.
+#        POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'
+#      Komodo scrive l'Environment in .env nella run directory (che deve essere deploy/) e i
+#      servizi qui sotto lo caricano con env_file.
+#   2. File env sul NAS, nella cartella SECRETS_DIR (fuori dal repo, chmod 600): db.env e api.env.
+#   Entrambe le sorgenti sono facoltative (env_file con required: false, Compose >= 2.24): i
+#   valori arrivano ai container senza passare dalla connection string. Vedi deploy/README.md.
 #
-#   db.env    (servizi db, backup, api)
-#     POSTGRES_PASSWORD=...                     password del ruolo "cinema" di Postgres
-#   api.env   (servizio api)
-#     Oidc__ClientSecret=...                    segreto in chiaro del client OIDC in Authelia
-#     DataProtection__CertificateBase64=...     PFX in base64 che cifra le chiavi Data Protection
-#     DataProtection__CertificatePassword=...   password del PFX
-#     Tmdb__ApiToken=...                        token "API Read Access" di TMDb
-#     Lookup__UpcItemDbKey=...                  (facoltativo) chiave del piano a pagamento di UPCitemdb
+#   POSTGRES_PASSWORD                     password del ruolo "cinema" (db, backup, api)  → db.env
+#   Oidc__ClientSecret                    segreto in chiaro del client OIDC in Authelia   → api.env
+#   DataProtection__CertificateBase64     PFX in base64 che cifra le chiavi Data Protection
+#   DataProtection__CertificatePassword   password del PFX
+#   Tmdb__ApiToken                        token "API Read Access" di TMDb
+#   Lookup__UpcItemDbKey                  (facoltativo) chiave del piano a pagamento di UPCitemdb
 #
 # Variabili da impostare nell'Environment dello stack in Komodo (nessun segreto):
 #
@@ -20,7 +23,6 @@
 #     WEB_ROOT            cartella del NAS con config.json e assets/ (collezione .tc, covers/, bgm/)
 #     DB_DIR              cartella dei dati di Postgres (disco locale del NAS, non NFS/SMB)
 #     BACKUP_DIR          cartella dei dump notturni
-#     SECRETS_DIR         cartella con db.env e api.env (vedi sopra)
 #     PUBLIC_BASE_URL     indirizzo pubblico del sito, es. https://<host-sito> (redirect_uri OIDC, QR)
 #     PROXY_IP            IP da cui Caddy raggiunge il NAS (proxy fidato per l'IP reale)
 #     OIDC_AUTHORITY      issuer di Authelia, es. https://<host-auth>
@@ -28,6 +30,7 @@
 #     OIDC_ADMIN_GROUP    gruppo Authelia degli amministratori
 #
 #   Facoltative (default)
+#     SECRETS_DIR                    cartella con db.env e api.env, se non usi i Secret di Komodo
 #     PORT                           porta sull'host, quella a cui punta Caddy (8091)
 #     STACK_SUBNET                   subnet fissa della rete dello stack (172.31.91.0/24)
 #     OIDC_USER_GROUP                gruppo degli utenti; vuoto = ogni utente autenticato ("")
@@ -71,8 +74,12 @@ services:
     # Segreti: POSTGRES_PASSWORD (usata dall'API come password del DB, fuori dalla connection string)
     # e quelli dell'API. Vedi in testa.
     env_file:
-      - "${SECRETS_DIR:?imposta SECRETS_DIR}/db.env"
-      - "${SECRETS_DIR:?imposta SECRETS_DIR}/api.env"
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/api.env"
+        required: false
     environment:
       ConnectionStrings__Cinema: "Host=db;Database=cinema;Username=cinema"
       PublicBaseUrl: "${PUBLIC_BASE_URL:?imposta PUBLIC_BASE_URL (es. https://host-sito)}"
@@ -102,8 +109,12 @@ services:
     image: postgres:17-alpine
     container_name: cinemalometti-db
     restart: unless-stopped
+    # POSTGRES_PASSWORD
     env_file:
-      - "${SECRETS_DIR:?imposta SECRETS_DIR}/db.env"     # POSTGRES_PASSWORD
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
     environment:
       POSTGRES_DB: cinema
       POSTGRES_USER: cinema
@@ -121,8 +132,12 @@ services:
     image: postgres:17-alpine
     container_name: cinemalometti-backup
     restart: unless-stopped
+    # POSTGRES_PASSWORD → PGPASSWORD in backup.sh
     env_file:
-      - "${SECRETS_DIR:?imposta SECRETS_DIR}/db.env"     # POSTGRES_PASSWORD → PGPASSWORD in backup.sh
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
     environment:
       PGHOST: db
       PGUSER: cinema

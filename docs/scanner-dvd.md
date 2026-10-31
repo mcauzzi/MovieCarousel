@@ -2,7 +2,7 @@
 
 > Stato: **proposta**, nessuna implementazione ancora. Vive sul ramo `feature/scanner-dvd`, di cui costituisce i primi commit; le fasi di lavoro sono in fondo (§14).
 >
-> Il repository è pubblico: qui compaiono solo nomi di variabili e segnaposto (`<host-sito>`, `<host-auth>`), mai host reali, indirizzi IP, segreti o chiavi. I valori veri vivono solo nell'environment dello stack Komodo e nella configurazione di Authelia/Caddy.
+> Il repository è pubblico: qui compaiono solo nomi di variabili e segnaposto (`<host-sito>`, `<host-auth>`), mai host reali, indirizzi IP, segreti o chiavi. I valori veri vivono solo nello stack Komodo (Environment e Secret, o file env sul NAS) e nella configurazione di Authelia/Caddy.
 
 ## 1. Obiettivo
 
@@ -714,22 +714,21 @@ services:
     image: ghcr.io/mcauzzi/moviecarousel-api:latest
     container_name: cinemalometti-api
     restart: unless-stopped
+    env_file:                            # segreti: Environment di Komodo (.env) o SECRETS_DIR, vedi sotto
+      - { path: .env, required: false }
+      - { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }
+      - { path: "${SECRETS_DIR:-./.secrets-non-impostata}/api.env", required: false }
     environment:
-      ConnectionStrings__Cinema: "Host=db;Database=cinema;Username=cinema;Password=${DB_PASSWORD:?}"
+      ConnectionStrings__Cinema: "Host=db;Database=cinema;Username=cinema"   # password da POSTGRES_PASSWORD, in codice
       PublicBaseUrl: "${PUBLIC_BASE_URL:?}"            # es. https://<host-sito>: redirect_uri OIDC e QR
       Proxy__KnownNetworks: "${STACK_SUBNET:-172.31.91.0/24}"
       Proxy__KnownProxies: "${PROXY_IP:?}"             # IP da cui Caddy raggiunge il NAS
       Oidc__Authority: "${OIDC_AUTHORITY:?}"
       Oidc__ClientId: "${OIDC_CLIENT_ID:?}"
-      Oidc__ClientSecret: "${OIDC_CLIENT_SECRET:?}"
       Oidc__UserGroup: "${OIDC_USER_GROUP:-}"
       Oidc__AdminGroup: "${OIDC_ADMIN_GROUP:?}"
-      DataProtection__CertificateBase64: "${DP_CERT_BASE64:?}"
-      DataProtection__CertificatePassword: "${DP_CERT_PASSWORD:?}"
       Devices__MaxOwnerInactiveDays: "${DEVICE_MAX_OWNER_INACTIVE_DAYS:-90}"
-      Tmdb__ApiToken: "${TMDB_API_TOKEN:?}"
       Lookup__Providers: "${LOOKUP_PROVIDERS:-upcitemdb}"
-      Lookup__UpcItemDbKey: "${UPCITEMDB_KEY:-}"
       Tellico__BarcodeField: "${TELLICO_BARCODE_FIELD:-ean}"
       App__VersionUrl: "http://web/app/version.json"
       Covers__Path: /data/covers
@@ -742,7 +741,8 @@ services:
     image: postgres:17-alpine
     container_name: cinemalometti-db
     restart: unless-stopped
-    environment: { POSTGRES_DB: cinema, POSTGRES_USER: cinema, POSTGRES_PASSWORD: "${DB_PASSWORD:?}" }
+    env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
+    environment: { POSTGRES_DB: cinema, POSTGRES_USER: cinema }
     volumes: ["${DB_DIR:?}:/var/lib/postgresql/data"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U cinema"], interval: 10s }
 
@@ -750,10 +750,10 @@ services:
     image: postgres:17-alpine
     container_name: cinemalometti-backup
     restart: unless-stopped
-    environment:
+    env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
+    environment:                           # backup.sh copia POSTGRES_PASSWORD in PGPASSWORD
       PGHOST: db
       PGUSER: cinema
-      PGPASSWORD: "${DB_PASSWORD:?}"
       PGDATABASE: cinema
       BACKUP_KEEP: "${BACKUP_KEEP:-14}"
     volumes:
@@ -773,22 +773,27 @@ Note:
 - **Postgres** su `DB_DIR` solo su disco locale del NAS, non su una condivisione di rete (NFS/SMB).
 - I secret di firma dell'APK stanno solo nella CI (§11.1), non nello stack. Il certificato Data Protection (§4.1) sta nello stack ed è conservato con gli altri secret.
 
-**Variabili** (solo nell'environment Komodo, mai nel repo):
+**Segreti** (mai nel repo), da una delle due sorgenti o da entrambe (a parità di nome vince il file):
+
+- **Secret di Komodo** richiamati nell'Environment dello stack (`POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'`). Komodo scrive l'Environment in `.env` nella run directory (`deploy/`), che i servizi caricano con `env_file`.
+- **File env** in `SECRETS_DIR` sul NAS: `db.env` (`POSTGRES_PASSWORD`, per db, backup, api) e `api.env` (`Oidc__ClientSecret`, `DataProtection__CertificateBase64`, `DataProtection__CertificatePassword`, `Tmdb__ApiToken`, facoltativo `Lookup__UpcItemDbKey`).
+
+Passando da `env_file` i valori arrivano ai container così come sono; la password del DB non sta nella connection string ma viene inserita in codice, quindi nessun vincolo sui caratteri. Guida operativa: `deploy/README.md`.
+
+**Variabili** (Environment di Komodo, nessun segreto):
 
 | Variabile | Obbligatoria | Note |
 |---|---|---|
 | `WEB_ROOT`, `PORT` | sì / no (8091) | come oggi |
 | `DB_DIR`, `BACKUP_DIR`, `BACKUP_KEEP` | sì / sì / no (14) | cartelle sul NAS |
-| `DB_PASSWORD` | sì | |
+| `SECRETS_DIR` | no | cartella con `db.env` e `api.env`, se non si usano i Secret di Komodo |
 | `STACK_SUBNET` | no | subnet fissa della rete dello stack |
 | `PROXY_IP` | sì | IP con cui Caddy raggiunge il NAS (proxy fidato per l'IP reale) |
 | `PUBLIC_BASE_URL` | sì | indirizzo pubblico del sito: `redirect_uri` OIDC e URL nel QR di download |
-| `OIDC_AUTHORITY`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | sì | client OIDC in Authelia |
+| `OIDC_AUTHORITY`, `OIDC_CLIENT_ID` | sì | client OIDC in Authelia |
 | `OIDC_USER_GROUP`, `OIDC_ADMIN_GROUP` | no / sì | ruoli (§4.3) |
-| `DP_CERT_BASE64`, `DP_CERT_PASSWORD` | sì | certificato che cifra le chiavi Data Protection (§4.1) |
 | `DEVICE_MAX_OWNER_INACTIVE_DAYS` | no (90) | §4.3 |
-| `TMDB_API_TOKEN` | sì | |
-| `LOOKUP_PROVIDERS`, `UPCITEMDB_KEY` | no | catena dei provider EAN (§7) |
+| `LOOKUP_PROVIDERS` | no | catena dei provider EAN (§7) |
 | `TELLICO_BARCODE_FIELD` | no (`ean`) | nome del campo codice a barre in Tellico (§8, §9) |
 
 ### nginx (`deploy/nginx.conf`)

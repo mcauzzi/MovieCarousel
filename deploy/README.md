@@ -15,11 +15,41 @@ con i test, poi il sito con l'APK Android, vedi [App Android](#app-android-apk-f
 aggiorna lo stack quando escono. Design completo:
 `docs/scanner-dvd.md` §4.1 e §12.
 
-## Segreti (file env sul NAS)
+## Segreti
 
-I segreti non stanno nell'Environment di Komodo né passano dall'interpolazione del compose: il compose
-li carica con `env_file` da due file nella cartella `SECRETS_DIR` del NAS, fuori dal repo, e arrivano
-ai container così come sono (qualsiasi carattere).
+Due sorgenti, entrambe facoltative e usabili insieme (a parità di nome vince il file in `SECRETS_DIR`).
+In tutti e due i casi i valori arrivano ai container con `env_file`, così come sono.
+
+| Variabile | Servizi | File |
+|---|---|---|
+| `POSTGRES_PASSWORD` | db, backup, api | `db.env` |
+| `Oidc__ClientSecret` | api | `api.env` |
+| `DataProtection__CertificateBase64`, `DataProtection__CertificatePassword` | api | `api.env` |
+| `Tmdb__ApiToken` | api | `api.env` |
+| `Lookup__UpcItemDbKey` (facoltativo) | api | `api.env` |
+
+### 1. Secret di Komodo
+
+Crea i Secret in Komodo (Settings → Variables, flag *secret*) e richiamali nell'Environment dello
+stack, insieme alle variabili normali:
+
+```ini
+POSTGRES_PASSWORD = '[[CINEMA_DB_PASSWORD]]'
+Oidc__ClientSecret = '[[CINEMA_OIDC_SECRET]]'
+DataProtection__CertificateBase64 = '[[CINEMA_DP_CERT]]'
+DataProtection__CertificatePassword = '[[CINEMA_DP_CERT_PASSWORD]]'
+Tmdb__ApiToken = '[[CINEMA_TMDB_TOKEN]]'
+```
+
+Komodo scrive l'Environment in `.env` nella run directory dello stack e i servizi `api`, `db` e
+`backup` lo caricano. Per questo la **run directory deve essere `deploy`** (file `compose.yml`).
+Gli apici singoli evitano che Compose interpreti `$`; il valore non può contenere `'` (in quel caso
+usa i file env). Nota: con questa via ogni servizio che carica `.env` riceve tutto l'Environment,
+quindi anche `db` e `backup` vedono i segreti dell'API.
+
+### 2. File env sul NAS
+
+Imposta `SECRETS_DIR` nell'Environment con una cartella fuori dal repo:
 
 ```sh
 install -d -m 700 /percorso/segreti
@@ -43,18 +73,24 @@ Tmdb__ApiToken='eyJ...'
 # Lookup__UpcItemDbKey='...'          facoltativo
 ```
 
-Metti i valori tra **apici singoli**: così Compose non interpreta `$` o altri caratteri speciali.
-L'API usa `POSTGRES_PASSWORD` come password del DB inserendola nella connection string in codice, quindi
-non ci sono vincoli sui caratteri. Postgres legge la password solo al primo avvio (quando crea il DB):
-per cambiarla dopo serve anche `ALTER ROLE cinema PASSWORD '...'`.
+Anche qui valori tra **apici singoli**. Con questa via `db` e `backup` vedono solo `db.env`.
+
+### Note comuni
+
+- `env_file` con `required: false` richiede Docker Compose ≥ 2.24. Se un segreto manca del tutto,
+  Postgres non parte senza password e l'API lo segnala nei log all'avvio.
+- L'API usa `POSTGRES_PASSWORD` come password del DB inserendola nella connection string in codice:
+  nessun vincolo sui caratteri.
+- Postgres legge la password solo al primo avvio (quando crea il DB): per cambiarla dopo serve anche
+  `ALTER ROLE cinema PASSWORD '...'`.
 
 ## Variabili dell'Environment Komodo
 
-Nessun segreto. L'elenco completo, con i default, è nel commento in testa a `compose.yml`.
+Variabili normali (i segreti sono nella sezione sopra). L'elenco completo, con i default, è nel commento in testa a `compose.yml`.
 
-- Obbligatorie: `WEB_ROOT`, `DB_DIR`, `BACKUP_DIR`, `SECRETS_DIR`, `PUBLIC_BASE_URL`, `PROXY_IP`,
+- Obbligatorie: `WEB_ROOT`, `DB_DIR`, `BACKUP_DIR`, `PUBLIC_BASE_URL`, `PROXY_IP`,
   `OIDC_AUTHORITY`, `OIDC_CLIENT_ID`, `OIDC_ADMIN_GROUP`.
-- Facoltative: `PORT` (8091), `STACK_SUBNET` (172.31.91.0/24), `OIDC_USER_GROUP`,
+- Facoltative: `SECRETS_DIR` (solo con i file env), `PORT` (8091), `STACK_SUBNET` (172.31.91.0/24), `OIDC_USER_GROUP`,
   `DEVICE_MAX_OWNER_INACTIVE_DAYS` (90), `LOOKUP_PROVIDERS` (upcitemdb),
   `TELLICO_BARCODE_FIELD` (ean), `BACKUP_KEEP` (14), `BACKUP_AT` (03:30), `BACKUP_NOW` (0), `TZ` (Europe/Rome).
 
@@ -74,7 +110,7 @@ altri secret.
 openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -subj "/CN=cinemanager-dp" \
   -keyout dp.key -out dp.crt
 openssl pkcs12 -export -inkey dp.key -in dp.crt -out dp.pfx -passout pass:<password>
-base64 -w0 dp.pfx          # → DataProtection__CertificateBase64 in api.env (<password> → DataProtection__CertificatePassword)
+base64 -w0 dp.pfx          # → DataProtection__CertificateBase64 (<password> → DataProtection__CertificatePassword)
 shred -u dp.key            # dp.pfx va conservato fuori dal NAS insieme alla password
 ```
 
@@ -128,7 +164,7 @@ l'immagine non contiene l'APK.
   `token_endpoint_auth_method: client_secret_post`, PKCE S256, scope `openid profile groups`,
   `redirect_uris: [<PUBLIC_BASE_URL>/api/auth/callback]`, `consent_mode: implicit`. In Authelia va
   l'hash del segreto (`authelia crypto hash generate pbkdf2`), nello stack il segreto in chiaro
-  (`Oidc__ClientSecret` in api.env). `OIDC_AUTHORITY` è l'URL pubblico di Authelia.
+  (segreto `Oidc__ClientSecret`). `OIDC_AUTHORITY` è l'URL pubblico di Authelia.
 - **Caddy**: una route `/api/app/*` **prima** del forward auth, senza `forward_auth` (l'app firma le
   richieste da sé e `/api/app/version` è pubblico); tutto il resto resta dietro Authelia come oggi.
   Schema in `docs/scanner-dvd.md` §12.
@@ -189,5 +225,9 @@ indipendente della collezione.
 cd deploy
 docker compose -p cinemalometti --env-file /percorso/sicuro/stack.env up -d
 ```
+
+`stack.env` contiene le variabili normali e `SECRETS_DIR`; i segreti stanno nei file env di quella
+cartella. In alternativa metti tutto in `deploy/.env` (gitignorato, chmod 600): Compose lo usa sia per
+le variabili sia, tramite `env_file`, come sorgente dei segreti.
 
 `backup.sh` viene montato dalla stessa cartella del compose: il compose va eseguito dal clone del repo.

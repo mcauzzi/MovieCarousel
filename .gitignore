@@ -8,3 +8,5 @@ docs/superpowers/
 *.tc
 *.tc~
 a11y-report/
+.env
+*.env

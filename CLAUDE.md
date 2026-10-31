@@ -111,6 +111,6 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
   - `api`: l'API .NET.
   - `db`: `postgres:17-alpine`.
   - `backup`: `pg_dump` notturno con rotazione (`deploy/backup.sh`).
-- **Segreti:** file env in `SECRETS_DIR` (`db.env`, `api.env`) via `env_file`, mai nell'Environment di Komodo. Variabili, Caddy (forward auth Authelia tranne `/api/app/*`), certificato Data Protection, permessi e restore: `deploy/README.md`.
+- **Segreti:** via `env_file` da due sorgenti facoltative: l'Environment di Komodo (Secret `[[...]]`, scritto in `deploy/.env`, run directory `deploy`) e/o i file `db.env`/`api.env` in `SECRETS_DIR`. Mai nel compose né nel repo. Variabili, Caddy (forward auth Authelia tranne `/api/app/*`), certificato Data Protection, permessi e restore: `deploy/README.md`.
 - **Cache:** `index.html` è `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`. `assets/bgm/` ha `autoindex on`: `bgm.ts` scopre le tracce dal listing.
 - Nessun runner self-hosted. Fallback manuale: `npm run build` e copia di `dist/` nella cartella dati.

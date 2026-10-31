@@ -3,7 +3,7 @@
 # POSIX sh (BusyBox/alpine). Nessun segreto: le credenziali arrivano dall'environment del container.
 #
 #   PGHOST, PGUSER, PGPASSWORD, PGDATABASE   connessione (variabili standard di libpq);
-#                 PGPASSWORD, se assente, viene presa da POSTGRES_PASSWORD (db.env, env_file)
+#                 PGPASSWORD, se assente, viene presa da POSTGRES_PASSWORD (env_file: Environment di Komodo o db.env)
 #   BACKUP_DIR    cartella dei dump              (default /backup)
 #   BACKUP_AT     ora del dump, HH:MM            (default 03:30, ora locale del container: vedi TZ)
 #   BACKUP_KEEP   quanti dump tenere             (default 14)
@@ -22,7 +22,7 @@ BACKUP_KEEP=${BACKUP_KEEP:-14}
 BACKUP_NOW=${BACKUP_NOW:-0}
 PREFIX=cinema
 
-# La password arriva da db.env (stesso file del servizio db): libpq legge PGPASSWORD.
+# La password arriva via env_file come POSTGRES_PASSWORD (come per il servizio db): libpq legge PGPASSWORD.
 if [ -z "${PGPASSWORD:-}" ] && [ -n "${POSTGRES_PASSWORD:-}" ]; then
     PGPASSWORD=$POSTGRES_PASSWORD
     export PGPASSWORD
