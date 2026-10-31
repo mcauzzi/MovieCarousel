@@ -19,22 +19,43 @@ Le immagini le pubblica GitHub Actions a ogni push su `master`; Komodo aggiorna 
 
 ## Primo deploy
 
-### 1. Cartelle sul NAS
+### 1. Docker Compose e cartelle sul NAS
 
-Via SSH sul NAS. Sostituisci i percorsi con i tuoi; `WEB_ROOT` è la cartella che usi già oggi per il sito.
+Via SSH sul NAS. Prima controlla la versione di Compose: serve la **2.24 o successiva**.
+
+```sh
+docker compose version
+```
+
+Se Komodo Periphery gira in un container, conta la sua versione:
+`docker exec <container-periphery> docker compose version`. Se è più vecchia:
+
+- Periphery in container: aggiorna la sua immagine (porta con sé un Compose recente).
+- Compose del NAS (Synology Container Manager può avere la 2.20): aggiorna Container Manager dal
+  Centro pacchetti; se resta vecchio, installa il plugin ufficiale e riprova `docker compose version`:
+
+  ```sh
+  sudo mkdir -p /usr/local/lib/docker/cli-plugins
+  sudo curl -fSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  ```
+
+Poi le cartelle. Sostituisci i percorsi con i tuoi; `WEB_ROOT` è la cartella che usi già oggi per il sito.
 
 ```sh
 WEB_ROOT=/percorso/sito                   # quella di oggi, con config.json
 COVERS_DIR=<cartella-copertine>           # relativa a WEB_ROOT, la stessa di imgDir in config.json
-sudo mkdir -p /percorso/db /percorso/backup
+sudo mkdir -p /percorso/db /percorso/backup "$WEB_ROOT/$COVERS_DIR"
 sudo chown -R 1654:1654 "$WEB_ROOT/$COVERS_DIR"   # l'API ci scrive le copertine (utente 1654)
 ```
 
 - `COVERS_DIR` è il percorso che hai in `imgDir` di `config.json`, senza `./` iniziale e senza `/`
   finale: con `"imgDir": "./assets/copertine/"` è `assets/copertine`.
+- Se la cartella è in una condivisione Synology con ACL, `chown` può non bastare: dai a UID 1654 la
+  scrittura dalle ACL, oppure tieni un gruppo comune con `g+w` se vuoi scriverci anche dalla condivisione.
 - La cartella del DB deve stare su un disco locale del NAS, non su una condivisione di rete.
-- In `WEB_ROOT/config.json` aggiungi `"apiBase": "./api/"`: il sito legge la collezione dal DB invece
-  che dal `.tc` (esempio in [`config.example.json`](../config.example.json)).
+- Non toccare ancora `config.json`: `apiBase` si aggiunge dopo il deploy (passo 6).
 
 ### 2. Genera i segreti (Windows, PowerShell)
 
@@ -50,16 +71,12 @@ function New-Secret {
 ```
 
 Poi, nella stessa finestra, genera i valori uno alla volta. Ognuno va salvato come Secret in Komodo
-(passo 5) con il nome indicato.
+(passo 5) con il nome indicato. Il segreto OIDC lo genera Authelia al passo 3.
+
+I valori generati qui contengono solo lettere, cifre e `+/=`. Se scegli un segreto a mano, evita `$`:
+Compose lo leggerebbe come una variabile.
 
 **Password del database**: lancia il comando e salva l'output come `CINEMA_DB_PASSWORD`.
-
-```powershell
-New-Secret
-```
-
-**Segreto del client OIDC**: lancia il comando e salva l'output come `CINEMA_OIDC_SECRET`. Ti serve
-anche al passo 3.
 
 ```powershell
 New-Secret
@@ -89,16 +106,18 @@ token "API Read Access Token" (inizia con `eyJ`) e salvalo come `CINEMA_TMDB_TOK
 
 ### 3. Client OIDC in Authelia
 
-Authelia vuole l'**hash** del segreto OIDC, non il segreto. Sul NAS, via SSH (sostituisci
-`SEGRETO` con il valore di `CINEMA_OIDC_SECRET`):
+Authelia genera il segreto e il suo **hash** in un colpo solo. Sul NAS, via SSH (oppure
+`docker exec <container-authelia> authelia crypto hash ...` nel container che hai già):
 
 ```sh
-docker run --rm authelia/authelia:latest \
-  authelia crypto hash generate pbkdf2 --variant sha512 --password 'SEGRETO'
+docker run --rm authelia/authelia:latest authelia crypto hash generate pbkdf2 --variant sha512 \
+  --random --random.length 72 --random.charset alphanumeric
 ```
 
-La riga `Digest: $pbkdf2-sha512$...` è il valore di `client_secret`. Nella configurazione di Authelia
-aggiungi il client:
+- `Random Password: ...` è il segreto in chiaro: salvalo come `CINEMA_OIDC_SECRET` (passo 5).
+- `Digest: $pbkdf2-sha512$...` è il valore di `client_secret` in Authelia.
+
+Nella configurazione di Authelia aggiungi il client:
 
 ```yaml
 identity_providers:
@@ -141,6 +160,19 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 }
 ```
 
+**Porta solo per Caddy.** Di default la porta è aperta su tutte le interfacce del NAS: chi è in LAN
+può aprire `http://<ip-nas>:<porta>` e saltare Authelia. Chiudila in uno dei due modi:
+
+- **consigliato**: nel firewall del NAS (*Pannello di controllo → Sicurezza → Firewall*) una regola
+  che accetta `<porta>` solo da `PROXY_IP` e una che la nega a tutti gli altri;
+- oppure `BIND_ADDR = <ip-nas>` nell'Environment (passo 5), se Caddy raggiunge il NAS da un'interfaccia
+  diversa da quella della LAN.
+
+Prova da un altro PC della LAN: `curl -m 5 http://<ip-nas>:<porta>/` non deve rispondere. Se risponde,
+il firewall non filtra le porte pubblicate da Docker: usa `BIND_ADDR`, se la tua rete lo permette.
+Così all'API arrivano solo richieste passate da Caddy, e l'IP reale che legge da `X-Forwarded-For` è
+quello scritto da Caddy, non uno inventato da un client entrato dal gateway di Docker.
+
 ### 5. Stack in Komodo
 
 **Secret.** In *Settings → Variables* crea una variabile per ogni valore del passo 2, con il flag
@@ -156,6 +188,20 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 | File Paths | `compose.yml` |
 | Auto Update | attivo (aggiorna quando escono immagini nuove) |
 
+**Immagini.** Komodo scarica `ghcr.io/mcauzzi/moviecarousel` e `ghcr.io/mcauzzi/moviecarousel-api`
+senza login, quindi tutti e due i package devono essere pubblici, e un package nuovo nasce privato.
+Dopo il primo push su `master`, prova dal NAS:
+
+```sh
+docker pull ghcr.io/mcauzzi/moviecarousel:latest
+docker pull ghcr.io/mcauzzi/moviecarousel-api:latest
+```
+
+Per ogni immagine che risponde `unauthorized` o `denied`: su GitHub apri *il tuo profilo → Packages →
+il package → Package settings → Change visibility* e scegli **Public**. In alternativa lasciali privati:
+in Komodo aggiungi un account registry per `ghcr.io` con un token GitHub (classic) con il solo permesso
+`read:packages` e selezionalo nello stack.
+
 **Environment.** Sostituiscilo con questo, completando i valori tra `< >`:
 
 ```ini
@@ -167,6 +213,7 @@ BACKUP_DIR = /percorso/backup
 
 # Porta sul NAS a cui punta Caddy e fuso orario (ora del backup)
 PORT = <porta>
+# BIND_ADDR = <ip-nas>        # facoltativo, vedi passo 4
 TZ = <fuso orario, es. Europe/Berlin>
 
 # Indirizzi
@@ -189,6 +236,7 @@ Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#rife
 
 > La Run Directory deve essere `deploy`: Komodo scrive l'Environment in `deploy/.env` e i container
 > leggono i segreti da lì. Se `OIDC_USER_GROUP` resta vuoto, entra chiunque abbia un account Authelia.
+> Compose interpreta `$` anche in quel file: un `$` vero in un valore (o in un Secret) va scritto `$$`.
 
 ### 6. Deploy
 
@@ -197,17 +245,20 @@ Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#rife
 2. Nei log:
    - `api` deve applicare le migrazioni e restare acceso;
    - `backup` scrive `avvio: dump ogni giorno alle 03:30`.
-3. Prova dal NAS:
+3. Prova dal NAS (con `BIND_ADDR` usa `<ip-nas>` al posto di `localhost`):
    - `curl -s http://localhost:<porta>/api/health` deve rispondere con lo stato del DB;
    - `curl -si http://localhost:<porta>/api/me` deve rispondere `401`.
-4. Apri il sito, fai login, e da **ARRIVI → IMPORTA** (serve essere amministratore) carica il `.tc` di
+4. Solo ora, in `WEB_ROOT/config.json` aggiungi `"apiBase": "./api/"`: il sito legge la collezione dal
+   DB invece che dal `.tc` (esempio in [`config.example.json`](../config.example.json)). Prima del
+   deploy il sito vecchio non avrebbe avuto un'API a cui chiedere.
+5. Apri il sito, fai login, e da **ARRIVI → IMPORTA** (serve essere amministratore) carica il `.tc` di
    Tellico per riempire il DB.
 
 Se l'API si ferma subito, il log dice quale segreto manca o è sbagliato.
 
 ---
 
-## App Android
+## App Android (APK firmato)
 
 GitHub Actions compila e firma l'APK e lo mette nell'immagine del sito: si scarica da
 **ARRIVI → TELEFONO**. Senza i secret qui sotto il sito funziona lo stesso, ma senza APK ("App non
@@ -256,18 +307,21 @@ Ogni notte alle 03:30 `backup.sh` salva un dump in `BACKUP_DIR` (`cinema-AAAAMMG
 verifica e tiene gli ultimi 14. Includi `BACKUP_DIR` nei backup del NAS. Le copertine sono già nella
 cartella del sito (`COVERS_DIR`).
 
+I comandi qui sotto passano dal container `db`, che dentro di sé accetta l'utente `cinema` senza
+password. Lanciali da root (`sudo -i`): i dump in `BACKUP_DIR` sono leggibili solo da root.
+
 Dump manuale (fuori dalla rotazione):
 
 ```sh
-docker exec <stack>-backup-1 pg_dump -Fc -f /backup/manuale.dump
+docker exec <stack>-db-1 pg_dump -U cinema -Fc cinema > /percorso/backup/manuale.dump
 ```
 
-Ripristino:
+Ripristino (l'API va fermata prima e riavviata dopo):
 
 ```sh
 docker stop <stack>-api-1
-docker exec <stack>-backup-1 pg_restore --clean --if-exists --no-owner -d cinema \
-  /backup/cinema-AAAAMMGG-HHMM.dump
+docker exec -i <stack>-db-1 pg_restore -U cinema -d cinema --clean --if-exists --no-owner \
+  < /percorso/backup/cinema-AAAAMMGG-HHMM.dump
 docker start <stack>-api-1
 ```
 
@@ -294,7 +348,7 @@ docker start <stack>-api-1
 
 | Variabile | Cosa |
 |---|---|
-| `POSTGRES_PASSWORD` | password del DB (qualsiasi carattere) |
+| `POSTGRES_PASSWORD` | password del DB (niente `$`, o vedi sotto) |
 | `Oidc__ClientSecret` | segreto OIDC in chiaro (in Authelia va l'hash) |
 | `DataProtection__CertificateBase64` | certificato PFX in base64 |
 | `DataProtection__CertificatePassword` | password del PFX |
@@ -305,6 +359,7 @@ docker start <stack>-api-1
 
 | Variabile | Cosa |
 |---|---|
+| `BIND_ADDR` (0.0.0.0) | indirizzo del NAS su cui aprire `PORT`; 0.0.0.0 = tutte le interfacce (passo 4) |
 | `OIDC_USER_GROUP` (vuoto) | gruppo LLDAP di chi può entrare; vuoto = tutti |
 | `STACK_SUBNET` (172.31.91.0/24) | subnet della rete dello stack; deve essere libera sul NAS |
 | `DEVICE_MAX_OWNER_INACTIVE_DAYS` (90) | dopo quanti giorni senza login i telefoni di un utente si bloccano |
@@ -328,16 +383,18 @@ sudo install -m 600 /dev/null /percorso/segreti/api.env
 - `db.env`: `POSTGRES_PASSWORD='...'`
 - `api.env`: una riga per ognuno degli altri segreti, es. `Tmdb__ApiToken='...'`
 
-Scrivi i valori sempre tra apici singoli.
+Scrivi i valori sempre tra apici singoli: così anche un `$` resta com'è (il valore non può contenere
+a sua volta un apice singolo).
 
 ### Note
 
-- Serve Docker Compose 2.24 o successivo.
+- Serve Docker Compose 2.24 o successivo (passo 1).
 - Postgres legge la password solo quando crea il DB. Per cambiarla dopo: aggiorna il Secret e lancia
   `docker exec <stack>-db-1 psql -U cinema -c "ALTER ROLE cinema PASSWORD 'nuova'"`.
 - Con i Secret di Komodo anche `db` e `backup` ricevono tutto l'Environment, segreti dell'API compresi.
   Con i file env vedono solo `db.env`.
 - Senza Komodo: dal clone del repo, `cd deploy`, metti tutte le variabili in `deploy/.env` (è
   ignorato da git) e lancia `docker compose -p <stack> up -d`.
-- Build locale dell'immagine del sito (`docker build .`): senza l'APK passato dalla CI l'immagine non
-  contiene l'app.
+- Build locale dell'immagine del sito: `docker build .` funziona così com'è, ma senza l'APK
+  l'immagine non contiene l'app. Per includerlo: `docker build --build-context android-app=<cartella> .`,
+  con dentro `cinemanager.apk` e `version.json` (è quello che fa la CI).

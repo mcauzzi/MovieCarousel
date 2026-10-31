@@ -692,97 +692,37 @@ Facoltativo: la CI pubblica lo stesso APK anche come release GitHub (`android-v1
 
 ## 12. Deploy
 
-### Stack Komodo (`deploy/compose.yml`, schema)
+### Stack Komodo (`deploy/compose.yml`)
 
-```yaml
-networks:
-  default:
-    ipam:
-      config: [{ subnet: "${STACK_SUBNET:-172.31.91.0/24}" }]   # fissa: l'API la usa come proxy fidato (§4.1)
+Il file autoritativo è [`deploy/compose.yml`](../deploy/compose.yml) (variabili commentate in testa); la procedura è in [`deploy/README.md`](../deploy/README.md). In sintesi:
 
-services:
-  web:
-    image: ghcr.io/mcauzzi/moviecarousel:latest
-    restart: unless-stopped
-    ports: ["${PORT:?}:80"]
-    volumes: ["${WEB_ROOT:?}:/srv/data:ro"]
-    read_only: true
-    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+- **Rete**: quella di default dello stack, con subnet fissa `${STACK_SUBNET:-172.31.91.0/24}`, che l'API considera proxy fidato (`Proxy__KnownNetworks`, §4.1). Nessuna rete esterna, nessun `container_name`: i container prendono il nome dello stack. `web` è anche l'hostname con cui l'API legge `version.json`.
+- **`web`** (`ghcr.io/mcauzzi/moviecarousel`): unica porta pubblicata, `"${BIND_ADDR:-0.0.0.0}:${PORT}:80"`. Su tutte le interfacce chi è in LAN arriva a nginx senza Authelia: il README consiglia una regola del firewall del NAS che accetti `PORT` solo da `PROXY_IP`, oppure `BIND_ADDR`. `WEB_ROOT` montata in sola lettura su `/srv/data`; `read_only` con tmpfs per cache, run e `/tmp`.
+- **`api`** (`ghcr.io/mcauzzi/moviecarousel-api`): segreti da `env_file`, configurazione da `environment` (`PublicBaseUrl`, `Proxy__*`, `Oidc__*`, `Devices__*`, `Lookup__Providers`, `Tellico__BarcodeField`, `App__VersionUrl`, `Covers__Path`). Unico mount in scrittura: `${WEB_ROOT}/${COVERS_DIR}` su `/data/covers`. `read_only` con tmpfs `/tmp`; parte quando `db` è healthy.
+- **`db`** (`postgres:17-alpine`): `DB_DIR` su disco locale del NAS (non NFS/SMB), healthcheck `pg_isready -U cinema -d cinema`.
+- **`backup`** (`postgres:17-alpine`): `deploy/backup.sh` montato in sola lettura in `/usr/local/bin/cinema-backup.sh` con `create_host_path: false` (se manca il deploy fallisce invece di creare una cartella), usato come `entrypoint` (altrimenti partirebbe un secondo Postgres). Variabili `BACKUP_AT`, `BACKUP_KEEP`, `BACKUP_NOW`, `TZ`; `read_only` con tmpfs `/tmp`.
 
-  api:
-    image: ghcr.io/mcauzzi/moviecarousel-api:latest
-    restart: unless-stopped
-    env_file:                            # segreti: Environment di Komodo (.env) o SECRETS_DIR, vedi sotto
-      - { path: .env, required: false }
-      - { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }
-      - { path: "${SECRETS_DIR:-./.secrets-non-impostata}/api.env", required: false }
-    environment:
-      ConnectionStrings__Cinema: "Host=db;Database=cinema;Username=cinema"   # password da POSTGRES_PASSWORD, in codice
-      PublicBaseUrl: "${PUBLIC_BASE_URL:?}"            # es. https://<host-sito>: redirect_uri OIDC e QR
-      Proxy__KnownNetworks: "${STACK_SUBNET:-172.31.91.0/24}"
-      Proxy__KnownProxies: "${PROXY_IP:?}"             # IP da cui Caddy raggiunge il NAS
-      Oidc__Authority: "${OIDC_AUTHORITY:?}"
-      Oidc__ClientId: "${OIDC_CLIENT_ID:?}"
-      Oidc__UserGroup: "${OIDC_USER_GROUP:-}"
-      Oidc__AdminGroup: "${OIDC_ADMIN_GROUP:?}"
-      Devices__MaxOwnerInactiveDays: "${DEVICE_MAX_OWNER_INACTIVE_DAYS:-90}"
-      Lookup__Providers: "${LOOKUP_PROVIDERS:-upcitemdb}"
-      Tellico__BarcodeField: "${TELLICO_BARCODE_FIELD:-ean}"
-      App__VersionUrl: "http://web/app/version.json"
-      Covers__Path: /data/covers
-    volumes: ["${WEB_ROOT:?}/${COVERS_DIR:?}:/data/covers"]   # unico mount in scrittura
-    read_only: true
-    tmpfs: [/tmp]
-    depends_on: { db: { condition: service_healthy } }
+`deploy/backup.sh` (nel repo, nessun segreto): ciclo infinito che a `BACKUP_AT` (default 03:30, ora di `TZ`) esegue `pg_dump -Fc` su un file temporaneo, lo verifica con `pg_restore --list`, lo rinomina in `cinema-AAAAMMGG-HHMM.dump` e cancella i dump oltre i `BACKUP_KEEP` più recenti. La password arriva come `POSTGRES_PASSWORD` e lo script la copia in `PGPASSWORD`.
 
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
-    environment: { POSTGRES_DB: cinema, POSTGRES_USER: cinema }
-    volumes: ["${DB_DIR:?}:/var/lib/postgresql/data"]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U cinema"], interval: 10s }
-
-  backup:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    env_file: [{ path: .env, required: false }, { path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env", required: false }]
-    environment:                           # backup.sh copia POSTGRES_PASSWORD in PGPASSWORD
-      PGHOST: db
-      PGUSER: cinema
-      PGDATABASE: cinema
-      BACKUP_KEEP: "${BACKUP_KEEP:-14}"
-    volumes:
-      - "${BACKUP_DIR:?}:/backup"
-      - ./backup.sh:/backup.sh:ro
-    entrypoint: ["/bin/sh", "/backup.sh"]   # altrimenti partirebbe un secondo server Postgres
-    depends_on: { db: { condition: service_healthy } }
-```
-
-`deploy/backup.sh` (nel repo, nessun segreto): ciclo infinito che attende l'ora configurata (`BACKUP_AT`, default 03:30), esegue `pg_dump -Fc -f /backup/cinema-<data>.dump`, verifica il file con `pg_restore --list` e cancella i dump oltre i `BACKUP_KEEP` più recenti. In alternativa `crond` di BusyBox con lo stesso script.
-
-Note:
-
-- Nessuna porta pubblicata per `api`, `db`, `backup`; rete Docker dello stack con subnet fissa, nessuna rete esterna.
-- `web` è il nome del servizio nello stack (usato dall'API come hostname). Nessun `container_name`: i container prendono il nome dello stack.
-- **Copertine**: il percorso montato nell'API (`COVERS_DIR`, relativo a `WEB_ROOT`) deve coincidere con `imgDir` di `config.json`. L'immagine .NET gira come utente non-root (UID 1654 nelle immagini ufficiali recenti, da verificare): la cartella sul NAS deve essere scrivibile da quell'UID, oppure si imposta `user:` nel compose.
-- **Postgres** su `DB_DIR` solo su disco locale del NAS, non su una condivisione di rete (NFS/SMB).
+- **Copertine**: `COVERS_DIR` (relativa a `WEB_ROOT`) deve coincidere con `imgDir` di `config.json` e deve essere scrivibile dall'utente non-root dell'immagine .NET (UID 1654).
 - I secret di firma dell'APK stanno solo nella CI (§11.1), non nello stack. Il certificato Data Protection (§4.1) sta nello stack ed è conservato con gli altri secret.
 
-**Segreti** (mai nel repo), da una delle due sorgenti o da entrambe (a parità di nome vince il file):
+**Segreti** (mai nel repo), da una delle due sorgenti o da entrambe (a parità di nome vince il file), caricate con `env_file` (`required: false`, quindi Compose ≥ 2.24):
 
-- **Secret di Komodo** richiamati nell'Environment dello stack (`POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]`). Komodo scrive l'Environment in `.env` nella run directory (`deploy/`), che i servizi caricano con `env_file`.
+- **Secret di Komodo** richiamati nell'Environment dello stack (`POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]`). Komodo scrive l'Environment in `.env` nella run directory (`deploy/`).
 - **File env** in `SECRETS_DIR` sul NAS: `db.env` (`POSTGRES_PASSWORD`, per db, backup, api) e `api.env` (`Oidc__ClientSecret`, `DataProtection__CertificateBase64`, `DataProtection__CertificatePassword`, `Tmdb__ApiToken`, facoltativo `Lookup__UpcItemDbKey`).
 
-Passando da `env_file` i valori arrivano ai container così come sono; la password del DB non sta nella connection string ma viene inserita in codice, quindi nessun vincolo sui caratteri. Guida operativa: `deploy/README.md`.
+La password del DB non sta nella connection string ma viene inserita in codice. Compose però interpola `$` anche nei file di `env_file`, tranne nei valori tra apici singoli: niente `$` nei segreti scelti a mano, oppure `VAR='valore'` nei file env e `$$` nell'Environment di Komodo. I segreti generati come da README non contengono `$`.
 
-**Variabili** (Environment di Komodo, nessun segreto):
+**Variabili** (Environment di Komodo, nessun segreto; elenco completo con i default in `deploy/README.md`):
 
 | Variabile | Obbligatoria | Note |
 |---|---|---|
 | `WEB_ROOT`, `PORT` | sì | cartella dei dati e porta sull'host |
+| `BIND_ADDR` | no (`0.0.0.0`) | indirizzo dell'host su cui pubblicare `PORT` |
 | `COVERS_DIR` | sì | cartella delle copertine relativa a `WEB_ROOT`, uguale a `imgDir` |
-| `DB_DIR`, `BACKUP_DIR`, `BACKUP_KEEP` | sì / sì / no (14) | cartelle sul NAS |
+| `DB_DIR`, `BACKUP_DIR` | sì | cartelle sul NAS |
+| `BACKUP_AT`, `BACKUP_KEEP`, `BACKUP_NOW`, `TZ` | no (03:30, 14, 0, UTC) | backup notturno |
 | `SECRETS_DIR` | no | cartella con `db.env` e `api.env`, se non si usano i Secret di Komodo |
 | `STACK_SUBNET` | no | subnet fissa della rete dello stack |
 | `PROXY_IP` | sì | IP con cui Caddy raggiunge il NAS (proxy fidato per l'IP reale) |
@@ -795,41 +735,13 @@ Passando da `env_file` i valori arrivano ai container così come sono; la passwo
 
 ### nginx (`deploy/nginx.conf`)
 
-```nginx
-resolver 127.0.0.11 valid=30s;          # DNS di Docker: nginx parte anche se api non è ancora su
+File autoritativo: [`deploy/nginx.conf`](../deploy/nginx.conf), con gli snippet di `deploy/nginx-snippets/` copiati in `/etc/nginx/snippets/`. In sintesi:
 
-location /api/ {
-    set $api http://api:8080;
-    proxy_pass $api;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;   # solo per l'IP reale (§4.1)
-    add_header Cache-Control "no-store" always;
-}
-location ~ ^/api/import/tellico(/images)?$ {
-    client_max_body_size 32m;
-    proxy_read_timeout 300s;
-    set $api http://api:8080;
-    proxy_pass $api;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-}
-
-# Versione dell'app: file statico dell'immagine, sotto /api/app/ per evitare il forward auth (§11.1)
-location = /api/app/version {
-    default_type application/json;
-    add_header Cache-Control "no-cache" always;
-    alias /usr/share/nginx/html/app/version.json;
-}
-
-# APK e versione inclusi nell'immagine (§11.1)
-location /app/ {
-    types { application/vnd.android.package-archive apk; application/json json; }
-    add_header Cache-Control "no-cache" always;
-    try_files $uri =404;              # mai ripiegare sui dati del NAS
-}
-```
-
-Non si inoltrano `X-Forwarded-Proto`/`Host`: il `redirect_uri` viene da `PublicBaseUrl` (§4.1). `index.html` resta `no-cache` (serve a `version-check.ts`).
+- `resolver 127.0.0.11 valid=30s ipv6=off` e `proxy_pass` con variabile: nginx parte anche se l'API non è su e segue il nuovo IP quando il container viene ricreato.
+- `/api/` (e `/api/import/tellico`, con `client_max_body_size 32m` e timeout di 300 s) → `http://api:8080`, richiesta invariata. Si inoltra solo `X-Forwarded-For` (§4.1): niente `X-Forwarded-Proto`/`Host`, il `redirect_uri` viene da `PublicBaseUrl`. `Cache-Control` dell'API se c'è, altrimenti `no-store`. Gli errori generati da nginx (413, 502, 503, 504) rispondono `application/problem+json`; quelli dell'API passano invariati.
+- `/api/app/version`: file statico dell'immagine (`app/version.json`), sotto `/api/app/` per evitare il forward auth (§11.1). `/app/`: APK e `version.json` solo dall'immagine, mai dai dati del NAS.
+- `index.html` `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`, il resto dalla cartella del NAS (`@data`).
+- Su tutte le risposte: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`. `add_header` non si eredita nelle location che ne hanno di propri, quindi lo snippet `security-headers.conf` è incluso nel blocco `server` e in ognuna di quelle location.
 
 ### Caddy (a cura dell'operatore)
 
@@ -849,18 +761,18 @@ Una route in più **prima** del forward auth, per l'app:
 
 ### CI/CD
 
-- `ci.yml`: nuovo job `dotnet` (restore, build, test) accanto a quello Node.
-- `deploy.yml`: costruisce e pubblica anche `moviecarousel-api` (`latest` + SHA), da `api/Dockerfile`. Komodo aggiorna lo stack quando escono le immagini.
-- `.dockerignore`: aggiungere `api/`, `android/` e `docs/`, perché il `Dockerfile` del sito fa `COPY . .` (e simmetricamente un `.dockerignore` per l'API).
+- `ci.yml` (PR e push non-`master`, `permissions: contents: read`, una run per branch): job `check` (Node), `api` (restore, build, test con Postgres) e `docker`, che costruisce le due immagini senza pubblicarle (sito con il contesto `android-app` vuoto) e lancia `nginx -t` nell'immagine del sito.
+- `deploy.yml`: costruisce e pubblica `moviecarousel-api` (`latest` + SHA, da `api/Dockerfile`) e poi `moviecarousel`. `permissions: contents: read` a livello di workflow, `packages: write` solo nei job `api` e `image`. Komodo aggiorna lo stack quando escono le immagini; un package GHCR nuovo nasce privato e va reso pubblico (o Komodo deve avere un account registry, vedi README).
+- `.dockerignore` del sito: esclude `api/`, `android/`, `docs/`, `config.json`, `*.tc` e i file `.env`, perché il `Dockerfile` fa `COPY . .`; l'API ha il proprio `.dockerignore`.
 - Android (fase 5):
   - **CI**: workflow separato `android-ci.yml` (lint, test, `assembleDebug`) con filtro `paths: [android/**]`. I filtri `paths` di GitHub valgono per l'intero workflow, non per il singolo job, quindi non si può mettere in `ci.yml` come job condizionato senza un'azione di filtro;
-  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo copia in `/app/` (Dockerfile con uno stage che accetta la cartella dell'APK come build context aggiuntivo). Il build context si chiama `android-app`; nel Dockerfile uno stage vuoto con lo stesso nome fa da default, così `docker build .` funziona anche senza APK. Con i secret della keystore il job è obbligatorio (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK vecchio. **Senza i secret** (scelta dell'implementazione) il job non compila nulla e il sito viene pubblicato lo stesso, senza APK: `version.json` risponde 404, il pannello ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426. Secret e procedura: `deploy/README.md`;
+  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo passa al Dockerfile come build context `android-app`, che sostituisce lo stage vuoto `FROM scratch AS android-app` con lo stesso nome. Senza contesto `docker build .` usa lo stage vuoto e funziona lo stesso (verificato con BuildKit e con il builder classico). Con i secret della keystore il job è obbligatorio (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK vecchio. **Senza i secret** (scelta dell'implementazione) il job non compila nulla e il sito viene pubblicato lo stesso, senza APK: `version.json` risponde 404, il pannello ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426. Secret e procedura: `deploy/README.md`;
   - opzionale (non implementato): pubblicazione della release GitHub `android-v<versione>` quando cambia `version.properties`.
 
 ### Backup e ripristino
 
 - `pg_dump -Fc` notturno con rotazione nella cartella `BACKUP_DIR` sul NAS (inclusa nei backup del NAS).
-- Ripristino documentato: `pg_restore --clean -d cinema` sul servizio `db`.
+- Dump manuale e ripristino passano dal container `db` via socket locale (lì `cinema` entra senza password; su TCP Postgres chiede scram e `docker exec` non ha `PGPASSWORD`): `docker exec <stack>-db-1 pg_dump -U cinema -Fc cinema > file.dump` e, con l'API ferma, `docker exec -i <stack>-db-1 pg_restore -U cinema -d cinema --clean --if-exists --no-owner < file.dump`. Comandi completi in `deploy/README.md`.
 - Le copertine stanno già nella cartella del sito sul NAS (`COVERS_DIR`).
 - Il `.tc` di Tellico resta comunque un backup indipendente della collezione (ESPORTA CSV `all` per i film non ancora in Tellico).
 

@@ -1,6 +1,8 @@
 # APK Android firmato + version.json (docs/scanner-dvd.md §11.1). In CI deploy.yml passa la
-# cartella con --build-context android-app=<dir>; senza (build locale, keystore non configurata)
-# resta questo stage vuoto e /app/ non contiene nulla.
+# cartella con --build-context android-app=<dir>: un build context con lo stesso nome di uno
+# stage lo sostituisce. Senza (build locale, keystore non configurata) resta questo stage vuoto
+# e /app/ non contiene nulla: `docker build .` funziona così com'è (verificato con BuildKit e
+# con il builder classico).
 FROM scratch AS android-app
 
 # Build: typecheck + bundle Vite
@@ -18,6 +20,7 @@ RUN npm run typecheck && npm run build
 FROM nginx:stable-alpine
 LABEL org.opencontainers.image.source="https://github.com/mcauzzi/MovieCarousel"
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx-snippets/ /etc/nginx/snippets/
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 # /app/: APK e version.json dell'app Android (§11.1). Se mancano, /app/* e /api/app/version
 # rispondono 404: il sito mostra "App non disponibile in questa build", l'API salta il controllo 426.

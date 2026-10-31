@@ -5,14 +5,20 @@ on:
   push:
     branches-ignore: [master]
 
-# Una sola run per ref: le push successive annullano quella in corso
+permissions:
+  contents: read
+
+# Una sola run per branch: le push successive annullano quella in corso, e la run del pull_request
+# e quella del push sullo stesso branch condividono il gruppo (head_ref nei PR, ref_name nei push:
+# tutti e due sono il nome del branch): quella partita prima viene annullata, niente doppioni.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +43,7 @@ jobs:
   # (ogni classe di test crea e distrugge il proprio database cm_test_<guid>).
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17
@@ -79,3 +86,39 @@ jobs:
 
       - name: Test
         run: dotnet test CineManager.slnx -c Release --no-build --logger "console;verbosity=normal"
+
+  # Le due immagini Docker come in deploy.yml, senza push: Dockerfile, .dockerignore e configurazione
+  # di nginx vengono provati prima del merge su master.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Contesto "android-app" del Dockerfile vuoto: immagine senza APK, come senza keystore
+      - name: Cartella dell'app (vuota)
+        run: mkdir -p "$RUNNER_TEMP/android-app"
+
+      - name: Immagine del sito
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-contexts: |
+            android-app=${{ runner.temp }}/android-app
+          push: false
+          load: true
+          tags: moviecarousel:ci
+          cache-from: type=gha
+
+      - name: nginx -t nell'immagine del sito
+        run: docker run --rm moviecarousel:ci nginx -t
+
+      - name: Immagine dell'API
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          push: false
+          cache-from: type=gha,scope=api

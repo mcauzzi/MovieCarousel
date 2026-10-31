@@ -8,8 +8,11 @@
 #      Komodo scrive l'Environment in .env nella run directory (che deve essere deploy/) e i
 #      servizi qui sotto lo caricano con env_file.
 #   2. File env sul NAS, nella cartella SECRETS_DIR (fuori dal repo, chmod 600): db.env e api.env.
-#   Entrambe le sorgenti sono facoltative (env_file con required: false, Compose >= 2.24): i
-#   valori arrivano ai container senza passare dalla connection string. Vedi deploy/README.md.
+#   Entrambe le sorgenti sono facoltative (env_file con required: false, Compose >= 2.24); la
+#   password del DB non passa dalla connection string. Vedi deploy/README.md.
+#   ATTENZIONE a "$": Compose lo interpola anche nei file env_file, tranne nei valori tra apici
+#   singoli. Nei segreti scelti a mano evita "$", oppure scrivi VAR='valore' nei file env
+#   (nell'Environment di Komodo un "$" letterale si scrive "$$").
 #
 #   POSTGRES_PASSWORD                     password del ruolo "cinema" (db, backup, api)  → db.env
 #   Oidc__ClientSecret                    segreto in chiaro del client OIDC in Authelia   → api.env
@@ -34,6 +37,9 @@
 #     PORT                porta sull'host, quella a cui punta il reverse proxy
 #
 #   Facoltative (default)
+#     BIND_ADDR                      indirizzo dell'host su cui pubblicare PORT (0.0.0.0 = tutte le
+#                                    interfacce: dalla LAN si arriva a nginx senza passare da Authelia;
+#                                    meglio una regola del firewall del NAS che accetti PORT solo da PROXY_IP)
 #     SECRETS_DIR                    cartella con db.env e api.env, se non usi i Secret di Komodo
 #     STACK_SUBNET                   subnet fissa della rete dello stack (172.31.91.0/24)
 #     OIDC_USER_GROUP                gruppo degli utenti; vuoto = ogni utente autenticato ("")
@@ -58,7 +64,8 @@ services:
     image: ghcr.io/mcauzzi/moviecarousel:latest
     restart: unless-stopped
     ports:
-      - "${PORT:?imposta PORT (porta sull'host)}:80"
+      # BIND_ADDR facoltativo (default tutte le interfacce), vedi in testa e deploy/README.md
+      - "${BIND_ADDR:-0.0.0.0}:${PORT:?imposta PORT (porta sull'host)}:80"
     volumes:
       - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}:/srv/data:ro"
     read_only: true

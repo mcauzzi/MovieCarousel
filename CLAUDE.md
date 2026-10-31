@@ -103,14 +103,15 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
 
 ## CI e deploy
 
-- **`ci.yml`** (PR e push non-`master`): job `check` (install, typecheck, lint, build) e job `api` (build + test con un servizio Postgres).
+- **`ci.yml`** (PR e push non-`master`, una run per branch): job `check` (install, typecheck, lint, build), job `api` (build + test con un servizio Postgres) e job `docker` (le due immagini senza push + `nginx -t` nell'immagine del sito).
 - **`android-ci.yml`** (modifiche ad `android/**`): build, test e lint dell'app.
-- **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/` e, se ci sono i secret `ANDROID_*` della keystore, APK firmato + `version.json` in `/app/`).
+- **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/` e, se ci sono i secret `ANDROID_*` della keystore, APK firmato + `version.json` in `/app/`). `packages: write` solo nei job `api` e `image`; un package GHCR nuovo nasce privato.
 - **Stack Komodo** (`deploy/compose.yml`, stack a sé; nessun `container_name`, i container prendono il nome dello stack), quattro servizi:
-  - `web`: porta `PORT`. Serve il bundle; il resto viene dalla cartella dati del NAS (`WEB_ROOT`, montata ro su `/srv/data`). Inoltra `/api/` all'API e serve `/app/` (APK e `version.json`).
+  - `web`: porta `PORT` (su `BIND_ADDR`, default tutte le interfacce). Serve il bundle; il resto viene dalla cartella dati del NAS (`WEB_ROOT`, montata ro su `/srv/data`). Inoltra `/api/` all'API e serve `/app/` (APK e `version.json`).
   - `api`: l'API .NET.
   - `db`: `postgres:17-alpine`.
   - `backup`: `pg_dump` notturno con rotazione (`deploy/backup.sh`).
-- **Segreti:** via `env_file` da due sorgenti facoltative: l'Environment di Komodo (Secret `[[...]]`, scritto in `deploy/.env`, run directory `deploy`) e/o i file `db.env`/`api.env` in `SECRETS_DIR`. Mai nel compose né nel repo. Variabili, Caddy (forward auth Authelia tranne `/api/app/*`), certificato Data Protection, permessi e restore: `deploy/README.md`.
-- **Cache:** `index.html` è `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`. `assets/bgm/` ha `autoindex on`: `bgm.ts` scopre le tracce dal listing.
+- **Segreti:** via `env_file` (Compose ≥ 2.24) da due sorgenti facoltative: l'Environment di Komodo (Secret `[[...]]`, scritto in `deploy/.env`, run directory `deploy`) e/o i file `db.env`/`api.env` in `SECRETS_DIR`. Mai nel compose né nel repo. Compose interpola `$` anche lì (tranne tra apici singoli). Variabili, Caddy (forward auth Authelia tranne `/api/app/*`), certificato Data Protection, permessi e restore: `deploy/README.md`.
+- **nginx:** `index.html` è `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`. `assets/bgm/` ha `autoindex on`: `bgm.ts` scopre le tracce dal listing. Header di sicurezza da `deploy/nginx-snippets/security-headers.conf`, da includere in ogni location con un suo `add_header` (non si eredita); errori di nginx su `/api/` in `problem+json`.
+- **Build del sito:** lo stage vuoto `android-app` è sostituito dal build context omonimo della CI; `docker build .` funziona anche senza.
 - Nessun runner self-hosted. Fallback manuale: `npm run build` e copia di `dist/` nella cartella dati.

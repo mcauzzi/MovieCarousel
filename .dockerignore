@@ -1,6 +1,6 @@
 # Contesto di build del sito (Dockerfile alla radice, che fa COPY . .).
 # Serve solo il frontend: package*.json, index.html, src/, public/ (se c'è), config TS/Vite/ESLint
-# e deploy/nginx.conf. L'API ha il proprio contesto (api/, con il suo .dockerignore).
+# e deploy/nginx.conf + deploy/nginx-snippets/. L'API ha il proprio contesto (api/, con il suo .dockerignore).
 node_modules
 dist
 .git
@@ -16,10 +16,14 @@ scripts
 a11y-report
 Localfiles
 assets
-config.json
-*.tc
-*.tc~
-*.md
+**/config.json
+**/*.tc
+**/*.tc~
+.env
+*.env
+**/.env
+**/*.env
+**/*.md
 **/bin
 **/obj
 **/.DS_Store

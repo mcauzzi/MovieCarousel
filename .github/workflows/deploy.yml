@@ -9,9 +9,9 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# Minimo per tutti i job; packages: write solo nei job che pubblicano su GHCR (api, image).
 permissions:
   contents: read
-  packages: write
 
 # Due immagini dallo stesso commit: l'API prima, il sito solo se l'API è stata pubblicata,
 # così sul NAS non arriva un frontend più nuovo dell'API con cui parla.
@@ -100,6 +100,10 @@ jobs:
 
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     services:
       postgres:
         image: postgres:17
@@ -155,6 +159,10 @@ jobs:
   image:
     needs: [api, android]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
