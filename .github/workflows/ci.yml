@@ -32,3 +32,50 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # API .NET: build e test, compresi quelli d'integrazione con un Postgres vero
+  # (ogni classe di test crea e distrugge il proprio database cm_test_<guid>).
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cinema
+          POSTGRES_PASSWORD: cinema
+          POSTGRES_DB: cinema
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cinema"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CINEMA_TEST_CONNECTION: Host=localhost;Port=5432;Username=cinema;Password=cinema
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('api/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore CineManager.slnx
+
+      - name: Build
+        run: dotnet build CineManager.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test CineManager.slnx -c Release --no-build --logger "console;verbosity=normal"

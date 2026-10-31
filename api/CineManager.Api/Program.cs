@@ -10,9 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("Cinema");
-if (string.IsNullOrWhiteSpace(connectionString))
-    throw new InvalidOperationException("ConnectionStrings__Cinema mancante.");
+// Password del DB fuori dalla connection string (Database__Password o POSTGRES_PASSWORD da db.env).
+var connectionString = DbConnection.Build(builder.Configuration);
 
 builder.Services.AddDbContext<CinemaDbContext>(o => o.UseNpgsql(connectionString));
 builder.Services.AddMemoryCache();
