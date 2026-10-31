@@ -129,11 +129,11 @@ passare da Authelia; tutto il resto resta dietro il forward auth come oggi. La r
 ```caddy
 <host-sito> {
     handle /api/app/* {
-        reverse_proxy <ip-nas>:8091
+        reverse_proxy <ip-nas>:<porta>
     }
     handle {
         forward_auth <authelia> { ... }       # come oggi
-        reverse_proxy <ip-nas>:8091
+        reverse_proxy <ip-nas>:<porta>
     }
 }
 ```
@@ -161,6 +161,10 @@ WEB_ROOT = /percorso/sito
 DB_DIR = /percorso/db
 BACKUP_DIR = /percorso/backup
 
+# Porta sul NAS a cui punta Caddy e fuso orario (ora del backup)
+PORT = <porta>
+TZ = <fuso orario, es. Europe/Berlin>
+
 # Indirizzi
 PUBLIC_BASE_URL = https://<host-sito>
 PROXY_IP = <ip da cui Caddy raggiunge il NAS>
@@ -185,13 +189,13 @@ Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#rife
 ### 6. Deploy
 
 1. **Destroy** dello stack, poi **Deploy**. Solo la prima volta: il vecchio container del sito ha un
-   altro nome e occupa già la porta 8091, quindi va tolto prima.
+   altro nome e occupa già la porta, quindi va tolto prima.
 2. Nei log:
    - `api` deve applicare le migrazioni e restare acceso;
    - `backup` scrive `avvio: dump ogni giorno alle 03:30`.
 3. Prova dal NAS:
-   - `curl -s http://localhost:8091/api/health` deve rispondere con lo stato del DB;
-   - `curl -si http://localhost:8091/api/me` deve rispondere `401`.
+   - `curl -s http://localhost:<porta>/api/health` deve rispondere con lo stato del DB;
+   - `curl -si http://localhost:<porta>/api/me` deve rispondere `401`.
 4. Apri il sito, fai login, e da **ARRIVI → IMPORTA** (serve essere amministratore) carica il `.tc` di
    Tellico per riempire il DB.
 
@@ -279,6 +283,7 @@ docker start <stack>-api-1
 | `OIDC_AUTHORITY` | indirizzo pubblico di Authelia |
 | `OIDC_CLIENT_ID` | client creato in Authelia |
 | `OIDC_ADMIN_GROUP` | gruppo LLDAP degli amministratori |
+| `PORT` | porta sul NAS a cui punta Caddy |
 
 **Segreti**
 
@@ -295,13 +300,12 @@ docker start <stack>-api-1
 
 | Variabile | Cosa |
 |---|---|
-| `PORT` (8091) | porta sul NAS a cui punta Caddy |
 | `OIDC_USER_GROUP` (vuoto) | gruppo LLDAP di chi può entrare; vuoto = tutti |
 | `STACK_SUBNET` (172.31.91.0/24) | subnet della rete dello stack; deve essere libera sul NAS |
 | `DEVICE_MAX_OWNER_INACTIVE_DAYS` (90) | dopo quanti giorni senza login i telefoni di un utente si bloccano |
 | `LOOKUP_PROVIDERS` (upcitemdb) | servizi per cercare l'EAN |
 | `TELLICO_BARCODE_FIELD` (ean) | nome del campo codice a barre in Tellico |
-| `BACKUP_AT` (03:30), `BACKUP_KEEP` (14), `TZ` (Europe/Rome) | ora del backup, quanti tenerne, fuso orario |
+| `BACKUP_AT` (03:30), `BACKUP_KEEP` (14), `TZ` (UTC) | ora del backup, quanti tenerne, fuso orario |
 | `BACKUP_NOW` (0) | 1 = fa un backup anche a ogni avvio (per provare) |
 | `SECRETS_DIR` | solo per l'alternativa sotto |
 

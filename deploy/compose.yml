@@ -29,10 +29,10 @@
 #     OIDC_AUTHORITY      issuer di Authelia, es. https://<host-auth>
 #     OIDC_CLIENT_ID      client OIDC creato in Authelia
 #     OIDC_ADMIN_GROUP    gruppo Authelia degli amministratori
+#     PORT                porta sull'host, quella a cui punta il reverse proxy
 #
 #   Facoltative (default)
 #     SECRETS_DIR                    cartella con db.env e api.env, se non usi i Secret di Komodo
-#     PORT                           porta sull'host, quella a cui punta Caddy (8091)
 #     STACK_SUBNET                   subnet fissa della rete dello stack (172.31.91.0/24)
 #     OIDC_USER_GROUP                gruppo degli utenti; vuoto = ogni utente autenticato ("")
 #     DEVICE_MAX_OWNER_INACTIVE_DAYS giorni dopo cui i telefoni di un utente inattivo smettono di funzionare (90)
@@ -41,7 +41,7 @@
 #     BACKUP_KEEP                    quanti dump tenere (14)
 #     BACKUP_AT                      ora del dump, HH:MM (03:30)
 #     BACKUP_NOW                     1 = un dump anche a ogni avvio del container (0)
-#     TZ                             fuso orario del container di backup (Europe/Rome)
+#     TZ                             fuso orario del container di backup (UTC)
 
 networks:
   default:
@@ -56,7 +56,7 @@ services:
     image: ghcr.io/mcauzzi/moviecarousel:latest
     restart: unless-stopped
     ports:
-      - "${PORT:-8091}:80"
+      - "${PORT:?imposta PORT (porta sull'host)}:80"
     volumes:
       - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}:/srv/data:ro"
     read_only: true
@@ -142,7 +142,7 @@ services:
       BACKUP_KEEP: "${BACKUP_KEEP:-14}"
       BACKUP_AT: "${BACKUP_AT:-03:30}"
       BACKUP_NOW: "${BACKUP_NOW:-0}"
-      TZ: "${TZ:-Europe/Rome}"
+      TZ: "${TZ:-UTC}"
     volumes:
       - "${BACKUP_DIR:?imposta BACKUP_DIR}:/backup"
       # Lo script è nel repo, accanto a questo file: Komodo esegue il compose dal clone, e i percorsi

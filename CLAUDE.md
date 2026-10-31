@@ -106,8 +106,8 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
 - **`ci.yml`** (PR e push non-`master`): job `check` (install, typecheck, lint, build) e job `api` (build + test con un servizio Postgres).
 - **`android-ci.yml`** (modifiche ad `android/**`): build, test e lint dell'app.
 - **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/` e, se ci sono i secret `ANDROID_*` della keystore, APK firmato + `version.json` in `/app/`).
-- **Stack Komodo** (`deploy/compose.yml`, separato da homelab-stack; nessun `container_name`, i container prendono il nome dello stack), quattro servizi:
-  - `web`: porta `PORT` (8091). Serve il bundle; il resto viene dalla cartella dati del NAS (`WEB_ROOT`, montata ro su `/srv/data`). Inoltra `/api/` all'API e serve `/app/` (APK e `version.json`).
+- **Stack Komodo** (`deploy/compose.yml`, stack a sé; nessun `container_name`, i container prendono il nome dello stack), quattro servizi:
+  - `web`: porta `PORT`. Serve il bundle; il resto viene dalla cartella dati del NAS (`WEB_ROOT`, montata ro su `/srv/data`). Inoltra `/api/` all'API e serve `/app/` (APK e `version.json`).
   - `api`: l'API .NET.
   - `db`: `postgres:17-alpine`.
   - `backup`: `pg_dump` notturno con rotazione (`deploy/backup.sh`).

@@ -704,7 +704,7 @@ services:
   web:
     image: ghcr.io/mcauzzi/moviecarousel:latest
     restart: unless-stopped
-    ports: ["${PORT:-8091}:80"]
+    ports: ["${PORT:?}:80"]
     volumes: ["${WEB_ROOT:?}:/srv/data:ro"]
     read_only: true
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
@@ -780,7 +780,7 @@ Passando da `env_file` i valori arrivano ai container così come sono; la passwo
 
 | Variabile | Obbligatoria | Note |
 |---|---|---|
-| `WEB_ROOT`, `PORT` | sì / no (8091) | come oggi |
+| `WEB_ROOT`, `PORT` | sì | cartella dei dati e porta sull'host |
 | `DB_DIR`, `BACKUP_DIR`, `BACKUP_KEEP` | sì / sì / no (14) | cartelle sul NAS |
 | `SECRETS_DIR` | no | cartella con `db.env` e `api.env`, se non si usano i Secret di Komodo |
 | `STACK_SUBNET` | no | subnet fissa della rete dello stack |
