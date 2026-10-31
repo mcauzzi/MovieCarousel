@@ -15,6 +15,16 @@ npm run format       # Prettier --write su src/**/*.ts (opt-in)
 npm run a11y         # build + scansione axe-core (WCAG 2.2 AA) su temi × stati → a11y-report/
 ```
 
+API (.NET 10, in `api/`; vedi `docs/api.md` per contratto e avvio locale):
+
+```bash
+docker compose -f deploy/compose.dev.yml up db     # Postgres di sviluppo su 127.0.0.1:5432 (cinema/cinema)
+cd api/CineManager.Api && dotnet run              # API su http://localhost:5080, auth finta (launchSettings: Auth__DevUser)
+cd api && dotnet build && dotnet test             # test d'integrazione solo con CINEMA_TEST_CONNECTION="Host=localhost;Username=cinema;Password=cinema"
+```
+
+Con l'API avviata, `npm run dev` + `config.json` con `"apiBase": "./api/"` usa la modalità DB (Vite inoltra `/api` a `:5080`). Design completo della feature (DB, scanner Android, OIDC): `docs/scanner-dvd.md`.
+
 `npm run a11y` esegue `scripts/a11y-scan.mjs`: per ogni tema (`p5`, `p3`, `p4`, `sh2`) e stato (loader, carosello, popup FILTRI, picker RANDOM, biglietto, scheda film, INTEL) apre una pagina fresca in Chromium (Playwright, `prefers-reduced-motion`), serve `config.json` e una collezione di prova generata intercettando le richieste, e lancia axe. Scrive `a11y-report/report.md` (riepilogo + violazioni per tema, deduplicate tra gli stati, con i rapporti di contrasto) e `report.json` (gitignorati). Opzioni dopo `--`: `--file mia.tc` (collezione reale), `--themes`, `--states`, `--screenshots`, `--url` (server già avviato), `--strict` (exit 1 se ci sono violazioni). Su una macchina nuova serve `npx playwright install chromium`. Non gira in CI.
 
 `npm run typecheck`/`lint` require `node_modules` (run `npm install` first) or fail on the `jszip` import. Prettier è disponibile come strumento ma **non** è imposto in CI: il codebase ha allineamenti manuali deliberati, quindi non fare mass-reformat (`format:check` non gira in `ci.yml`).
@@ -23,7 +33,7 @@ CI: `.github/workflows/ci.yml` gira su ogni PR (e push non-`master`) su runner G
 
 ## Architecture
 
-Browser-only Vite 5 + TypeScript 5 (strict) app — no backend, no test framework. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build: Anton, Oswald, JetBrains Mono, Bebas Neue; Barlow Condensed per MEMENTO, Baloo 2 per MAYONAKA, EB Garamond + Special Elite + Courier Prime per TOLUCA). Dev tooling: `eslint` + `typescript-eslint` + `prettier`; `axe-core` + `playwright` solo per `npm run a11y`.
+Vite + TypeScript 5 (strict) app. Two modes, chosen by `apiBase` in `config.json`: **modalità `.tc`** (browser-only, the original behaviour: the `.tc` is parsed in the browser) and **modalità DB** (collection and per-user watch status/ratings come from the .NET Web API in `api/`, backed by Postgres). The frontend has no test framework; the API has xUnit tests. Runtime dependencies: `jszip`, `lit`, `@fontsource/*` (font self-hostati, bundlati nel build: Anton, Oswald, JetBrains Mono, Bebas Neue; Barlow Condensed per MEMENTO, Baloo 2 per MAYONAKA, EB Garamond + Special Elite + Courier Prime per TOLUCA). Dev tooling: `eslint` + `typescript-eslint` + `prettier`; `axe-core` + `playwright` solo per `npm run a11y`.
 
 All UI is built with **lit-html functional templates** (`` html`...` `` rendered via `render()`), not LitElement/web components — no Shadow DOM, so the global `style.css` applies everywhere. Templates are pure functions returning `TemplateResult`, kept in dedicated files under `src/templates/` (they import only `lit` + types, so they stay leaves and don't break the decoupling points). Each view module computes data + handlers and calls `render(template(...), container)`; stateful UI (popups, modal) keeps its state in a closure and re-renders on change — lit diffs efficiently. Event handlers are bound in the templates (`@click`/`@input`/`@error`).
 
@@ -38,6 +48,11 @@ main.ts  →  parser.ts       (leaf)
          →  random.ts       →  filters.ts, templates/popup, templates/attack, lit (+ shared types)
          →  filter-popup.ts →  filters.ts, templates/popup, lit (+ shared types)
          →  filters.ts      →  parser.ts, groupers.ts, store.ts, renderer.ts (types only), templates/filters, lit
+         →  tellico-file.ts →  parser.ts, jszip              (lettura del .tc: tellico.xml + images/)
+         →  api.ts          →  parser.ts, store.ts (types only)   (client dell'API, foglia di fatto)
+         →  api-store.ts    →  api.ts, store.ts (types)
+         →  arrivals.ts     →  filters.ts, tellico-file.ts, api.ts, copy.ts, utils.ts, templates/arrivals, lit
+         →  db-ui.ts        →  utils.ts, templates/db, lit
          →  store.ts, themes.ts, toast.ts, transitions.ts, version-check.ts, copy.ts   (leaves)
          →  templates/*.templates.ts   (import only lit, types, utils.ts, copy.ts and other templates — mai moduli con stato)
          →  style.css
@@ -50,15 +65,20 @@ Two deliberate decoupling points — preserve them:
 - `renderer.ts` does **not** import `modal.ts`. `main.ts` builds an `onOpenModal` callback and passes it to `renderMain` (which wires it into the card template's `@click`) — this breaks the only potential circular dependency.
 - `filters.ts` holds the building blocks shared by the random picker and the filter popup (`buildPool`, `buildGrouperPanel`, `buildPanelShell`, `buildWatchRow`). Neither `random.ts` nor `filter-popup.ts` imports the other. The shared lit templates live in `templates/filters.templates.ts` and `templates/popup.templates.ts`.
 
-All mutable application state lives exclusively in `main.ts` (movies, embeddedImages, imgDir, configuredImgDir, groupers, currentGrouper, searchTerm, isIntelView, watchFilter, filterSelections). `random.ts` and `filter-popup.ts` cache only their built popup DOM at module level (released via `resetRandomPicker` / `resetFilterPopup`); the filter popup mutates `filterSelections` (owned by main) in place.
+All mutable application state lives exclusively in `main.ts` (movies, embeddedImages, imgDir, configuredImgDir, groupers, currentGrouper, searchTerm, isIntelView, watchFilter, filterSelections, plus in modalità DB the collection fields and `me`). `random.ts` and `filter-popup.ts` cache only their built popup DOM at module level (released via `resetRandomPicker` / `resetFilterPopup`); the filter popup mutates `filterSelections` (owned by main) in place.
 
 ### Module responsibilities
 
 | File | Responsibility |
 |---|---|
-| `src/main.ts` | Entry point — state, DOM event wiring, `handleFile`, `initUI`, `tryAutoLoad`, theme dropdown |
-| `src/parser.ts` | Parses Tellico `.tc` XML → `Movie[]` + embedded images map |
-| `src/groupers.ts` | Builds `Grouper[]` from movies; `matchesSearch` for filtering |
+| `src/main.ts` | Entry point — state, DOM event wiring, `handleFile`, `initUI`, `tryAutoLoad`, theme dropdown; sceglie la modalità (`apiBase`), in modalità DB carica `me`/`collection`/`state`, chiede la migrazione di localStorage, Reload ricarica dall'API |
+| `src/api.ts` | Client dell'API: `fetch` same-origin con `redirect: 'manual'`, header `X-CM-Request` sulle scritture, errori `problem+json` → `ApiError`. Sessione scaduta (401 o `opaqueredirect` del forward auth): letture → `goToLogin()`, scritture → `SessionExpiredError` |
+| `src/api-store.ts` | `ApiStoreAdapter implements StoreAdapter`: cache da `GET state`, setter ottimistici + `PUT` (ripristino in errore), nessun seed, ricarica su `visibilitychange` |
+| `src/arrivals.ts` | Pannello ARRIVI (`#arrivalsBtn`, solo admin in modalità DB): per ora IMPORTA DA TELLICO (immagini a lotti + upsert, riepilogo). Shell da `filters.ts`, cache a livello modulo (`resetArrivals`, `refreshArrivalsCopy`) |
+| `src/tellico-file.ts` | `readTellicoFile`: zip (`tellico.xml` + immagini in `images/`) o XML grezzo → `ParseResult`; condiviso da `handleFile` e ARRIVI |
+| `src/db-ui.ts` | Dialog di conferma accessibile (migrazione) e avviso persistente "sessione scaduta" con pulsante ACCEDI |
+| `src/parser.ts` | Parses Tellico `.tc` XML → `Movie[]` + embedded images map + `fields: TellicoField[]` (flag multivalore/raggruppabile, `allowed`, date e tabelle generiche); `toCollectionFields` → `CollectionField[]` per groupers e scheda |
+| `src/groupers.ts` | Builds `Grouper[]` from movies (+ un raggruppamento per ogni campo personalizzato raggruppabile se riceve `fields`); `matchesSearch` for filtering |
 | `src/renderer.ts` | Renders the carousel into `#main` via lit (search + watch filter + optional `allowedIds`); owns the failed-image set; events bound in templates, carousel scroll via `e.currentTarget`. `renderMain(grouper, searchTerm, embeddedImages, imgDir, store, onOpenModal, watchFilter?, allowedIds?)`, `resetRenderer()` |
 | `src/modal.ts` | Opens/closes the film detail overlay ("dossier"): cut-in a tutto schermo col titolo (`.modal-cutin`, creato a runtime; saltato con `prefers-reduced-motion`), poi il dossier entra; watch status & RANK a tacche 1–5 (lit re-render on change). `openModal(id, movies, embeddedImages, imgDir, store, onStatusChange?)`. L'apertura NON passa da `withTransition`: il cut-in la sostituisce. Durante il cut-in il focus è già sul dialog (`#modalContent` tabindex -1, trap attivo) e il click sul backdrop non chiude (evita che un doppio click chiuda la scheda appena aperta) |
 | `src/filters.ts` | Shared filter logic & UI block builders: `buildPool` (pure) plus `buildGrouperPanel`/`buildPanelShell`/`buildWatchRow` (each owns a root element + lit re-render) |
@@ -111,6 +131,7 @@ Both popups are built from the `filters.ts` building blocks and share the `rando
 | `cm_rating` | star rating overrides — `{ [movieId]: 1–5 \| null }` |
 | `cm_theme` | selected theme id (`p5`, `p3`, `p4`, `sh2`) |
 | `cm_bgm_vol` | volume musica di sottofondo (`0..1`, default `0.5`) |
+| `cm_migrated_db:<sub>` | modalità DB: data ISO in cui la domanda di migrazione di `cm_status`/`cm_rating` verso il profilo dell'utente `<sub>` ha avuto risposta |
 | `cm_bgm_track` | nome file dell'ultima traccia BGM scelta (ripristinata nel dropdown ma **non** riavviata automaticamente) |
 
 Seed semantics: at load, `<visto>true</visto>` and the personal rating field of the `.tc` seed the store **in memory**. A manual override stored in localStorage — including an explicit `null` — always wins over the seed. The Reload button resets only in-memory state; it does **not** clear localStorage. Ids are the `.tc` ids, so overrides survive reloading the same collection but may mismatch if the collection is re-exported with different ids.
@@ -152,7 +173,7 @@ Tellico collection files are ZIP archives containing `tellico.xml`. They may als
 
 ### Auto-load e config.json
 
-All'avvio `tryAutoLoad` fa `fetch('config.json')` per leggere `tcFile`, `imgDir` e `bgmDir` (opzionale, default `./assets/bgm/` — cartella delle tracce di sottofondo). Se il file manca o è irraggiungibile, usa come fallback il nome derivato dall'URL della pagina + `.tc`. Il parametro URL `?file=path.tc` ha la precedenza su tutto. L'input manuale `#imgDir` nella loader UI sovrascrive `imgDir` da config (utile per drag-and-drop locale). `public/config.json` è la fonte di verità — viene copiato in `dist/` da Vite durante il build. Non modificare `dist/config.json` direttamente.
+All'avvio `tryAutoLoad` fa `fetch('config.json')`. Se c'è `apiBase` (es. `"./api/"`) si entra in **modalità DB**: `tcFile` e `?file=` vengono ignorati, niente drop zone né seed, visto/voto sono per utente nel DB (le scelte in localStorage si migrano una volta, con conferma). Altrimenti legge `tcFile`, `imgDir` e `bgmDir` (opzionale, default `./assets/bgm/` — cartella delle tracce di sottofondo). Se il file manca o è irraggiungibile, usa come fallback il nome derivato dall'URL della pagina + `.tc`. Il parametro URL `?file=path.tc` ha la precedenza su tutto. L'input manuale `#imgDir` nella loader UI sovrascrive `imgDir` da config (utile per drag-and-drop locale). `public/config.json` è la fonte di verità — viene copiato in `dist/` da Vite durante il build. Non modificare `dist/config.json` direttamente.
 
 Solo HTTP/HTTPS: l'auto-load non funziona su `file://`.
 

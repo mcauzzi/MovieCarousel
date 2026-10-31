@@ -55,6 +55,11 @@ export interface ThemeCopy {
   statusExtracting: string;
   statusParsing: string;
   statusLoaded: (n: number) => string;
+  /** Pannello ARRIVI (modalità DB): parola accentata del titolo, frase sotto
+   *  "IMPORTA DA TELLICO", intestazione del riepilogo a import riuscito. */
+  arrivalsAccent: string;
+  arrivalsLede: string;
+  arrivalsDone: string;
 }
 
 function pad2(n: number): string {
@@ -108,6 +113,9 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     statusExtracting: '▶ EXTRACTING DATA...',
     statusParsing: '▶ PARSING DIRECT XML...',
     statusLoaded: n => `✓ ${n} TARGETS ACQUIRED`,
+    arrivalsAccent: 'NEW LOOT',
+    arrivalsLede: 'Porta nel covo il bottino catalogato in Tellico.',
+    arrivalsDone: 'COLPO RIUSCITO',
   },
   // MEMENTO — Persona 3: Velvet Room, Arcani, compendio, Ora Buia, memento mori.
   p3: {
@@ -145,6 +153,9 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     statusExtracting: '◇ RECALLING MEMORIES...',
     statusParsing: '◇ READING THE CARDS...',
     statusLoaded: n => `✓ ${n} MEMORIES RECORDED`,
+    arrivalsAccent: 'COMPENDIUM',
+    arrivalsLede: 'Registra nel compendio le memorie catalogate in Tellico.',
+    arrivalsDone: 'MEMORIE REGISTRATE',
   },
   // MAYONAKA — Persona 4: Investigation Team, Midnight Channel, casi, nebbia.
   p4: {
@@ -182,6 +193,9 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     statusExtracting: '▣ CLEARING THE FOG...',
     statusParsing: '▣ DECODING SIGNAL...',
     statusLoaded: n => `✓ ${n} CHANNELS FOUND`,
+    arrivalsAccent: 'NEW CASES',
+    arrivalsLede: 'Sintonizza i casi catalogati in Tellico.',
+    arrivalsDone: 'CASI ARCHIVIATI!',
   },
   // TOLUCA — Silent Hill 2: nebbia, stanze d'albergo, memo battuti a macchina,
   // la radio che gracchia, una lettera, la mappa della città. Testi originali.
@@ -220,6 +234,9 @@ export const COPY: Record<ThemeId, ThemeCopy> = {
     statusExtracting: 'LA NEBBIA SI DIRADA...',
     statusParsing: 'DECIFRO LA CALLIGRAFIA...',
     statusLoaded: n => `✓ ${n} MEMORIES RECOVERED`,
+    arrivalsAccent: 'NUOVI MEMO',
+    arrivalsLede: 'Altre lettere sono arrivate da Tellico.',
+    arrivalsDone: 'I RICORDI SONO TORNATI',
   },
 };
 

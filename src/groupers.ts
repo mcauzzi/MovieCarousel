@@ -1,6 +1,7 @@
-import type { Movie } from './parser';
+import type { Movie, CollectionField } from './parser';
+import { DEFAULT_GROUP_MIN_SIZE } from './parser';
 import type { StoreAdapter } from './store';
-import { fieldValues, decadeKey } from './utils';
+import { fieldValues, decadeKey, isTrueValue } from './utils';
 
 export interface Group {
   key: string;
@@ -28,8 +29,28 @@ export function matchesSearch(m: Movie, searchTerm: string): boolean {
   return haystack.includes(searchTerm.toLowerCase());
 }
 
-export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
+/** Nomi dei raggruppamenti fissi: la chiave è condivisa con `filterSelections`,
+ *  quindi un campo con lo stesso nome non può diventare un raggruppamento. */
+const FIXED_GROUPERS = new Set([
+  'genre', 'director', 'nationality', 'language', 'studio',
+  'rating', 'decade', 'duration', 'alpha', 'recent',
+]);
+/** Campi strutturali già usati altrove (titolo, copertina, anno → decennio,
+ *  durata, cast, date di sistema; `visto` è solo il seed dello stato di visione,
+ *  che ha già il filtro VISIONE): mai raggruppamenti personalizzati. */
+const STRUCTURAL_FIELDS = new Set([
+  'id', 'title', 'cover', 'plot', 'cast', 'year', 'running-time', 'cdate', 'mdate', 'visto',
+]);
+/** Tipi che non hanno senso come raggruppamento. */
+const UNGROUPABLE_TYPES = new Set(['image', 'table', 'para', 'url', 'dependent']);
+
+export function buildGroupers(movies: Movie[], store: StoreAdapter, fields?: CollectionField[]): Grouper[] {
   const groupers: Grouper[] = [];
+
+  /** Soglia di un raggruppamento basato su un campo: da `fields` se presente,
+   *  altrimenti quella fissa di sempre. */
+  const minSizeOf = (name: string): number =>
+    fields?.find(f => f.name === name)?.groupMinSize ?? DEFAULT_GROUP_MIN_SIZE[name] ?? 3;
 
   function add(name: string, label: string, fn: () => Group[], field?: string) {
     const groups = fn();
@@ -40,9 +61,10 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
     const map = new Map<string, Movie[]>();
     for (const m of movies) {
       for (const val of fieldValues(m, field)) {
-        if (!val) continue;
-        if (!map.has(val)) map.set(val, []);
-        map.get(val)!.push(m);
+        if (val === '' || val === null || val === undefined) continue;
+        const key = String(val);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(m);
       }
     }
     return Array.from(map.entries())
@@ -51,11 +73,11 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
       .sort((a, b) => b.movies.length - a.movies.length);
   }
 
-  add('genre',       'Genere',  () => groupByField('genre', 3),       'genre');
-  add('director',    'Regista', () => groupByField('director', 3),    'director');
-  add('nationality', 'Paese',   () => groupByField('nationality', 4), 'nationality');
-  add('language',    'Lingua',  () => groupByField('language', 5),    'language');
-  add('studio',      'Studio',  () => groupByField('studio', 5),      'studio');
+  add('genre',       'Genere',  () => groupByField('genre', minSizeOf('genre')),             'genre');
+  add('director',    'Regista', () => groupByField('director', minSizeOf('director')),       'director');
+  add('nationality', 'Paese',   () => groupByField('nationality', minSizeOf('nationality')), 'nationality');
+  add('language',    'Lingua',  () => groupByField('language', minSizeOf('language')),       'language');
+  add('studio',      'Studio',  () => groupByField('studio', minSizeOf('studio')),           'studio');
 
   add('rating', 'Voto', () => {
     const map = new Map<number, Movie[]>();
@@ -126,6 +148,58 @@ export function buildGroupers(movies: Movie[], store: StoreAdapter): Grouper[] {
   if (withDate.length >= 5) {
     withDate.sort((a, b) => (b.cdate ?? '').localeCompare(a.cdate ?? ''));
     groupers.push({ name: 'recent', label: 'New', groups: [{ key: 'recent', label: 'New additions', movies: withDate.slice(0, 40) }] });
+  }
+
+  // Campi personalizzati raggruppabili (flag di Tellico in modalità .tc,
+  // collection_fields in modalità DB), dopo quelli fissi, nell'ordine dei campi.
+  for (const f of fields ?? []) {
+    if (!f.groupable || FIXED_GROUPERS.has(f.name) || STRUCTURAL_FIELDS.has(f.name)) continue;
+    if (UNGROUPABLE_TYPES.has(f.type) || groupers.some(g => g.name === f.name)) continue;
+    const min = f.groupMinSize ?? 3;
+    const label = f.title || f.name;
+
+    if (f.type === 'bool') {
+      // "Sì" / "No": Tellico non scrive i bool falsi, quindi "No" = nessun valore.
+      // Senza `field` FILTRI usa i gruppi (etichette Sì/No invece di "true"):
+      // entrambi i gruppi coprono tutti i film, "— Nessun" non compare.
+      add(f.name, label, () => {
+        const yes = movies.filter(m => isTrueValue(m[f.name]));
+        const no = movies.filter(m => !isTrueValue(m[f.name]));
+        return [
+          { key: 'true', label: 'Sì', movies: yes },
+          { key: 'false', label: 'No', movies: no },
+        ].filter(g => g.movies.length >= min);
+      });
+    } else if (f.type === 'date') {
+      // Per anno (AAAA-MM-GG → AAAA), più recente prima. Senza `field`: le chiavi
+      // sono anni, non i valori del campo; "— Nessun" in FILTRI comprende anche
+      // i film degli anni sotto soglia.
+      add(f.name, label, () => {
+        const map = new Map<string, Movie[]>();
+        for (const m of movies) {
+          for (const v of fieldValues(m, f.name)) {
+            const y = /^\d{4}/.exec(String(v))?.[0];
+            if (!y) continue;
+            if (!map.has(y)) map.set(y, []);
+            if (!map.get(y)!.includes(m)) map.get(y)!.push(m);
+          }
+        }
+        return Array.from(map.entries())
+          .filter(([, v]) => v.length >= min)
+          .map(([k, v]) => ({ key: k, label: k, movies: v, sortKey: parseInt(k, 10) }))
+          .sort((a, b) => (b.sortKey ?? 0) - (a.sortKey ?? 0));
+      });
+    } else if (f.type === 'number' || f.type === 'rating') {
+      // Per valore, in ordine numerico (rating dal più alto, number dal più basso).
+      const dir = f.type === 'rating' ? -1 : 1;
+      add(f.name, label, () => groupByField(f.name, min)
+        .map(g => ({ ...g, sortKey: Number(g.key) }))
+        .sort((a, b) => dir * ((a.sortKey || 0) - (b.sortKey || 0))), f.name);
+    } else {
+      // line, choice (e tipi sconosciuti): per valore, i più numerosi prima.
+      // `field = name`: FILTRI elenca tutti i valori e "__none__" funziona per campo.
+      add(f.name, label, () => groupByField(f.name, min), f.name);
+    }
   }
 
   return groupers;

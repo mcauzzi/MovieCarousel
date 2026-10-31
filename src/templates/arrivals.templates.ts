@@ -1,0 +1,130 @@
+import { html, nothing } from 'lit';
+import type { TemplateResult } from 'lit';
+import type { ImportResponse } from '../api';
+import { currentCopy } from '../copy';
+
+/* Pannello ARRIVI (modalità DB, prima versione: solo IMPORTA DA TELLICO).
+   Etichette funzionali (ARRIVI, IMPORTA DA TELLICO) uguali in ogni tema; le
+   frasi di colore arrivano da copy.ts. Tutto interpolato con lit (titoli dei
+   film mancanti compresi): niente unsafeHTML. */
+
+export type ImportPhase = 'idle' | 'reading' | 'images' | 'movies' | 'reloading' | 'done' | 'error';
+
+export interface ImportView {
+  phase: ImportPhase;
+  fileName: string | null;
+  /** Avanzamento dell'upload immagini (lotti inviati / totali, immagini). */
+  progress: { done: number; total: number; images: number } | null;
+  summary: (ImportResponse & { imagesWritten: number; imagesSkipped: number; movieCount: number }) | null;
+  error: string | null;
+  /** La sessione è scaduta durante l'import: mostra il pulsante ACCEDI. */
+  sessionExpired: boolean;
+  dragover: boolean;
+}
+
+export interface ImportHandlers {
+  onFile: (file: File) => void;
+  onDragState: (over: boolean) => void;
+  onLogin: () => void;
+}
+
+function busy(phase: ImportPhase): boolean {
+  return phase === 'reading' || phase === 'images' || phase === 'movies' || phase === 'reloading';
+}
+
+function progressText(v: ImportView): string {
+  switch (v.phase) {
+    case 'reading': return `Lettura di ${v.fileName ?? 'file'}…`;
+    case 'images': {
+      const p = v.progress;
+      if (!p || p.total === 0) return 'Invio immagini…';
+      return `Invio immagini: lotto ${Math.min(p.done + 1, p.total)} di ${p.total} (${p.images} immagini)…`;
+    }
+    case 'movies': return 'Import di campi e film…';
+    case 'reloading': return 'Import completato. Ricarico la collezione…';
+    case 'done': return 'Import completato.';
+    default: return '';
+  }
+}
+
+function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult {
+  const rows: [string, number][] = [
+    ['Film nel file', s.movieCount],
+    ['Inseriti', s.inserted],
+    ['Aggiornati', s.updated],
+    ['Collegati', s.linked],
+    ['Invariati', s.unchanged],
+    ['Mancanti nel file', s.missing.length],
+    ['Campi aggiornati', s.fieldsUpdated],
+    ['Immagini scritte', s.imagesWritten],
+    ['Immagini già presenti', s.imagesSkipped],
+  ];
+  return html`
+    <div class="arrivals-summary" tabindex="-1">
+      <h4 class="arrivals-summary-title">${currentCopy().arrivalsDone}</h4>
+      <dl class="arrivals-stats">
+        ${rows.map(([label, n]) => html`<div class="arrivals-stat"><dt>${label}</dt><dd>${n}</dd></div>`)}
+      </dl>
+      ${s.missing.length ? html`
+        <details class="arrivals-missing">
+          <summary>Nel database ma non nel file (${s.missing.length}): non vengono cancellati</summary>
+          <ul>${s.missing.map(m => html`<li><span class="arrivals-missing-id">#${m.id}</span> ${m.title || '(senza titolo)'}</li>`)}</ul>
+        </details>` : nothing}
+    </div>`;
+}
+
+export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): TemplateResult {
+  const isBusy = busy(v.phase);
+  const p = v.progress;
+  const onChange = (e: Event): void => {
+    const input = e.currentTarget as HTMLInputElement;
+    const f = input.files?.[0];
+    input.value = '';
+    if (f) h.onFile(f);
+  };
+  const onDragOver = (e: DragEvent): void => {
+    e.preventDefault();
+    if (!isBusy && !v.dragover) h.onDragState(true);
+  };
+  const onDrop = (e: DragEvent): void => {
+    e.preventDefault();
+    h.onDragState(false);
+    const f = e.dataTransfer?.files[0];
+    if (f && !isBusy) h.onFile(f);
+  };
+  return html`
+    <section class="arrivals-section" aria-labelledby="arrivalsImportTitle">
+      <h3 class="arrivals-section-title" id="arrivalsImportTitle">IMPORTA DA TELLICO</h3>
+      <p class="arrivals-lede">${currentCopy().arrivalsLede}
+        I film già presenti vengono aggiornati, quelli nuovi aggiunti; nessun film viene cancellato.</p>
+      <label
+        class="arrivals-drop ${v.dragover ? 'dragover' : ''} ${isBusy ? 'busy' : ''}"
+        @dragover=${onDragOver}
+        @dragleave=${() => h.onDragState(false)}
+        @drop=${onDrop}>
+        <input
+          class="visually-hidden"
+          type="file"
+          accept=".tc,.zip,.xml"
+          ?disabled=${isBusy}
+          aria-label="Scegli il file .tc di Tellico da importare"
+          @change=${onChange}>
+        <span class="arrivals-drop-text">
+          ${v.fileName && v.phase !== 'idle' ? html`File: <b>${v.fileName}</b>` : html`Trascina qui il file <b>.tc</b> di Tellico`}
+        </span>
+        <span class="group-btn arrivals-drop-cta" aria-hidden="true">${isBusy ? 'IMPORT IN CORSO…' : '▶ SCEGLI FILE .TC'}</span>
+      </label>
+      <div class="arrivals-progress" role="status" aria-live="polite">
+        ${v.phase === 'images' && p && p.total > 0
+          ? html`<progress class="arrivals-bar" max=${p.total} value=${p.done} aria-label="Lotti di immagini inviati"></progress>`
+          : nothing}
+        <span class="arrivals-progress-text">${progressText(v)}</span>
+      </div>
+      ${v.error ? html`
+        <div class="arrivals-error" role="alert">
+          <span>✕ ${v.error}</span>
+          ${v.sessionExpired ? html`<button class="group-btn arrivals-login" @click=${h.onLogin}>ACCEDI</button>` : nothing}
+        </div>` : nothing}
+      ${v.summary ? summaryTemplate(v.summary) : nothing}
+    </section>`;
+}

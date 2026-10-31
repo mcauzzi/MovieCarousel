@@ -11,6 +11,21 @@ export interface FieldData {
   pills: boolean;
 }
 
+/** Un valore di "Altri campi", già formattato per tipo: `href` solo per i link
+ *  http/https (validati dal chiamante), altrimenti testo semplice. */
+export interface ExtraValue {
+  text: string;
+  href?: string;
+}
+
+/** Campo personalizzato della sezione "Altri campi": valori in linea separati
+ *  da virgola, oppure righe di una tabella (`rows`, celle separate da " · "). */
+export interface ExtraFieldData {
+  label: string;
+  values: ExtraValue[];
+  rows?: string[][];
+}
+
 export interface ModalData {
   movie: Movie;
   url: string | null;
@@ -18,6 +33,8 @@ export interface ModalData {
   meta: string[];
   fields: FieldData[];
   cast: { actor: string; role: string }[];
+  /** Campi personalizzati con un valore, non già mostrati altrove nella scheda. */
+  extra?: ExtraFieldData[];
 }
 
 export interface ModalState {
@@ -35,6 +52,27 @@ function fieldTemplate(f: FieldData): TemplateResult {
   return html`<dt>${f.label}</dt><dd>${f.pills
     ? f.values.map(v => html`<span class="pill">${v}</span>`)
     : f.values.join(', ')}</dd>`;
+}
+
+function extraValueTemplate(v: ExtraValue): TemplateResult {
+  return v.href
+    ? html`<a href=${v.href} target="_blank" rel="noopener noreferrer">${v.text}</a>`
+    : html`${v.text}`;
+}
+
+function extraFieldTemplate(f: ExtraFieldData): TemplateResult {
+  return html`<dt>${f.label}</dt><dd>${f.rows
+    ? html`<ul class="m-extra-rows">${f.rows.map(r => html`<li>${r.filter(Boolean).join(' · ')}</li>`)}</ul>`
+    : f.values.map((v, i) => html`${i ? ', ' : ''}${extraValueTemplate(v)}`)}</dd>`;
+}
+
+/** Sezione "Altri campi": lista di definizioni, stessa veste della sezione cast. */
+function extraSectionTemplate(extra: ExtraFieldData[]): TemplateResult | string {
+  if (!extra.length) return '';
+  return html`<section class="cast-section m-extra" aria-labelledby="m-extra-title">
+    <h3 id="m-extra-title">Altri campi</h3>
+    <dl class="modal-meta">${extra.map(extraFieldTemplate)}</dl>
+  </section>`;
 }
 
 export function watchButtonsTemplate(current: WatchStatus, onPick: (v: WatchStatus) => void): TemplateResult {
@@ -87,6 +125,7 @@ export function modalTemplate(data: ModalData, state: ModalState, h: ModalHandle
               html`<div><span class="actor">${c.actor}</span>${c.role ? html`<span class="role">${c.role}</span>` : ''}</div>`)
           }</div></div>`
         : ''}
+      ${extraSectionTemplate(data.extra ?? [])}
     </div>`;
 }
 

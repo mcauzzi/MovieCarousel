@@ -5601,3 +5601,137 @@ main{
   [data-theme="sh2"] .card-call,[data-theme="sh2"] .aoa-reroll .card-call,[data-theme="sh2"] .aoa-reroll .card-call::after{animation:none}
   [data-theme="sh2"] .aoa::after{opacity:0}
 }
+
+/* ============================================================
+   SCHEDA — ALTRI CAMPI (campi personalizzati della collezione)
+   Riusa .cast-section + .modal-meta (veste dossier di ogni tema);
+   qui solo testo libero non maiuscolo, link e righe di tabella.
+   ============================================================ */
+.m-extra .modal-meta dd{text-transform:none;overflow-wrap:anywhere}
+.m-extra .modal-meta a{
+  color:inherit;text-decoration:underline;
+  text-decoration-color:var(--hot);text-decoration-thickness:2px;text-underline-offset:0.2em;
+}
+.m-extra .modal-meta a:hover{text-decoration-thickness:3px}
+.m-extra-rows{list-style:none;margin:0;padding:0}
+.m-extra-rows li + li{margin-top:0.25rem}
+
+/* ============================================================
+   MODALITÀ DB — pannello ARRIVI, dialog di conferma, avviso
+   "sessione scaduta", collezione vuota.
+   Riusa shell e classi random-* di FILTRI/RANDOM (vestite da ogni
+   tema); qui solo il contenuto, tutto su token (--hot, --on-hot,
+   --ink, --ink-dim, --surface, --f-*, --tilt): nessuna regola per tema.
+   Il testo piccolo usa --ink/--ink-dim (AA su --bg/--surface in ogni
+   tema); --hot resta per bordi e decorazioni.
+   ============================================================ */
+.arrivals-body{padding:1.2rem 1.5rem 1.5rem}
+.arrivals-section-title{
+  font-family:var(--f-display);font-weight:400;
+  font-size:1.15rem;letter-spacing:0.2em;text-transform:uppercase;
+  color:var(--ink);margin:0 0 0.5rem;
+  border-left:6px solid var(--hot);padding-left:0.6rem;
+}
+.arrivals-lede{font-size:0.95rem;line-height:1.45;color:var(--ink-dim);margin:0 0 1rem;max-width:62ch}
+.arrivals-drop{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  padding:1.1rem 1.2rem;
+  border:2px dashed var(--ink-dim);background:var(--surface);
+  cursor:pointer;
+  transition:border-color 0.15s, background 0.15s;
+}
+.arrivals-drop:hover,.arrivals-drop.dragover{border-color:var(--hot);border-style:solid}
+.arrivals-drop:focus-within{outline:3px solid var(--hot);outline-offset:3px}
+.arrivals-drop.busy{cursor:progress;opacity:0.75}
+.arrivals-drop-text{font-family:var(--f-head);font-size:1rem;color:var(--ink);overflow-wrap:anywhere}
+.arrivals-drop-cta{pointer-events:none;white-space:nowrap}
+.arrivals-drop:hover .arrivals-drop-cta,.arrivals-drop:focus-within .arrivals-drop-cta{background:var(--hot);color:var(--on-hot)}
+.arrivals-progress{
+  display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;
+  min-height:1.6rem;margin-top:0.8rem;
+  font-family:var(--f-mono);font-size:0.8rem;letter-spacing:0.08em;color:var(--ink);
+}
+.arrivals-bar{
+  appearance:none;-webkit-appearance:none;
+  width:min(260px,100%);height:0.7rem;
+  border:2px solid var(--ink);background:var(--bg);
+}
+.arrivals-bar::-webkit-progress-bar{background:var(--bg)}
+.arrivals-bar::-webkit-progress-value{background:var(--hot)}
+.arrivals-bar::-moz-progress-bar{background:var(--hot)}
+.arrivals-error{
+  display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;
+  margin-top:0.8rem;padding:0.7rem 0.9rem;
+  border:2px solid var(--hot);background:var(--surface);
+  color:var(--ink);font-size:0.9rem;line-height:1.4;
+}
+.arrivals-summary{
+  margin-top:1rem;padding:1rem 1.1rem;
+  background:var(--surface);border:2px solid var(--ink);
+  box-shadow:6px 6px 0 var(--hot);
+  transform:rotate(calc(-0.6deg * var(--tilt)));
+}
+.arrivals-summary:focus{outline:none}
+.arrivals-summary:focus-visible{outline:3px solid var(--hot);outline-offset:4px}
+.arrivals-summary-title{
+  font-family:var(--f-display);font-weight:400;
+  font-size:1.3rem;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--ink);margin:0 0 0.7rem;
+}
+.arrivals-stats{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.5rem;margin:0;
+}
+.arrivals-stat{
+  display:flex;justify-content:space-between;align-items:baseline;gap:0.6rem;
+  padding:0.35rem 0.6rem;border-bottom:1px solid var(--ink-dim);
+}
+.arrivals-stat dt{font-family:var(--f-mono);font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-dim)}
+.arrivals-stat dd{margin:0;font-family:var(--f-display);font-size:1.25rem;color:var(--ink)}
+.arrivals-missing{margin-top:0.9rem;color:var(--ink)}
+.arrivals-missing summary{cursor:pointer;font-size:0.9rem;color:var(--ink)}
+.arrivals-missing summary:focus-visible{outline:2px solid var(--hot);outline-offset:3px}
+.arrivals-missing ul{margin:0.6rem 0 0;padding-left:1.1rem;max-height:14rem;overflow:auto;font-size:0.9rem;line-height:1.5}
+.arrivals-missing-id{font-family:var(--f-mono);font-size:0.78rem;color:var(--ink-dim)}
+
+/* Dialog di conferma (migrazione delle scelte locali) */
+.cm-confirm{align-items:center;z-index:1300}
+.cm-confirm-panel{max-width:520px}
+.cm-confirm-panel .random-title{margin:0;font-size:2rem}
+.cm-confirm-msg{padding:1.4rem 1.6rem;margin:0;font-size:1.1rem;line-height:1.45;color:var(--ink)}
+.cm-confirm-actions{justify-content:flex-end;gap:1rem}
+
+/* Avviso "sessione scaduta": come il toast ma persistente e cliccabile */
+.cm-session-notice{
+  position:fixed;z-index:9999;
+  left:50%;bottom:calc(1.4rem + env(safe-area-inset-bottom,0px));
+  transform:translateX(-50%);
+  display:flex;align-items:center;gap:0.8rem;
+  max-width:calc(100vw - 2rem);
+  padding:0.7rem 0.8rem 0.7rem 1.1rem;
+  background:var(--surface);color:var(--ink);
+  border:3px solid var(--hot);box-shadow:6px 6px 0 #000;
+  font-family:var(--f-head);font-size:0.95rem;
+}
+.cm-session-msg{flex:1 1 auto}
+.cm-session-close{
+  background:transparent;border:0;color:var(--ink);cursor:pointer;
+  font-size:1.1rem;width:2rem;height:2rem;
+}
+.cm-session-close:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+
+/* Collezione vuota (modalità DB, prima dell'import) */
+.cm-empty{max-width:640px;margin:12vh auto;padding:2rem;text-align:center;color:var(--ink)}
+.cm-empty-title{
+  font-family:var(--f-display);font-weight:400;font-size:2.4rem;
+  letter-spacing:0.08em;text-transform:uppercase;margin:0 0 0.8rem;
+}
+.cm-empty-text{font-size:1.05rem;line-height:1.5;color:var(--ink-dim)}
+
+@media(max-width:600px){
+  .arrivals-body{padding:1rem}
+  .cm-session-notice{flex-wrap:wrap}
+}
+@media (prefers-reduced-motion: reduce){
+  .arrivals-drop{transition:none}
+  .arrivals-summary{transform:none}
+}

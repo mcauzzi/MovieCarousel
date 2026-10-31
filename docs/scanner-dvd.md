@@ -104,6 +104,7 @@ browser → /api/... con il cookie
 - Gruppi e ruoli: vedi §4.3. I gruppi arrivano dal claim `groups` (letto da userinfo e mappato esplicitamente con `ClaimActions.MapJsonKey("groups", "groups")`, altrimenti non finisce nel cookie); l'API non gestisce utenti né gruppi propri.
 - **Autenticazione del client verso Authelia**: `client_secret_post`. L'handler OIDC di ASP.NET Core invia il segreto nel corpo della richiesta al token endpoint; Authelia applica il metodo configurato per il client, quindi l'esempio sotto usa quello (da verificare su .NET 10 se è disponibile anche `client_secret_basic`).
 - **`returnUrl`** accettato solo se è un percorso locale (`Url.IsLocalUrl`: inizia con `/`, non con `//` o `/\`); altrimenti si usa `/`. Evita l'open redirect.
+- **Callback come GET**: `ResponseMode = query` (il default di ASP.NET è `form_post`, che il controllo CSRF bloccherebbe) e **PAR disattivato** (in .NET 9+ è attivo di default se il provider lo espone), così il flusso è esattamente quello configurato in Authelia. Un errore nel login risponde 401 problem invece di un nuovo redirect, per evitare cicli.
 - **`redirect_uri`** costruito da `PublicBaseUrl` (configurazione), non dagli header della richiesta: un solo meccanismo, che non dipende da cosa inoltra il proxy.
 - **Durata della sessione**: cookie con durata **assoluta** di 12 ore (non scorrevole: con una scadenza che si rinnova a ogni richiesta un utente attivo non rifarebbe mai il login e i gruppi non verrebbero mai riletti); alla scadenza il frontend rifà il giro su Authelia, che con la sessione attiva risponde senza chiedere nulla. Così i gruppi vengono riletti almeno ogni 12 ore (§4.3). Gestione lato frontend in §10 (`api.ts`): una lettura che riceve 401 naviga al login; una **scrittura** che riceve 401 annulla la modifica ottimistica e mostra un toast "Sessione scaduta — ACCEDI", senza navigare via perdendo il contesto.
 - **Chiavi Data Protection** (cifrano e firmano il cookie) salvate nel DB (`PersistKeysToDbContext`), così un riavvio del container non scollega tutti, ma **cifrate** con un certificato (`ProtectKeysWithCertificate`) che non sta nel DB: PFX passato come secret dell'environment (`DataProtection__CertificateBase64` + password). Senza questa cifratura chiunque abbia un dump del DB o un file di backup potrebbe forgiare un cookie valido per qualsiasi utente, amministratore compreso. Perdere il certificato non perde dati: invalida solo le sessioni attive (tutti rifanno il login). Va conservato insieme agli altri secret.
@@ -222,7 +223,7 @@ Utenti e gruppi si gestiscono **solo nella directory utenti di Authelia** (backe
 | utente | `Oidc__UserGroup` (`<gruppo-utenti>`) | vedere la collezione, segnare visto/voti, abbinare e revocare i **propri** dispositivi, aggiungere film dall'app, correggere/eliminare i **propri** arrivi |
 | amministratore | `Oidc__AdminGroup` (`<gruppo-admin>`) | tutto il resto: IMPORTA DA TELLICO, ESPORTA CSV, gestione dei campi personalizzati, correggere/eliminare qualsiasi arrivo, vedere e revocare i dispositivi di **tutti** |
 
-L'amministratore deve essere anche nel gruppo utenti (altrimenti Authelia non lo fa entrare). Se `Oidc__UserGroup` non è impostato, ogni utente che Authelia lascia passare è "utente" (utile per un'installazione con un solo utente). Il frontend nasconde i controlli non permessi in base a `GET /api/me`, ma il controllo vero è sempre nell'API (policy di autorizzazione ASP.NET per endpoint).
+L'amministratore deve essere anche nel gruppo utenti (altrimenti Authelia non lo fa entrare). Se `Oidc__UserGroup` non è impostato, ogni utente che Authelia lascia passare è "utente" (utile per un'installazione con un solo utente). Un utente presente solo nel gruppo amministratore (con `Oidc__UserGroup` impostato) non ha ruoli: `GET /api/me` risponde `roles: []` e il resto dell'API 403. Il frontend nasconde i controlli non permessi in base a `GET /api/me`, ma il controllo vero è sempre nell'API (policy di autorizzazione ASP.NET per endpoint).
 
 **Da dove arriva il claim `groups`.** Nelle versioni recenti Authelia, di default, restituisce i dati dell'utente (gruppi compresi) dall'endpoint **userinfo** e non nell'id_token. L'API quindi usa `GetClaimsFromUserInfoEndpoint = true` e mappa `groups` sui ruoli. In alternativa si aggiungono i gruppi all'id_token con una `claims_policy` in Authelia. Da verificare sulla versione in uso durante la fase 1.
 
@@ -506,7 +507,7 @@ Salvate in `assets/covers/` con il loro id Tellico come nome file (solo `[A-Za-z
 
 I film presenti nel DB ma assenti dal `.tc` **non vengono cancellati**: il riepilogo li elenca (`missing`), ed eventualmente si eliminano a mano.
 
-Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], imagesWritten }`.
+Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], fieldsUpdated }` (le immagini hanno già il loro `{ written, skipped }` da `import/tellico/images`). `missing` = film con `source = tellico` non abbinati in questo import, compresi quelli scollegati per id riusato o per conflitto; gli arrivi dall'app non ci finiscono mai.
 
 Tutto in **una transazione**: o l'import va a buon fine per intero o il DB resta com'era.
 
@@ -542,13 +543,15 @@ Restano valide tutte le regole di `CLAUDE.md` (template lit puri, stato solo in 
 - `config.example.json` va aggiornato con `apiBase` (commentato nella documentazione: presente solo nei deploy con API).
 - **`apiBase` assente** ⇒ modalità `.tc` attuale, invariata (sviluppo, deploy senza API).
 
-La scelta è esplicita e deterministica: nessun "provo l'API e se fallisce uso il `.tc`", che nasconderebbe un'API rotta.
+La scelta è esplicita e deterministica: nessun "provo l'API e se fallisce uso il `.tc`", che nasconderebbe un'API rotta. Per lo stesso motivo un vero errore di rete (API spenta) non porta al login: mostra l'errore.
+
+**Collezione vuota** (primo avvio in modalità DB, prima di qualsiasi import): l'header compare comunque con un messaggio e, per gli amministratori, il pulsante ARRIVI, così il primo import è possibile dal sito.
 
 ### Nuovi moduli
 
 | File | Ruolo |
 |---|---|
-| `src/api.ts` | foglia: client `fetch` (header `X-CM-Request`, errori `problem+json`), tipi delle risposte. **Sessione scaduta**: le richieste partono con `redirect: "manual"`. Se la sessione dell'API è scaduta arriva un 401; se è scaduta anche quella di Authelia, il forward auth di Caddy risponde con un redirect verso `<host-auth>` che `fetch` non può seguire (cross-origin) e che si presenta come risposta `opaqueredirect` (o errore di rete). In entrambi i casi: per le letture navigazione completa a `/api/auth/login?returnUrl=<pagina corrente>`; per le scritture annullamento della modifica e toast con il pulsante ACCEDI (§4.1) |
+| `src/api.ts` | foglia: client `fetch` (header `X-CM-Request`, errori `problem+json`), tipi delle risposte. **Sessione scaduta**: le richieste partono con `redirect: "manual"`. Se la sessione dell'API è scaduta arriva un 401; se è scaduta anche quella di Authelia, il forward auth di Caddy risponde con un redirect verso `<host-auth>` che `fetch` non può seguire (cross-origin) e che con `redirect: "manual"` si presenta come risposta `opaqueredirect`. In entrambi i casi (un vero errore di rete invece è "API non raggiungibile", non sessione scaduta): per le letture navigazione completa a `/api/auth/login?returnUrl=<pagina corrente>`; per le scritture annullamento della modifica e toast con il pulsante ACCEDI (§4.1) |
 | `src/api-store.ts` | `ApiStoreAdapter implements StoreAdapter`: cache in memoria caricata da `/api/state`, getter sincroni come oggi, setter ottimistici + `PUT` (in caso di errore ripristina e notifica); `setSeed`/`setSeedRating` sono no-op (nessun seed, §5). Al ritorno della scheda in primo piano (`visibilitychange`) ricarica lo stato e chiama `onExternalChange`, al posto dell'evento `storage` |
 | `src/arrivals.ts` | pannello **ARRIVI** (shell da `filters.ts`, cache a livello modulo come RANDOM/FILTRI, `resetArrivals()`) |
 | `src/templates/arrivals.templates.ts` | template: sezione "Collega un telefono" in due passi (§10.1), QR di abbinamento con conto alla rovescia, lista dispositivi con revoca, lista arrivi (copertina, titolo, anno, EAN, correggi/elimina), pulsanti ESPORTA CSV e IMPORTA DA TELLICO con riepilogo |
@@ -574,13 +577,13 @@ Il pannello ARRIVI apre con la sezione **Collega un telefono**, in due passi aff
 
 ### Parser: campi a valori multipli dai flag di Tellico
 
-Oggi `parser.ts` considera multivalore solo una lista fissa di campi (`MULTIVALUE_FIELDS`: genere, regista, nazionalità…). Un campo personalizzato di Tellico a valori multipli oggi viene **perso del tutto**: Tellico scrive i valori dentro un elemento contenitore al plurale (`<edizioni><edizione>…`), mentre il parser cerca un figlio con il nome singolare del campo e non lo trova.
+Oggi `parser.ts` considera multivalore solo una lista fissa di campi (`MULTIVALUE_FIELDS`: genere, regista, nazionalità…). Un campo personalizzato di Tellico a valori multipli oggi viene **perso del tutto**: Tellico scrive i valori dentro un elemento contenitore al plurale (nome del campo + `s`, es. `<ediziones><edizione>…`), mentre il parser cerca un figlio con il nome singolare del campo e non lo trova.
 
 Correzione, valida in entrambe le modalità (`.tc` e DB):
 
 - il parser legge l'attributo `flags` di ogni `<field>`: il bit "valori multipli" (e "raggruppabile", usato come default di `groupable`) decide come leggere il campo; `MULTIVALUE_FIELDS` resta solo come ripiego per file senza `flags`;
 - legge anche `allowed` (valori ammessi dei campi a scelta);
-- `ParseResult` restituisce le definizioni (`fields: FieldDef[]` con `name`, `title`, `type`, `multiple`, `groupable`, `allowed`), usate dall'import (§8) e, in modalità `.tc`, dai raggruppamenti;
+- `ParseResult` restituisce le definizioni (`fields: TellicoField[]` con `name`, `title`, `type`, `flags`, `multiple`, `groupable`, `allowed`; `toCollectionFields` li converte in `CollectionField[]`), usate dall'import (§8) e, in modalità `.tc`, dai raggruppamenti;
 - le normalizzazioni di paese e lingua restano legate ai rispettivi campi;
 - **campi data** (tipo Tellico 12): oggi il formato `<year><month><day>` è gestito solo per `cdate`/`mdate`; va applicato a tutti i campi di tipo data, che altrimenti diventano il testo concatenato (es. "20240115") invece di `AAAA-MM-GG`, come richiesto da §5.1 e §9;
 - **campi tabella** (tipo 8) diversi da `cast`: letti come righe di colonne (`string[][]`), con lo stesso schema di `cast`;

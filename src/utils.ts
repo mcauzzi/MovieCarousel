@@ -10,6 +10,12 @@ export function fieldValues(m: Record<string, unknown>, field: string): string[]
   return v ? [String(v)] : [];
 }
 
+/** Valore "vero" di un campo booleano: Tellico scrive "true" (e niente per
+ *  falso), il DB può avere `true`. Condiviso da raggruppamenti e scheda film. */
+export function isTrueValue(v: unknown): boolean {
+  return v === true || (typeof v === 'string' && /^(true|1|yes|s[iì])$/i.test(v.trim()));
+}
+
 /** Chiave del decennio per un anno (es. 1994 → "1990s"). */
 export function decadeKey(year: number): string {
   return Math.floor(year / 10) * 10 + 's';

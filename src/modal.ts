@@ -1,11 +1,11 @@
 import { render } from 'lit';
-import type { Movie } from './parser';
-import { coverUrl, focusablesIn, trapTab } from './utils';
+import type { Movie, CollectionField } from './parser';
+import { coverUrl, focusablesIn, isTrueValue, trapTab } from './utils';
 import type { StoreAdapter, WatchStatus, Rating } from './store';
 import { showToast } from './toast';
 import { currentCopy } from './copy';
 import { modalTemplate, cutinTemplate } from './templates/modal.templates';
-import type { FieldData, ModalData, ModalHandlers } from './templates/modal.templates';
+import type { ExtraFieldData, ExtraValue, FieldData, ModalData, ModalHandlers } from './templates/modal.templates';
 
 const modalEl = document.getElementById('modal')!;
 const modalContent = document.getElementById('modalContent')!;
@@ -29,6 +29,70 @@ let cutinTimer = 0;
 // Elemento che aveva il focus prima dell'apertura: vi torna il focus alla chiusura.
 let lastFocused: HTMLElement | null = null;
 
+/** Campi che la scheda mostra già (testata, meta, elenco fisso, trama, cast,
+ *  RANK, stato di visione) o che non hanno senso per chi guarda (id, date di
+ *  sistema, copertina): esclusi da "Altri campi". */
+const SHOWN_FIELDS = new Set([
+  'id', 'title', 'cover', 'year', 'running-time', 'nationality', 'plot', 'cast',
+  'director', 'genre', 'studio', 'writer', 'composer', 'producer', 'language',
+  'rating', 'visto', 'cdate', 'mdate',
+]);
+/** Tipi mai mostrati in "Altri campi" (le immagini non sono testo). */
+const HIDDEN_TYPES = new Set(['image']);
+
+/** Data `AAAA-MM-GG` (o `AAAA-MM`) in formato locale it-IT; il resto invariato. */
+function formatDate(v: string): string {
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v.trim());
+  if (!m) return v;
+  const [, y, mo, d] = m;
+  // Costruttore locale (non Date.parse, che leggerebbe AAAA-MM-GG come UTC).
+  const date = new Date(Number(y), Number(mo) - 1, d ? Number(d) : 1);
+  if (isNaN(date.getTime())) return v;
+  return d
+    ? date.toLocaleDateString('it-IT')
+    : date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+}
+
+/** Link solo per URL assoluti http/https: `javascript:` & co. restano testo. */
+function urlValue(v: string): ExtraValue {
+  try {
+    const u = new URL(v);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return { text: v, href: u.href };
+  } catch { /* non è un URL assoluto: testo */ }
+  return { text: v };
+}
+
+/** Valore di un campo personalizzato formattato per tipo (null = niente da mostrare). */
+function extraField(m: Movie, f: CollectionField): ExtraFieldData | null {
+  const raw = m[f.name];
+  if (raw === undefined || raw === null || raw === '') return null;
+  const label = f.title || f.name;
+
+  if (f.type === 'table') {
+    // string[][] dal parser; una lista piatta diventa una riga per valore.
+    const list = Array.isArray(raw) ? raw : [raw];
+    const rows = list
+      .map(r => (Array.isArray(r) ? r : [r]).map(c => String(c ?? '').trim()))
+      .filter(r => r.some(Boolean));
+    return rows.length ? { label, values: [], rows } : null;
+  }
+
+  const list = (Array.isArray(raw) ? raw : [raw])
+    .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+  let values: ExtraValue[];
+  if (f.type === 'bool') {
+    // Solo il vero: Tellico non scrive i bool falsi, quindi "No" non compare.
+    values = list.some(isTrueValue) ? [{ text: 'Sì' }] : [];
+  } else if (f.type === 'url') {
+    values = list.map(v => urlValue(String(v).trim()));
+  } else if (f.type === 'date') {
+    values = list.map(v => ({ text: formatDate(String(v)) }));
+  } else {
+    values = list.map(v => ({ text: String(v) }));
+  }
+  return values.length ? { label, values } : null;
+}
+
 /** Ferma un cut-in in corso (timer + banda): riapertura o chiusura non lasciano stati a metà. */
 function cancelCutin(): void {
   clearTimeout(slamTimer);
@@ -50,7 +114,9 @@ export function openModal(
   embeddedImages: Map<string, string>,
   imgDir: string,
   store: StoreAdapter,
-  onStatusChange?: () => void
+  onStatusChange?: () => void,
+  /** Definizioni dei campi della collezione: abilitano la sezione "Altri campi". */
+  collectionFields?: CollectionField[]
 ): void {
   const m = movies.find(x => x.id === id);
   if (!m) return;
@@ -76,12 +142,22 @@ export function openModal(
   addField('Produttore', m.producer);
   addField('Lingue', m.language, true);
 
+  // "Altri campi": i campi della collezione con un valore che la scheda non
+  // mostra già, nell'ordine delle definizioni (senza `fields`, nessuna sezione).
+  const extra: ExtraFieldData[] = [];
+  for (const f of collectionFields ?? []) {
+    if (SHOWN_FIELDS.has(f.name) || HIDDEN_TYPES.has(f.type)) continue;
+    const x = extraField(m, f);
+    if (x) extra.push(x);
+  }
+
   const data: ModalData = {
     movie: m,
     url: coverUrl(m, embeddedImages, imgDir),
     meta,
     fields,
     cast: m.cast ?? [],
+    extra,
   };
 
   let status = store.getStatus(id);
