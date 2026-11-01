@@ -66,7 +66,8 @@ La modalità `.tc` attuale resta come **fallback** (sviluppo locale, deploy senz
 ### Struttura del repository
 
 ```
-src/                    sito (Vite + lit), come oggi
+web/                    sito (Vite + lit): src/, public/, Dockerfile
+  nginx/                nginx.conf (+ location /api/, /api/app/version, /app/) e snippets/
 api/
   CineManager.Api/      Web API (Minimal API, EF Core, Npgsql)
   CineManager.Api.Tests/ test xUnit (upsert, CSV, verifica firme)
@@ -76,7 +77,6 @@ deploy/
   compose.yml           web + api + db + backup
   compose.dev.yml       solo Postgres per lo sviluppo locale (§10.2)
   backup.sh             pg_dump notturno con rotazione
-  nginx.conf            + location /api/, /api/app/version, /app/
 docs/
   scanner-dvd.md        questo documento
   api.md                contratto HTTP (generato/aggiornato con l'implementazione)
@@ -736,9 +736,9 @@ La password del DB non sta nella connection string ma viene inserita in codice. 
 | `LOOKUP_PROVIDERS` | no | catena dei provider EAN (§7) |
 | `TELLICO_BARCODE_FIELD` | no (`ean`) | nome del campo codice a barre in Tellico (§8, §9) |
 
-### nginx (`deploy/nginx.conf`)
+### nginx (`web/nginx/nginx.conf`)
 
-File autoritativo: [`deploy/nginx.conf`](../deploy/nginx.conf), con gli snippet di `deploy/nginx-snippets/` copiati in `/etc/nginx/snippets/`. In sintesi:
+File autoritativo: [`web/nginx/nginx.conf`](../web/nginx/nginx.conf), con gli snippet di `web/nginx/snippets/` copiati in `/etc/nginx/snippets/`. In sintesi:
 
 - `resolver 127.0.0.11 valid=30s ipv6=off` e `proxy_pass` con variabile: nginx parte anche se l'API non è su e segue il nuovo IP quando il container viene ricreato.
 - `/api/` (e `/api/import/tellico`, con `client_max_body_size 32m` e timeout di 300 s) → `http://api:8080`, richiesta invariata. Si inoltra solo `X-Forwarded-For` (§4.1): niente `X-Forwarded-Proto`/`Host`, il `redirect_uri` viene da `PublicBaseUrl`. `Cache-Control` dell'API se c'è, altrimenti `no-store`. Gli errori generati da nginx (413, 502, 503, 504) rispondono `application/problem+json`; quelli dell'API passano invariati.
@@ -766,10 +766,10 @@ Una route in più **prima** del forward auth, per l'app:
 
 - `ci.yml` (PR e push non-`master`, `permissions: contents: read`, una run per branch): job `check` (Node), `api` (restore, build, test con Postgres) e `docker`, che costruisce le due immagini senza pubblicarle (sito con il contesto `android-app` vuoto) e lancia `nginx -t` nell'immagine del sito.
 - `deploy.yml`: costruisce e pubblica `moviecarousel-api` (`latest` + SHA, da `api/Dockerfile`) e poi `moviecarousel`. `permissions: contents: read` a livello di workflow, `packages: write` solo nei job `api` e `image`. Komodo aggiorna lo stack quando escono le immagini; un package GHCR nuovo nasce privato e va reso pubblico (o Komodo deve avere un account registry, vedi README).
-- `.dockerignore` del sito: esclude `api/`, `android/`, `docs/`, `config.json`, `*.tc` e i file `.env`, perché il `Dockerfile` fa `COPY . .`; l'API ha il proprio `.dockerignore`.
+- `web/.dockerignore` del sito (contesto `web/`): esclude `node_modules`, `dist`, `config.json`, `*.tc` e i file `.env`, perché il `Dockerfile` fa `COPY . .`; l'API ha il proprio `.dockerignore`.
 - Android (fase 5):
   - **CI**: workflow separato `android-ci.yml` (lint, test, `assembleDebug`) con filtro `paths: [android/**]`. I filtri `paths` di GitHub valgono per l'intero workflow, non per il singolo job, quindi non si può mettere in `ci.yml` come job condizionato senza un'azione di filtro;
-  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo passa al Dockerfile come build context `android-app`, che sostituisce lo stage vuoto `FROM scratch AS android-app` con lo stesso nome. Senza contesto `docker build .` usa lo stage vuoto e funziona lo stesso (verificato con BuildKit e con il builder classico). Con i secret della keystore il job è obbligatorio (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK vecchio. **Senza i secret** (scelta dell'implementazione) il job non compila nulla e il sito viene pubblicato lo stesso, senza APK: `version.json` risponde 404, il pannello ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426. Secret e procedura: `deploy/README.md`;
+  - **Deploy**: in `deploy.yml` un job `android` (JDK 21, cache Gradle) che decodifica la keystore dai secret, esegue `assembleRelease`, calcola lo SHA-256 e scrive `version.json`; il job dell'immagine del sito scarica l'artefatto e lo passa al Dockerfile come build context `android-app`, che sostituisce lo stage vuoto `FROM scratch AS android-app` con lo stesso nome. Senza contesto `docker build web` usa lo stage vuoto e funziona lo stesso (verificato con BuildKit e con il builder classico). Con i secret della keystore il job è obbligatorio (stesso commit di sito e API, §11.1): se fallisce, il deploy si ferma, niente immagine con un APK vecchio. **Senza i secret** (scelta dell'implementazione) il job non compila nulla e il sito viene pubblicato lo stesso, senza APK: `version.json` risponde 404, il pannello ARRIVI mostra "App non disponibile in questa build" e l'API salta il controllo 426. Secret e procedura: `deploy/README.md`;
   - opzionale (non implementato): pubblicazione della release GitHub `android-v<versione>` quando cambia `version.properties`.
 
 ### Backup e ripristino

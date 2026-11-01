@@ -156,7 +156,7 @@ firma  : ES256 su "<header>.<payload>", formato R||S (64 byte)
 
 - Nome prodotto dalla catena `Lookup__Providers` (default `upcitemdb`: endpoint di prova gratuito, o quello a pagamento con `Lookup__UpcItemDbKey`); il primo che trova vince. Cache in `ean_lookup_cache`: 30 giorni per i trovati, 24 ore per i "non trovato"; gli errori dei provider (rete, quota) non vanno in cache.
 - Titolo ripulito da formato e confezione (DVD, Blu-ray, 4K, Steelbook, Edizione…, parentesi); l'anno, se c'è, filtra la ricerca TMDb (`language=it-IT`, `region=IT`; se con l'anno non trova nulla riprova senza). Fino a 5 `candidates`; la `draft` e `tmdbId`/`posterPath` vengono dal primo (`movie/{id}?append_to_response=credits`).
-- `draft` ha la forma dei film del parser ed è limitata ai campi scrivibili della collezione: titolo, anno, durata, trama, generi (italiano), registi, cast (primi 10 con ruolo), nazionalità (`USA`, `UK`… come `src/parser.ts`), lingue (nomi italiani), `original-title` se il campo esiste. Si può reinviare così com'è in `POST /api/app/movies`.
+- `draft` ha la forma dei film del parser ed è limitata ai campi scrivibili della collezione: titolo, anno, durata, trama, generi (italiano), registi, cast (primi 10 con ruolo), nazionalità (`USA`, `UK`… come `web/src/parser.ts`), lingue (nomi italiani), `original-title` se il campo esiste. Si può reinviare così com'è in `POST /api/app/movies`.
 - EAN sconosciuto: `productName` null, `draft` `{}`, `candidates` `[]`. TMDb non configurato o non raggiungibile: `tmdbAvailable: false` e `draft` solo dal nome prodotto.
 - `possibleDuplicates`: film con lo stesso EAN, lo stesso `tmdb_id` o titolo + anno normalizzati uguali alla bozza (massimo 20).
 

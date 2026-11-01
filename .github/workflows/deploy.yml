@@ -101,7 +101,7 @@ jobs:
           test -n "$name" && test -n "$code" && test -n "$min" || { echo "::error::printVersion senza output"; exit 1; }
           test "$min" -le "$code" || { echo "::error::minSupportedCode ($min) maggiore del versionCode ($code)"; exit 1; }
           sha=$(sha256sum "$out/cinemanager.apk" | cut -d' ' -f1)
-          # Stesso formato letto da AppVersionProvider (API) e da src/api.ts (sito).
+          # Stesso formato letto da AppVersionProvider (API) e da web/src/api.ts (sito).
           jq -n --arg version "$name" --argjson versionCode "$code" --argjson minSupportedCode "$min" \
                 --arg sha256 "$sha" --arg commit "$GITHUB_SHA" \
                 '{version: $version, versionCode: $versionCode, minSupportedCode: $minSupportedCode, sha256: $sha256, commit: $commit}' \
@@ -206,7 +206,7 @@ jobs:
       # pubblicato nulla e sul NAS resta l'immagine precedente.
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: web
           build-contexts: |
             android-app=${{ runner.temp }}/android-app
           push: true

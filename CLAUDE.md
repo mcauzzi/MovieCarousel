@@ -1,12 +1,13 @@
 # CLAUDE.md
 
-Guida per Claude Code in questo repo. Quattro parti: **sito** (Vite + TS, `src/`), **API** (.NET 10 + Postgres, `api/`), **app Android** (Kotlin/Compose, `android/`), **deploy** (`deploy/`, `.github/workflows/`). Design completo della collezione su DB e dello scanner Android: `docs/scanner-dvd.md`; contratto dell'API (autoritativo): `docs/api.md`.
+Guida per Claude Code in questo repo. Quattro parti: **sito** (Vite + TS, `web/`), **API** (.NET 10 + Postgres, `api/`), **app Android** (Kotlin/Compose, `android/`), **deploy** (`deploy/`, `.github/workflows/`). Design completo della collezione su DB e dello scanner Android: `docs/scanner-dvd.md`; contratto dell'API (autoritativo): `docs/api.md`.
 
 Repo **pubblico**: niente host, IP, domini, email o segreti reali nei file; usa segnaposto (`<host-sito>`, `<host-auth>`…).
 
 ## Comandi
 
 ```bash
+cd web                 # tutti i comandi npm del sito girano da web/
 npm install            # prima volta; typecheck/lint falliscono senza node_modules
 npm run dev            # http://localhost:5173 (inoltra /api → :5080)
 npm run build          # → dist/
@@ -22,11 +23,12 @@ cd api && CINEMA_TEST_CONNECTION="Host=localhost;Username=cinema;Password=cinema
 - `npm run a11y -- --themes p5,sh2 --states arrivi --strict` (anche `--file x.tc`, `--screenshots`, `--url`). Serve Chromium di Playwright. I test d'integrazione dell'API creano e distruggono un DB `cm_test_<guid>` per classe.
 - App Android: `cd android && ./gradlew assembleDebug testDebugUnitTest lint` (serve `ANDROID_HOME`; dettagli, firma e test end-to-end in `android/README.md`). Il modulo `core` è Kotlin puro (firma delle richieste, QR, client API) con test JVM; `app` è UI Compose + Keystore + CameraX/ML Kit.
 - Prettier c'è ma **non** è imposto: il codice ha allineamenti manuali voluti, niente mass-reformat.
-- Per la modalità DB in locale: API avviata + `public/config.json` con `"apiBase": "./api/"`.
+- Per la modalità DB in locale: API avviata + `web/public/config.json` con `"apiBase": "./api/"`.
+- In dev Vite serve anche i dati locali da `web/` (es. `web/assets/` per `.tc`, copertine e bgm; ignorata da git).
 
-## Sito: architettura
+## Sito: architettura (`web/`)
 
-Vite + TypeScript strict, **lit-html con template funzionali** (`html\`...\`` + `render()`), niente LitElement né Shadow DOM: `style.css` globale vale ovunque.
+Percorsi di questa sezione relativi a `web/`. Vite + TypeScript strict, **lit-html con template funzionali** (`html\`...\`` + `render()`), niente LitElement né Shadow DOM: `style.css` globale vale ovunque.
 
 **Due modalità**, scelte da `apiBase` in `config.json`:
 - **`.tc`** (senza `apiBase`): il `.tc` di Tellico (zip con `tellico.xml`, o XML grezzo) è letto nel browser; visto/voti in localStorage con seed dal `.tc`. Sorgente: `tcFile` di `config.json`, oppure `?file=x.tc` (ha la precedenza), oppure nome della pagina + `.tc`.
@@ -101,11 +103,11 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
 - **Password del DB:** fuori dalla connection string, da `Database__Password` o `POSTGRES_PASSWORD` (`Infrastructure/DbConnection.cs`).
 - **Crash dell'app:** `POST /api/app/crash` (`Devices/CrashReports.cs`) li scrive solo nei log (categoria `CineManager.AppCrash`), niente DB; lato app `core/crash` (coda su file + invio) e `app/.../crash/CrashReporting.kt`.
 - **Log e telemetria** (`Infrastructure/TelemetrySetup.cs`): una riga per richiesta su console (HttpLogging, senza query né header); OpenTelemetry (log, tracce, metriche via OTLP) solo con `OTEL_EXPORTER_OTLP_ENDPOINT`. In locale: `grafana/otel-lgtm`.
-- Se cambi un endpoint, aggiorna `docs/api.md` e il client in `src/api.ts`.
+- Se cambi un endpoint, aggiorna `docs/api.md` e il client in `web/src/api.ts`.
 
 ## CI e deploy
 
-- **`ci.yml`** (PR e push non-`master`, una run per branch): job `check` (install, typecheck, lint, build), job `api` (build + test con un servizio Postgres) e job `docker` (le due immagini senza push + `nginx -t` nell'immagine del sito).
+- **`ci.yml`** (PR e push non-`master`, una run per branch): job `check` (in `web/`: install, typecheck, lint, build), job `api` (build + test con un servizio Postgres) e job `docker` (le due immagini senza push + `nginx -t` nell'immagine del sito).
 - **`android-ci.yml`** (modifiche ad `android/**`): build, test e lint dell'app.
 - **`deploy.yml`** (push su `master`): builda e pubblica su GHCR prima `moviecarousel-api`, poi `moviecarousel` (nginx con `dist/` e, se ci sono i secret `ANDROID_*` della keystore, APK firmato + `version.json` in `/app/`). `packages: write` solo nei job `api` e `image`; un package GHCR nuovo nasce privato.
 - **Stack Komodo** (`deploy/compose.yml`, stack a sé; nessun `container_name`, i container prendono il nome dello stack), quattro servizi:
@@ -114,6 +116,6 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
   - `db`: `postgres:17-alpine`.
   - `backup`: `pg_dump` notturno con rotazione (`deploy/backup.sh`).
 - **Segreti:** via `env_file` (Compose ≥ 2.24) da due sorgenti facoltative: l'Environment di Komodo (Secret `[[...]]`, scritto in `deploy/.env`, run directory `deploy`) e/o i file `db.env`/`api.env` in `SECRETS_DIR`. Mai nel compose né nel repo. Compose interpola `$` anche lì (tranne tra apici singoli). Variabili, Caddy (forward auth Authelia tranne `/api/app/*`), certificato Data Protection, permessi e restore: `deploy/README.md`.
-- **nginx:** `index.html` è `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`. `assets/bgm/` ha `autoindex on`: `bgm.ts` scopre le tracce dal listing. Header di sicurezza da `deploy/nginx-snippets/security-headers.conf`, da includere in ogni location con un suo `add_header` (non si eredita); errori di nginx su `/api/` in `problem+json`.
-- **Build del sito:** lo stage vuoto `android-app` è sostituito dal build context omonimo della CI; `docker build .` funziona anche senza.
-- Nessun runner self-hosted. Fallback manuale: `npm run build` e copia di `dist/` nella cartella dati.
+- **nginx:** `index.html` è `no-cache` (serve a `version-check.ts`), bundle e font hashati `immutable`. `assets/bgm/` ha `autoindex on`: `bgm.ts` scopre le tracce dal listing. Config in `web/nginx/` (`nginx.conf` + `snippets/`). Header di sicurezza da `snippets/security-headers.conf`, da includere in ogni location con un suo `add_header` (non si eredita); errori di nginx su `/api/` in `problem+json`.
+- **Build del sito:** `web/Dockerfile`, contesto `web/` (autosufficiente, come `api/`). Lo stage vuoto `android-app` è sostituito dal build context omonimo della CI; `docker build web` funziona anche senza.
+- Nessun runner self-hosted. Fallback manuale: `npm run build` in `web/` e copia di `web/dist/` nella cartella dati.

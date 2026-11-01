@@ -19,6 +19,9 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +29,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Install
         run: npm ci
@@ -104,7 +108,7 @@ jobs:
       - name: Immagine del sito
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: web
           build-contexts: |
             android-app=${{ runner.temp }}/android-app
           push: false

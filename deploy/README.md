@@ -249,7 +249,7 @@ Le altre variabili hanno un default; l'elenco completo è in [Riferimento](#rife
    - `curl -s http://localhost:<porta>/api/health` deve rispondere con lo stato del DB;
    - `curl -si http://localhost:<porta>/api/me` deve rispondere `401`.
 4. Solo ora, in `WEB_ROOT/config.json` aggiungi `"apiBase": "./api/"`: il sito legge la collezione dal
-   DB invece che dal `.tc` (esempio in [`config.example.json`](../config.example.json)). Prima del
+   DB invece che dal `.tc` (esempio in [`config.example.json`](../web/config.example.json)). Prima del
    deploy il sito vecchio non avrebbe avuto un'API a cui chiedere.
 5. Apri il sito, fai login, e da **ARRIVI → IMPORTA** (serve essere amministratore) carica il `.tc` di
    Tellico per riempire il DB.
@@ -439,6 +439,7 @@ a sua volta un apice singolo).
   Con i file env vedono solo `db.env`.
 - Senza Komodo: dal clone del repo, `cd deploy`, metti tutte le variabili in `deploy/.env` (è
   ignorato da git) e lancia `docker compose -p <stack> up -d`.
-- Build locale dell'immagine del sito: `docker build .` funziona così com'è, ma senza l'APK
-  l'immagine non contiene l'app. Per includerlo: `docker build --build-context android-app=<cartella> .`,
+- Build locale dell'immagine del sito (dalla radice del repo): `docker build web` funziona così com'è,
+  ma senza l'APK l'immagine non contiene l'app. Per includerlo:
+  `docker build --build-context android-app=<cartella> web`,
   con dentro `cinemanager.apk` e `version.json` (è quello che fa la CI).
