@@ -551,10 +551,10 @@ La scelta è esplicita e deterministica: nessun "provo l'API e se fallisce uso i
 
 | File | Ruolo |
 |---|---|
-| `src/api.ts` | foglia: client `fetch` (header `X-CM-Request`, errori `problem+json`), tipi delle risposte. **Sessione scaduta**: le richieste partono con `redirect: "manual"`. Se la sessione dell'API è scaduta arriva un 401; se è scaduta anche quella di Authelia, il forward auth di Caddy risponde con un redirect verso `<host-auth>` che `fetch` non può seguire (cross-origin) e che con `redirect: "manual"` si presenta come risposta `opaqueredirect`. In entrambi i casi (un vero errore di rete invece è "API non raggiungibile", non sessione scaduta): per le letture navigazione completa a `/api/auth/login?returnUrl=<pagina corrente>`; per le scritture annullamento della modifica e toast con il pulsante ACCEDI (§4.1) |
-| `src/api-store.ts` | `ApiStoreAdapter implements StoreAdapter`: cache in memoria caricata da `/api/state`, getter sincroni come oggi, setter ottimistici + `PUT` (in caso di errore ripristina e notifica); `setSeed`/`setSeedRating` sono no-op (nessun seed, §5). Al ritorno della scheda in primo piano (`visibilitychange`) ricarica lo stato e chiama `onExternalChange`, al posto dell'evento `storage` |
-| `src/arrivals.ts` | pannello **ARRIVI** (shell da `filters.ts`, cache a livello modulo come RANDOM/FILTRI, `resetArrivals()`) |
-| `src/templates/arrivals.templates.ts` | template: sezione "Collega un telefono" in due passi (§10.1), QR di abbinamento con conto alla rovescia, lista dispositivi con revoca, lista arrivi (copertina, titolo, anno, EAN, correggi/elimina), pulsanti ESPORTA CSV e IMPORTA DA TELLICO con riepilogo |
+| `web/src/api.ts` | foglia: client `fetch` (header `X-CM-Request`, errori `problem+json`), tipi delle risposte. **Sessione scaduta**: le richieste partono con `redirect: "manual"`. Se la sessione dell'API è scaduta arriva un 401; se è scaduta anche quella di Authelia, il forward auth di Caddy risponde con un redirect verso `<host-auth>` che `fetch` non può seguire (cross-origin) e che con `redirect: "manual"` si presenta come risposta `opaqueredirect`. In entrambi i casi (un vero errore di rete invece è "API non raggiungibile", non sessione scaduta): per le letture navigazione completa a `/api/auth/login?returnUrl=<pagina corrente>`; per le scritture annullamento della modifica e toast con il pulsante ACCEDI (§4.1) |
+| `web/src/api-store.ts` | `ApiStoreAdapter implements StoreAdapter`: cache in memoria caricata da `/api/state`, getter sincroni come oggi, setter ottimistici + `PUT` (in caso di errore ripristina e notifica); `setSeed`/`setSeedRating` sono no-op (nessun seed, §5). Al ritorno della scheda in primo piano (`visibilitychange`) ricarica lo stato e chiama `onExternalChange`, al posto dell'evento `storage` |
+| `web/src/arrivals.ts` | pannello **ARRIVI** (shell da `filters.ts`, cache a livello modulo come RANDOM/FILTRI, `resetArrivals()`) |
+| `web/src/templates/arrivals.templates.ts` | template: sezione "Collega un telefono" in due passi (§10.1), QR di abbinamento con conto alla rovescia, lista dispositivi con revoca, lista arrivi (copertina, titolo, anno, EAN, correggi/elimina), pulsanti ESPORTA CSV e IMPORTA DA TELLICO con riepilogo |
 
 Modifiche: `main.ts` (avvio in modalità DB, Reload senza drop zone, seed solo in modalità `.tc`, pulsante ARRIVI nel masthead accanto a INTEL e RANDOM, solo in modalità DB), `parser.ts` (restituisce anche i `fields`, vedi sotto), `groupers.ts` e `modal.ts` (campi personalizzati, vedi sotto), `copy.ts` (testi di colore del pannello per tema; le etichette funzionali ARRIVI, IMPORTA, ESPORTA restano uguali in ogni tema), `scripts/a11y-scan.mjs` (nuovo stato "ARRIVI" con API simulata), `vite.config.ts` (proxy di sviluppo, §10.2), `config.example.json`, `CLAUDE.md` (moduli, grafo, chiavi di localStorage).
 
@@ -611,7 +611,7 @@ Entrambi i QR sono generati dall'API come SVG (QRCoder): quello di abbinamento a
 
 ### 10.2 Sviluppo locale
 
-- `vite.config.ts` acquista un `server.proxy` che inoltra `/api` all'API in esecuzione in locale (`dotnet run`, es. porta 5080), così il sito su `localhost:5173` resta same-origin come in produzione.
+- `web/vite.config.ts` acquista un `server.proxy` che inoltra `/api` all'API in esecuzione in locale (`dotnet run`, es. porta 5080), così il sito su `localhost:5173` resta same-origin come in produzione.
 - L'API in ambiente **Development** può usare un'autenticazione finta (`Auth__DevUser=<nome>`, `Auth__DevRoles=user,admin`) al posto di OIDC, che richiederebbe un provider raggiungibile con `redirect_uri` su localhost. È attiva solo se `ASPNETCORE_ENVIRONMENT=Development` **e** la variabile è impostata; all'avvio in produzione con la variabile presente l'API rifiuta di partire.
 - Postgres locale con `docker compose -f deploy/compose.dev.yml up db` (solo il DB, porta pubblicata su localhost).
 - `config.json` locale con `apiBase` per la modalità DB, senza per la modalità `.tc`.
@@ -791,7 +791,7 @@ Prima suite di test del repo, limitata all'API (xUnit):
 - pulizia dei titoli prodotto e mappatura TMDb (risposte registrate, niente rete);
 - integrazione con Postgres via Testcontainers (in CI).
 
-Il frontend resta senza test automatici, come oggi; `npm run a11y` copre il nuovo pannello.
+Il frontend resta senza test automatici, come oggi; `npm run a11y` (da `web/`) copre il nuovo pannello.
 
 ## 14. Piano di lavoro
 

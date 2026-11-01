@@ -13,7 +13,7 @@ public static class TmdbMapper
 {
     public const int MaxCast = 10;
 
-    /// <summary>Come <c>COUNTRY_NORMALIZE</c> di <c>src/parser.ts</c>, più i nomi usati da TMDb.</summary>
+    /// <summary>Come <c>COUNTRY_NORMALIZE</c> di <c>web/src/parser.ts</c>, più i nomi usati da TMDb.</summary>
     private static readonly Dictionary<string, string> CountryNormalize = new(StringComparer.OrdinalIgnoreCase)
     {
         ["United States"] = "USA", ["United States of America"] = "USA",
@@ -25,7 +25,7 @@ public static class TmdbMapper
         ["US"] = "USA", ["GB"] = "UK",
     };
 
-    /// <summary>Come <c>LANG_NORMALIZE</c> di <c>src/parser.ts</c> (nomi inglesi → italiani).</summary>
+    /// <summary>Come <c>LANG_NORMALIZE</c> di <c>web/src/parser.ts</c> (nomi inglesi → italiani).</summary>
     private static readonly Dictionary<string, string> LangNormalize = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Inglese US"] = "Inglese", ["English"] = "Inglese", ["Inglese UK"] = "Inglese",

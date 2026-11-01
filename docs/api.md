@@ -247,14 +247,14 @@ cd api/CineManager.Api
 dotnet run            # profilo "http": http://localhost:5080, Development, Auth__DevUser=dev, Auth__DevRoles=user,admin
 ```
 
-Le migrazioni si applicano all'avvio. Il proxy di Vite (`npm run dev`) inoltra `/api` a `http://localhost:5080`.
+Le migrazioni si applicano all'avvio. Il proxy di Vite (`cd web && npm run dev`) inoltra `/api` a `http://localhost:5080`.
 
 | Variabile | Sviluppo | Note |
 |---|---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Development` | |
 | `Auth__DevUser`, `Auth__DevRoles` | `dev`, `user,admin` (in `launchSettings.json`) | autenticazione finta; fuori da Development l'API rifiuta di partire. Lasciando vuoto `Auth__DevUser` si usa OIDC (se configurato) |
 | `ConnectionStrings__Cinema` | `Host=localhost;Port=5432;Database=cinema;Username=cinema;Password=cinema` | `appsettings.Development.json` |
-| `Covers__Path` | `../../assets/covers` (relativo a `api/CineManager.Api`, cioè `assets/covers/` del repo servito da Vite) | |
+| `Covers__Path` | `../../web/assets/covers` (relativo a `api/CineManager.Api`, cioè `web/assets/covers/` servito da Vite) | |
 | `ASPNETCORE_URLS` | `http://localhost:5080` | già nel profilo |
 
 Produzione (obbligatorie, §12): `ConnectionStrings__Cinema`, `PublicBaseUrl`, `Oidc__Authority`, `Oidc__ClientId`, `Oidc__ClientSecret`, `DataProtection__CertificateBase64` (+ `__CertificatePassword`), `Covers__Path`. Facoltative: `Oidc__UserGroup`, `Oidc__AdminGroup`, `Oidc__RequireHttpsMetadata` (default `true`), `Proxy__KnownNetworks`, `Proxy__KnownProxies` (separati da virgola), `Tellico__BarcodeField` (default `ean`), `RateLimit__PerMinute`.

@@ -7,7 +7,7 @@ Repo **pubblico**: niente host, IP, domini, email o segreti reali nei file; usa 
 ## Comandi
 
 ```bash
-cd web                 # tutti i comandi npm del sito girano da web/
+# i comandi npm del sito girano da web/ (cd web)
 npm install            # prima volta; typecheck/lint falliscono senza node_modules
 npm run dev            # http://localhost:5173 (inoltra /api → :5080)
 npm run build          # → dist/
