@@ -53,7 +53,9 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import io.github.mcauzzi.cinemanager.R
 import io.github.mcauzzi.cinemanager.core.form.Ean
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 enum class ScanMode { QR, EAN }
 
@@ -131,7 +133,10 @@ fun CameraScanner(mode: ScanMode, enabled: Boolean, onDetected: (String) -> Unit
             else setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E)
         }.build()
         val scanner = BarcodeScanning.getClient(options)
-        val executor = Executors.newSingleThreadExecutor()
+        // Dopo shutdown() scarta invece di lanciare: scanner.close() annulla le analisi in corso e
+        // la notifica dell'annullamento arriva dopo, sul main thread, e verrebbe rifiutata con
+        // RejectedExecutionException (crash). I risultati successivi allo smontaggio non servono.
+        val executor = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue(), ThreadPoolExecutor.DiscardPolicy())
         val main = ContextCompat.getMainExecutor(context)
         // Lo stesso codice viene ignorato finché resta inquadrato (vedi LEFT_FRAME_MS).
         var last: String? = null
