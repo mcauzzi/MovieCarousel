@@ -1,9 +1,14 @@
 package io.github.mcauzzi.cinemanager.core.api
 
+import io.github.mcauzzi.cinemanager.core.crash.CrashReport
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 // Forme JSON di docs/api.md (camelCase). Le proprietà sconosciute vengono ignorate.
+
+/** Corpo di `POST /api/app/crash`. */
+@Serializable
+data class CrashBatch(val reports: List<CrashReport>)
 
 @Serializable
 data class PairRequest(val code: String, val deviceName: String, val publicKey: String, val proof: String)

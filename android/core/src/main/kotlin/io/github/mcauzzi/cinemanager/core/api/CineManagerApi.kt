@@ -1,5 +1,6 @@
 package io.github.mcauzzi.cinemanager.core.api
 
+import io.github.mcauzzi.cinemanager.core.crash.CrashReport
 import io.github.mcauzzi.cinemanager.core.crypto.DeviceKey
 import io.github.mcauzzi.cinemanager.core.crypto.KeyUnavailableException
 import io.github.mcauzzi.cinemanager.core.crypto.PairingProof
@@ -123,6 +124,11 @@ class CineManagerApi(
                 CreateMovieResult.Created(id)
             }
         }
+    }
+
+    /** `POST /api/app/crash`: segnalazioni di crash raccolte nelle esecuzioni precedenti → 204. */
+    suspend fun sendCrashReports(reports: List<CrashReport>) {
+        executeRaw(signed(), post("app/crash", CrashBatch.serializer(), CrashBatch(reports))) { }
     }
 
     // ------------------------------------------------------------------ infrastruttura

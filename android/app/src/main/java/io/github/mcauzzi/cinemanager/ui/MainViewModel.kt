@@ -28,6 +28,7 @@ import io.github.mcauzzi.cinemanager.core.pairing.PairingQrResult
 import io.github.mcauzzi.cinemanager.core.pairing.ServerUrls
 import io.github.mcauzzi.cinemanager.data.Pairing
 import io.github.mcauzzi.cinemanager.data.PairingStore
+import io.github.mcauzzi.cinemanager.crash.CrashReporting
 import io.github.mcauzzi.cinemanager.security.BiometricGate
 import io.github.mcauzzi.cinemanager.security.DeviceKeyStore
 import kotlinx.coroutines.CancellationException
@@ -241,6 +242,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun afterUnlock() {
         checkVersion()
         launch(onError = { e -> e is ApiException.Network }) { api?.me() }
+        uploadCrashReports()
+    }
+
+    /** Crash delle esecuzioni precedenti: in silenzio, la chiave ora può firmare. */
+    private fun uploadCrashReports() {
+        val a = api ?: return
+        viewModelScope.launch(Dispatchers.IO) { CrashReporting.upload(a) }
     }
 
     private fun checkVersion() {
@@ -312,6 +320,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     usePairing(p, key)
                     _state.update { it.copy(screen = Screen.Scan(), message = text(R.string.pair_done, res.user.name)) }
                     checkVersion()
+                    uploadCrashReports() // anche quelli avvenuti prima dell'abbinamento
                 }
             }
         }

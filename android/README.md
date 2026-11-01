@@ -44,6 +44,10 @@ oppure inquadra il QR del pannello ARRIVI del sito in sviluppo.
   a ogni richiesta, 401/403/409/426/429), modulo dalla bozza e ritorno, espansione UPC-E → UPC-A.
 - `app`: messaggi d'errore, decisioni dopo un errore (riabbinamento solo per chiave invalidata o
   mancante, "Riprova", scollegamento solo locale), classificazione delle eccezioni del Keystore.
+- `core` (crash): segnalazione da un'eccezione con le cause e lo stack troncato, coda su file
+  (ordine, file illeggibili, scadenza, limite di file, salvataggio che non lancia), invio a lotti
+  (10 segnalazioni / 200 KB, cancellazione solo dopo la conferma, 400 scarta, rete e 5xx tengono),
+  richiesta firmata su `/api/app/crash`.
 - **End-to-end facoltativo** contro l'API vera (stessa logica di firma del server): con l'API
   avviata in Development (`cd api/CineManager.Api && dotnet run`)
 
@@ -55,6 +59,21 @@ oppure inquadra il QR del pannello ARRIVI del sito in sviluppo.
   401 `device_revoked`. Senza la variabile il test viene saltato. In CI lo esegue il job `e2e` di
   `android-ci.yml` (API e Postgres avviati nel job), anche quando cambiano
   `api/CineManager.Api/Auth/**`, `api/CineManager.Api/Devices/**` o `docs/api.md`.
+
+## Segnalazione dei crash
+
+`crash/CrashReporting.kt` (installato per primo in `CineManagerApp`) salva su file ogni eccezione
+non gestita e poi lascia chiudere l'app dal gestore di Android; al riavvio legge
+`ApplicationExitInfo` per le uscite che il processo non vede (ANR con il dump dei thread, crash
+nativi). La coda (`core/crash`) viene inviata in silenzio a `POST /api/app/crash` quando la chiave
+può firmare: dopo l'eventuale sblocco con impronta e dopo un abbinamento. L'API la scrive nei log
+(Loki con la telemetria attiva, vedi `docs/api.md`). Prova sul telefono collegato:
+
+```bash
+adb shell am crash io.github.mcauzzi.cinemanager.debug   # crash provocato, finisce nella coda
+adb shell monkey -p io.github.mcauzzi.cinemanager.debug -c android.intent.category.LAUNCHER 1
+adb logcat -d -s CrashReporting                            # "Segnalazioni di crash inviate: 1"
+```
 
 ## Versione
 

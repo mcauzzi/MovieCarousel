@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using CineManager.Api.Auth;
 using CineManager.Api.Data;
+using CineManager.Api.Devices;
 using CineManager.Api.Import;
 using CineManager.Api.Infrastructure;
 using CineManager.Api.Lookup;
@@ -82,6 +83,10 @@ public static class AppEndpoints
 
         g.MapPost("/movies", async (JsonElement body, ClaimsPrincipal user, ArrivalService arrivals, CancellationToken ct) =>
             ArrivalEndpoints.ToResult(await arrivals.CreateAsync(body, user.Sub(), DeviceId(user), ct)));
+
+        // Crash dell'app dal riavvio successivo: solo log (Loki con la telemetria), niente DB.
+        g.MapPost("/crash", (CrashReportBatch? body, ClaimsPrincipal user, ILoggerFactory loggers) =>
+            CrashReports.Handle(body, user, loggers));
     }
 
     private static Guid DeviceId(ClaimsPrincipal user) => Guid.Parse(user.FindFirst(CmClaims.Device)!.Value);

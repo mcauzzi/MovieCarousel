@@ -55,6 +55,7 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 | GET | `/api/app/search?q=&year=` | dispositivo | ricerca manuale su TMDb → `{ candidates }` |
 | GET | `/api/app/tmdb/{tmdbId}` | dispositivo | bozza completa di un candidato |
 | POST | `/api/app/movies` | dispositivo | inserisce un film → 201 `{ id }` / 409 |
+| POST | `/api/app/crash` | dispositivo | segnalazioni di crash dell'app → 204 (solo log) |
 
 ### `GET /api/collection`
 
@@ -184,6 +185,21 @@ firma  : ES256 su "<header>.<payload>", formato R||S (64 byte)
   - campi multipli: valore singolo o elenco (max 100, duplicati tolti); un campo singolo non accetta elenchi; valori vuoti ignorati.
 - Copertina: `posterPath` deve rispettare `^/[A-Za-z0-9_-]+\.(jpg|jpeg|png)$` (altrimenti 400). L'API scarica `https://image.tmdb.org/t/p/w500<posterPath>` senza redirect automatici, accetta solo risposta 200 con content-type `image/jpeg`/`image/png`, contenuto coerente e ≤ 5 MB, e la salva come `cm-<id>.jpg|png` in `Covers__Path` (file temporaneo + rename); `data.cover` = nome del file. Il download parte dopo il commit del film, con un timeout proprio di 30 s e senza seguire l'annullamento della richiesta: se fallisce per qualsiasi motivo il film resta salvato senza copertina (avviso nei log) e la risposta è comunque 201.
 - Id: se quello della sequenza è già occupato (id Tellico importato prima dell'allineamento della sequenza) se ne prende un altro, fino a 5 tentativi.
+
+### `POST /api/app/crash`
+
+Crash dell'app raccolti nelle esecuzioni precedenti e inviati al riavvio (o subito dopo l'abbinamento, per quelli avvenuti prima).
+
+```json
+{ "reports": [ { "kind": "crash", "occurredAt": "2026-11-01T17:50:44Z", "appVersionCode": 10300, "appVersion": "1.3.0",
+                 "device": "OnePlus CPH2653", "android": "16 (SDK 36)", "thread": "main",
+                 "exception": "java.lang.IllegalStateException", "message": "…", "stackTrace": "…" } ] }
+```
+
+- Da 1 a 10 segnalazioni (altrimenti **400**); tutti i campi sono facoltativi. `kind` ∈ `crash` (eccezione Java/Kotlin), `anr` (app bloccata; `stackTrace` = dump dei thread), `native` (crash nativo, solo descrizione); altri valori → `other`. Versione e telefono sono quelli del momento del crash.
+- Niente DB: ogni segnalazione diventa un log **Error** della categoria `CineManager.AppCrash` con i campi `Kind`, `Device` (id), `Sub`, `AppVersionCode`, `ExceptionType`, `ExceptionMessage`, `StackTrace` e, negli scope, `DeviceName`, `DeviceModel`, `Android`, `AppVersion`, `Thread`, `OccurredAt`. Con la telemetria attiva finisce in Loki: `{service_name="cinemanager-api"} | scope_name="CineManager.AppCrash"`.
+- Testi lunghi troncati invece che rifiutati (tipo/telefono/versione 200 caratteri, messaggio 2000, stack 64 KB): un 400 farebbe scartare la segnalazione al telefono. NUL rimossi.
+- Lato app (`core/crash`): coda su file (al più 20 segnalazioni, scadenza 30 giorni), lotti ≤ 10 e ≤ 200 KB, file cancellati solo dopo il 204; 400/413 scartano il lotto, rete/5xx/429/426 lo tengono per il prossimo avvio.
 
 ### Dispositivi
 

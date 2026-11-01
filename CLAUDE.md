@@ -99,6 +99,7 @@ Una card è visibile se passa **tutti**: selezioni FILTRI (OR dentro un grouper,
 - **Sito:** cookie `__Host-cm_session` via OIDC con Authelia (ruoli user/admin dai gruppi). L'auth finta `Auth__DevUser` funziona solo in Development.
 - **App:** richieste firmate (JWT ES256 per dispositivo, chiave nel Keystore) dopo l'abbinamento con QR. Lo strumento `api/tools/sign-request` firma le richieste a mano per i test.
 - **Password del DB:** fuori dalla connection string, da `Database__Password` o `POSTGRES_PASSWORD` (`Infrastructure/DbConnection.cs`).
+- **Crash dell'app:** `POST /api/app/crash` (`Devices/CrashReports.cs`) li scrive solo nei log (categoria `CineManager.AppCrash`), niente DB; lato app `core/crash` (coda su file + invio) e `app/.../crash/CrashReporting.kt`.
 - **Log e telemetria** (`Infrastructure/TelemetrySetup.cs`): una riga per richiesta su console (HttpLogging, senza query né header); OpenTelemetry (log, tracce, metriche via OTLP) solo con `OTEL_EXPORTER_OTLP_ENDPOINT`. In locale: `grafana/otel-lgtm`.
 - Se cambi un endpoint, aggiorna `docs/api.md` e il client in `src/api.ts`.
 
