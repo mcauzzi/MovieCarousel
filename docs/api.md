@@ -254,6 +254,7 @@ Fase 3 (facoltative):
 | `Devices__MaxOwnerInactiveDays` | `90` | giorni dall'ultimo login sul sito oltre i quali i telefoni del proprietario ricevono 403 |
 | `RateLimit__PairPerIp`, `RateLimit__PairGlobal`, `RateLimit__LookupPerDevice` | `10`, `30`, `60` | al minuto (`LookupPerDevice` per IP + dispositivo) |
 | `Auth__StampCacheSeconds` | `60` | vale anche in produzione (non solo con l'autenticazione di sviluppo): per quanti secondi il timbro di sicurezza dell'utente resta in cache invece di essere riletto dal DB a ogni richiesta del sito. `DELETE /api/users/{sub}/sessions` svuota subito la cache; un timbro cambiato direttamente nel DB vale entro questo tempo. `0` = nessuna cache |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | vuoto | collector OTLP (es. Alloy, `http://localhost:4317` con `grafana/otel-lgtm`): log, tracce (richieste, query Npgsql, chiamate HTTP in uscita) e metriche; vuoto ⇒ telemetria spenta. Valgono le altre variabili standard `OTEL_*` (`_PROTOCOL`, `_HEADERS`, `OTEL_SERVICE_NAME`, default `cinemanager-api`). Indipendentemente da questo, su console c'è una riga per richiesta (metodo, percorso senza query, stato, durata) |
 
 `PublicBaseUrl` serve anche per i QR (abbinamento e download dell'APK); in Development, se manca, si usa l'origine della richiesta.
 

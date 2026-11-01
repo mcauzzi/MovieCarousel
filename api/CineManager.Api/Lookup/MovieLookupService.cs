@@ -53,7 +53,7 @@ public sealed class MovieLookupService(
                 catch (TmdbUnavailableException)
                 {
                     tmdbAvailable = false;
-                    log.LogWarning("Tmdb__ApiToken non configurato: bozza solo dal nome prodotto");
+                    log.LogDebug("Tmdb__ApiToken non configurato: bozza solo dal nome prodotto");
                 }
                 catch (TmdbException ex)
                 {

@@ -378,7 +378,40 @@ docker start <stack>-api-1
 | `TELLICO_BARCODE_FIELD` (ean) | nome del campo codice a barre in Tellico |
 | `BACKUP_AT` (03:30), `BACKUP_KEEP` (14), `TZ` (UTC) | ora del backup, quanti tenerne, fuso orario |
 | `BACKUP_NOW` (0) | 1 = fa un backup anche a ogni avvio (per provare) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (vuoto) | collector OTLP per log, tracce e metriche dell'API (es. `http://<host-alloy>:4317`); vuoto = telemetria spenta. Vedi [Telemetria](#telemetria) |
 | `SECRETS_DIR` | solo per l'alternativa sotto |
+
+### Telemetria
+
+L'API scrive sempre su console (`docker logs`) una riga per richiesta (metodo, percorso senza
+query, stato, durata; mai header, cookie o corpi) più gli eventi di dominio (abbinamenti, arrivi,
+import, errori dei provider). Con `OTEL_EXPORTER_OTLP_ENDPOINT` impostato invia anche via
+OpenTelemetry (OTLP, gRPC di default) a un collector come Grafana Alloy:
+
+- **log** con i campi strutturati (`Ean`, `Device`, `Sub`…) e `trace_id` → Loki;
+- **tracce** delle richieste con le query Postgres e le chiamate a UPCitemdb/TMDb → Tempo;
+- **metriche** HTTP (per rotta e codice), runtime .NET, client HTTP, rate limiting, pool Npgsql → Prometheus/Mimir.
+
+Il collector deve essere raggiungibile dal container `api` (IP del NAS o rete Docker condivisa).
+Valgono le variabili standard di OpenTelemetry, da aggiungere all'Environment se servono:
+`OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc`, oppure `http/protobuf` per la porta 4318),
+`OTEL_EXPORTER_OTLP_HEADERS` (es. autenticazione, come segreto), `OTEL_SERVICE_NAME`
+(default `cinemanager-api`). Un ricevitore minimo in Alloy:
+
+```alloy
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  output {
+    logs    = [otelcol.exporter.otlphttp.loki.input]     // o il tuo exporter
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = [otelcol.exporter.prometheus.default.input]
+  }
+}
+```
+
+In locale, per provare: `docker run -d -p 127.0.0.1:3000:3000 -p 127.0.0.1:4317:4317 grafana/otel-lgtm`
+e l'API avviata con `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` (Grafana su
+`http://localhost:3000`, admin/admin).
 
 ### Alternativa: segreti in file sul NAS
 

@@ -101,6 +101,9 @@ services:
       Tellico__BarcodeField: "${TELLICO_BARCODE_FIELD:-ean}"
       App__VersionUrl: "http://web/app/version.json"
       Covers__Path: /data/covers
+      # Telemetria OpenTelemetry (log, tracce, metriche) verso un collector OTLP, es. Alloy:
+      # vuoto = disattivata (vedi README, "Telemetria").
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
     volumes:
       # Unico mount in scrittura: la cartella delle copertine, la stessa di imgDir in config.json.
       # Deve essere scrivibile dall'utente dell'immagine .NET (UID 1654, vedi README).

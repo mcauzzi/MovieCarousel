@@ -48,6 +48,8 @@ builder.AddCineForwardedHeaders();
 builder.AddCineDataProtection();
 builder.AddCineRateLimiter();
 builder.AddCineAuth();
+builder.AddCineRequestLogging();
+builder.AddCineTelemetry();
 
 var app = builder.Build();
 
@@ -55,7 +57,12 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<CinemaDbContext>().Database.MigrateAsync();
 
+// Una volta all'avvio invece che a ogni ricerca EAN.
+if (string.IsNullOrWhiteSpace(app.Configuration["Tmdb:ApiToken"]))
+    app.Logger.LogWarning("Tmdb__ApiToken non configurato: ricerca per titolo non disponibile, bozze dall'EAN solo dal nome prodotto");
+
 app.UseForwardedHeaders();
+app.UseHttpLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseRateLimiter();
