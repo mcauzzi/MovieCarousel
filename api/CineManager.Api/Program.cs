@@ -17,6 +17,7 @@ builder.Services.AddDbContext<CinemaDbContext>(o => o.UseNpgsql(connectionString
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<BadRequestExceptionHandler>(); // body illeggibile → 400/415, non 500
 builder.Services.Configure<CoversOptions>(builder.Configuration.GetSection(CoversOptions.Section));
 builder.Services.Configure<TellicoOptions>(builder.Configuration.GetSection(TellicoOptions.Section));
 builder.Services.AddScoped<CoverStore>();

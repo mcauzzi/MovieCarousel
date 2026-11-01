@@ -5,6 +5,7 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 ## Convenzioni
 
 - JSON in camelCase. Gli errori sono `application/problem+json` (`{ type, title, status, detail?, traceId }`).
+- Body che non si legge (JSON non valido, tipi sbagliati, numeri fuori intervallo, body vuoto): 400; Content-Type non JSON: 415. Mai 500, in nessun ambiente.
 - **Autenticazione sito**: cookie `__Host-cm_session` (HttpOnly, Secure, SameSite=Lax, durata assoluta 12 h) emesso dal login OIDC. Senza sessione valida → **401** (mai redirect HTML); ruolo mancante → **403**.
 - **CSRF**: ogni richiesta non-GET verso `/api/*` (esclusi `/api/app/*` e la callback OIDC) deve avere `X-CM-Request: 1`, altrimenti **400**. Il controllo avviene prima dell'autenticazione.
 - **Ruoli** (§4.3): `user` se `Oidc__UserGroup` è vuoto o tra i gruppi; `admin` se in più c'è `Oidc__AdminGroup`. Chi è solo nel gruppo admin non riceve ruoli.

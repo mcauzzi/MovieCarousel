@@ -77,7 +77,8 @@ export function createImportSection(ctx: SectionContext): Section {
   }
 
   async function runImport(file: File): Promise<void> {
-    if (importBusy(view.phase)) return;
+    // Niente import mentre la rimozione dei mancanti è in corso (riepilogo e stato si mescolerebbero).
+    if (importBusy(view.phase) || view.removing) return;
     Object.assign(view, {
       phase: 'reading', fileName: file.name, progress: null, summary: null,
       error: null, sessionExpired: false, dragover: false, removing: false, removedStatus: '',

@@ -93,7 +93,8 @@ function summaryTemplate(v: ImportView, s: NonNullable<ImportView['summary']>, h
 }
 
 export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): TemplateResult {
-  const isBusy = importBusy(v.phase);
+  // Anche la rimozione dei mancanti blocca un nuovo import.
+  const isBusy = importBusy(v.phase) || v.removing;
   const p = v.progress;
   const onChange = (e: Event): void => {
     const input = e.currentTarget as HTMLInputElement;
@@ -131,7 +132,7 @@ export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): Template
         <span class="arrivals-drop-text">
           ${v.fileName && v.phase !== 'idle' ? html`File: <b>${v.fileName}</b>` : html`Trascina qui il file <b>.tc</b> di Tellico`}
         </span>
-        <span class="group-btn arrivals-drop-cta" aria-hidden="true">${isBusy ? 'IMPORT IN CORSO…' : '▶ SCEGLI FILE .TC'}</span>
+        <span class="group-btn arrivals-drop-cta" aria-hidden="true">${v.removing ? 'RIMOZIONE IN CORSO…' : isBusy ? 'IMPORT IN CORSO…' : '▶ SCEGLI FILE .TC'}</span>
       </label>
       <div class="arrivals-progress" role="status" aria-live="polite">
         ${v.phase === 'images' && p && p.total > 0

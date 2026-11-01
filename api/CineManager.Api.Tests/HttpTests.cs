@@ -268,6 +268,31 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
 
     // --- immagini e import via HTTP -----------------------------------------------------------
 
+    [DbTheory]
+    [InlineData("POST", "/api/import/tellico/remove-missing", """{"ids":["a"]}""")]
+    [InlineData("POST", "/api/import/tellico/remove-missing", """{"ids":[2147483648]}""")]
+    [InlineData("POST", "/api/import/tellico/remove-missing", """{"ids":3}""")]
+    [InlineData("POST", "/api/import/tellico/remove-missing", """null""")]
+    [InlineData("POST", "/api/import/tellico/remove-missing", """{"ids":[3""")]
+    [InlineData("POST", "/api/import/tellico/remove-missing", "")]
+    [InlineData("POST", "/api/import/tellico", """{"x":[""")]
+    [InlineData("PUT", "/api/state/1", """{"x":[""")]
+    public async Task Body_illeggibile_400_problem_json_non_500(string method, string path, string body)
+    {
+        using var c = F.Client("root", "user,admin");
+        var res = await c.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = Json(body) });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("application/problem+json", res.Content.Headers.ContentType?.MediaType);
+    }
+
+    [DbFact]
+    public async Task Body_senza_content_type_415()
+    {
+        using var c = F.Client("root", "user,admin");
+        var res = await c.PostAsync("/api/import/tellico/remove-missing", new StringContent("""{"ids":[1]}""", Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, res.StatusCode);
+    }
+
     [DbFact]
     public async Task Rimuovi_mancanti_via_HTTP_cancella_anche_lo_stato()
     {
