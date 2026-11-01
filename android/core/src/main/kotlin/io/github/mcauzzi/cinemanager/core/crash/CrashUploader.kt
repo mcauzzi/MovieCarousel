@@ -23,7 +23,8 @@ class CrashUploader(
             val batch = mutableListOf<CrashQueue.Entry>()
             var bytes = 0
             while (pending.isNotEmpty() && batch.size < maxBatch) {
-                val size = JSON.encodeToString(CrashReport.serializer(), pending.first().report).length
+                // Byte UTF-8, non caratteri: il limite del server (256 KB) è sui byte del corpo.
+                val size = JSON.encodeToString(CrashReport.serializer(), pending.first().report).encodeToByteArray().size
                 if (batch.isNotEmpty() && bytes + size > maxBatchBytes) break
                 batch += pending.removeFirst()
                 bytes += size

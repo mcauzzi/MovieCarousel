@@ -110,6 +110,17 @@ class CrashReportingTest {
     }
 
     @Test
+    fun `uploader - il limite del lotto conta i byte UTF-8, non i caratteri`() = runBlocking {
+        val q = queue()
+        // 1500 caratteri da 3 byte ciascuno: contati come caratteri due report starebbero in 4000.
+        repeat(4) { q.save(report("€".repeat(1500))); now += 1 }
+        val batches = mutableListOf<Int>()
+        CrashUploader(q, maxBatchBytes = 4000) { batches += it.size }.upload()
+        assertEquals(4, batches.sum())
+        assertTrue(batches.all { it == 1 })
+    }
+
+    @Test
     fun `client - POST firmato su app crash con il lotto`() = runBlocking<Unit> {
         val server = MockWebServer().apply { start() }
         try {

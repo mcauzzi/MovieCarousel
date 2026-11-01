@@ -48,14 +48,20 @@ object CrashReporting {
 
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            // Una sola volta: un errore durante il salvataggio non deve ricorsivamente richiamarci.
-            if (handling.compareAndSet(false, true)) {
-                queue.save(CrashReport.fromThrowable(e, t.name, Instant.now().toString(), env))
-            }
-            // Il gestore di Android mostra il dialogo e chiude il processo come prima.
-            previous?.uncaughtException(t, e) ?: run {
-                Process.killProcess(Process.myPid())
-                exitProcess(10)
+            try {
+                // Una sola volta: un errore durante il salvataggio non deve ricorsivamente richiamarci.
+                // Anche costruire il report può lanciare (toString() di un'eccezione custom, OOM).
+                if (handling.compareAndSet(false, true)) {
+                    queue.save(CrashReport.fromThrowable(e, t.name, Instant.now().toString(), env))
+                }
+            } catch (_: Throwable) {
+                // Il crash si perde, ma il processo deve comunque chiudersi.
+            } finally {
+                // Il gestore di Android mostra il dialogo e chiude il processo come prima.
+                previous?.uncaughtException(t, e) ?: run {
+                    Process.killProcess(Process.myPid())
+                    exitProcess(10)
+                }
             }
         }
 
@@ -87,8 +93,14 @@ object CrashReporting {
             val trace = if (kind == "anr") {
                 runCatching {
                     info.traceInputStream?.bufferedReader()?.use { r ->
+                        // read() può restituire meno caratteri del buffer: si legge fino a riempirlo o alla fine.
                         val buf = CharArray(CrashReport.STACK_MAX + 1)
-                        val n = r.read(buf).coerceAtLeast(0)
+                        var n = 0
+                        while (n < buf.size) {
+                            val k = r.read(buf, n, buf.size - n)
+                            if (k < 0) break
+                            n += k
+                        }
                         CrashReport.truncate(String(buf, 0, n), CrashReport.STACK_MAX)
                     }
                 }.getOrNull()

@@ -1,14 +1,20 @@
 package io.github.mcauzzi.cinemanager.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 
-private val Context.dataStore by preferencesDataStore(name = "cinemanager")
+// File illeggibile (corrotto): si riparte vuoti, cioè da non abbinato, invece di crashare a ogni avvio.
+private val Context.dataStore by preferencesDataStore(
+    name = "cinemanager",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /** Abbinamento salvato: nessun segreto (la chiave privata sta solo nel Keystore). */
 data class Pairing(val apiBase: String, val deviceId: String, val deviceName: String, val userName: String)
