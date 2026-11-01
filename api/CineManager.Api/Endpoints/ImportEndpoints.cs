@@ -26,6 +26,12 @@ public static class ImportEndpoints
             try { return Results.Ok(await importer.ImportAsync(req, ct)); }
             catch (ImportValidationException ex) { return Bad(ex.Message); }
         }).WithMetadata(new RequestSizeLimitAttribute(MaxImportBody));
+
+        group.MapPost("/remove-missing", async (RemoveMissingRequest req, TellicoImporter importer, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await importer.RemoveMissingAsync(req, ct)); }
+            catch (ImportValidationException ex) { return Bad(ex.Message); }
+        });
     }
 
     private static IResult Bad(string detail) => ApiResults.Bad(detail, "Import non valido");

@@ -1,7 +1,8 @@
 import { render } from 'lit';
 import { readTellicoFile, imageBase64, IMAGE_NAME_RE } from './tellico-file';
 import type { ZipImage } from './tellico-file';
-import { uploadTellicoImages, importTellico, goToLogin } from './api';
+import { uploadTellicoImages, importTellico, removeMissing, goToLogin } from './api';
+import { confirmDialog } from './db-ui';
 import { arrivalsBodyTemplate, importBusy } from './templates/arrivals.templates';
 import type { ImportView } from './templates/arrivals.templates';
 import { sectionRoot, noticeFrom, reloadCollection } from './arrivals-shared';
@@ -23,12 +24,13 @@ export function createImportSection(ctx: SectionContext): Section {
 
   const view: ImportView = {
     phase: 'idle', fileName: null, progress: null, summary: null,
-    error: null, sessionExpired: false, dragover: false,
+    error: null, sessionExpired: false, dragover: false, removing: false, removedStatus: '',
   };
 
   function rerender(): void {
     render(arrivalsBodyTemplate(view, {
       onFile: f => { void runImport(f); },
+      onRemoveMissing: () => { void runRemoveMissing(); },
       onDragState: over => { view.dragover = over; rerender(); },
       onLogin: goToLogin,
     }), body);
@@ -78,7 +80,7 @@ export function createImportSection(ctx: SectionContext): Section {
     if (importBusy(view.phase)) return;
     Object.assign(view, {
       phase: 'reading', fileName: file.name, progress: null, summary: null,
-      error: null, sessionExpired: false, dragover: false,
+      error: null, sessionExpired: false, dragover: false, removing: false, removedStatus: '',
     });
     rerender();
     try {
@@ -112,6 +114,37 @@ export function createImportSection(ctx: SectionContext): Section {
       body.querySelector<HTMLElement>('.arrivals-summary')?.focus();
     } catch (err) {
       Object.assign(view, noticeFrom(err, ctx), { phase: 'error', progress: null });
+      rerender();
+    }
+  }
+
+  /** "Rimuovi i mancanti" (§16): elimina dal DB i film del riepilogo che non sono più nel .tc,
+   *  con il loro stato visto/voto, dopo una conferma che dice quanti sono. */
+  async function runRemoveMissing(): Promise<void> {
+    const missing = view.summary?.missing ?? [];
+    if (!missing.length || view.removing || importBusy(view.phase)) return;
+    const n = missing.length;
+    const ok = await confirmDialog({
+      title: 'RIMUOVI', accent: 'MANCANTI', danger: true,
+      message: `Eliminare dalla collezione ${n === 1 ? 'il film che non è' : `i ${n} film che non sono`} più nel file di Tellico? `
+        + 'Spariscono anche visto e voti di tutti gli utenti. L\'operazione non si può annullare.',
+      yesLabel: 'RIMUOVI', noLabel: 'ANNULLA',
+    });
+    if (!ok) return;
+    Object.assign(view, { removing: true, removedStatus: '', error: null, sessionExpired: false });
+    rerender();
+    try {
+      const { removed } = await removeMissing(missing.map(m => m.id));
+      if (view.summary) view.summary = { ...view.summary, missing: [] };
+      view.removing = false;
+      view.removedStatus = removed === n
+        ? `${removed === 1 ? 'Rimosso 1 film mancante' : `Rimossi ${removed} film mancanti`}.`
+        : `Rimossi ${removed} film su ${n}: gli altri erano già stati eliminati o non vengono più da Tellico.`;
+      rerender();
+      body.querySelector<HTMLElement>('.arrivals-summary')?.focus();
+      if (await reloadCollection(ctx, view)) rerender();
+    } catch (err) {
+      Object.assign(view, noticeFrom(err, ctx), { removing: false });
       rerender();
     }
   }

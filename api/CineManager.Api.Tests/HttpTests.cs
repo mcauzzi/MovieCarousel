@@ -219,6 +219,7 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
     [InlineData("POST", "/api/state/migrate")]
     [InlineData("POST", "/api/import/tellico")]
     [InlineData("POST", "/api/import/tellico/images")]
+    [InlineData("POST", "/api/import/tellico/remove-missing")]
     public async Task Senza_sessione_401(string method, string path)
     {
         using var c = F.Client(user: null);
@@ -234,11 +235,14 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
     [InlineData("POST", "/api/import/tellico/images", "user", HttpStatusCode.Forbidden)]
     [InlineData("POST", "/api/import/tellico", "user,admin", HttpStatusCode.OK)]
     [InlineData("POST", "/api/import/tellico/images", "user,admin", HttpStatusCode.OK)]
+    [InlineData("POST", "/api/import/tellico/remove-missing", "user", HttpStatusCode.Forbidden)]
+    [InlineData("POST", "/api/import/tellico/remove-missing", "user,admin", HttpStatusCode.OK)]
     [InlineData("GET", "/api/collection", "user", HttpStatusCode.OK)]
     public async Task Ruoli_per_endpoint(string method, string path, string roles, HttpStatusCode expected)
     {
         using var c = F.Client("eva", roles);
-        var body = path.EndsWith("images") ? """{"images":{}}""" : """{"fields":[],"movies":[]}""";
+        var body = path.EndsWith("images") ? """{"images":{}}"""
+            : path.EndsWith("remove-missing") ? """{"ids":[1]}""" : """{"fields":[],"movies":[]}""";
         var res = await c.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = method == "GET" ? null : Json(body) });
         Assert.Equal(expected, res.StatusCode);
     }
@@ -247,6 +251,7 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
     [InlineData("PUT", "/api/state/1")]
     [InlineData("POST", "/api/state/migrate")]
     [InlineData("POST", "/api/import/tellico")]
+    [InlineData("POST", "/api/import/tellico/remove-missing")]
     [InlineData("POST", "/api/auth/logout")]
     public async Task Scritture_senza_header_CSRF_rifiutate(string method, string path)
     {
@@ -262,6 +267,23 @@ public class HttpTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLifetim
     }
 
     // --- immagini e import via HTTP -----------------------------------------------------------
+
+    [DbFact]
+    public async Task Rimuovi_mancanti_via_HTTP_cancella_anche_lo_stato()
+    {
+        await SeedMovies(1, 2);
+        using var c = F.Client("root", "user,admin");
+        Assert.Equal(HttpStatusCode.NoContent, (await c.PutAsync("/api/state/2", Json("""{"status":"seen"}"""))).StatusCode);
+
+        var res = await c.PostAsync("/api/import/tellico/remove-missing", Json("""{"ids":[2]}"""));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal(1, (await ReadObj(res))["removed"]!.GetValue<int>());
+        Assert.Equal([1], await F.WithDbAsync(db => db.Movies.Select(m => m.Id).ToListAsync()));
+        Assert.Equal(0, await F.WithDbAsync(db => db.UserMovieStates.CountAsync()));
+
+        res = await c.PostAsync("/api/import/tellico/remove-missing", Json("""{"ids":[]}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
 
     [DbFact]
     public async Task Import_immagini_scrive_una_volta_e_rifiuta_nomi_non_validi()

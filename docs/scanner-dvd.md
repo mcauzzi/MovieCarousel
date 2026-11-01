@@ -505,7 +505,7 @@ Salvate nella cartella delle copertine (`COVERS_DIR`, la stessa di `imgDir`) con
 
 ### Cosa non fa
 
-I film presenti nel DB ma assenti dal `.tc` **non vengono cancellati**: il riepilogo li elenca (`missing`), ed eventualmente si eliminano a mano.
+I film presenti nel DB ma assenti dal `.tc` **non vengono cancellati** dall'import: il riepilogo li elenca (`missing`) e il pulsante RIMUOVI I MANCANTI, dopo una conferma, li elimina con il loro stato visto/voto (`POST /api/import/tellico/remove-missing`, §16).
 
 Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], fieldsUpdated }` (le immagini hanno già il loro `{ written, skipped }` da `import/tellico/images`). `missing` = film con `source = tellico` non abbinati in questo import, compresi quelli scollegati per id riusato o per conflitto; gli arrivi dall'app non ci finiscono mai.
 
@@ -823,4 +823,4 @@ Ogni fase è una PR separata verso `master` a partire da questo ramo (o rami fig
 
 Fuori dalle fasi 0–5, da riprendere dopo:
 
-- **Cancellazioni da Tellico**: oggi un film eliminato in Tellico resta nel DB finché non lo si elimina a mano (§8 lo elenca tra i `missing`). Da aggiungere un'azione "rimuovi i mancanti" nel riepilogo dell'import (solo amministratore, con conferma e lista dei titoli), che elimini anche lo stato visto/voto collegato.
+- ~~**Cancellazioni da Tellico**~~ (fatto): RIMUOVI I MANCANTI nel riepilogo dell'import (solo amministratore, con conferma e lista dei titoli) elimina i film `missing` ancora `source = tellico` e il loro stato visto/voto (`POST /api/import/tellico/remove-missing`, `docs/api.md`).

@@ -417,4 +417,34 @@ public class ImporterTests(ApiFixture fx) : IClassFixture<ApiFixture>, IAsyncLif
         Assert.Equal(new[] { 6 }, await Find(new JsonObject(), ean: "8000000000006"));
         Assert.Empty(await Find(new JsonObject()));
     }
+
+    private async Task<RemoveMissingResult> RemoveMissing(params int[] ids)
+    {
+        using var scope = F.Services.CreateScope();
+        var importer = scope.ServiceProvider.GetRequiredService<TellicoImporter>();
+        return await importer.RemoveMissingAsync(new RemoveMissingRequest { Ids = [.. ids] }, default);
+    }
+
+    [DbFact]
+    public async Task Rimuovi_mancanti_elimina_solo_i_film_Tellico_indicati()
+    {
+        await Import(Entry(1, "Il padrino", 1972), Entry(2, "Alien", 1979), Entry(3, "Heat", 1995));
+        await AddMovie(1_000_000, new JsonObject { ["title"] = "Arrivo" });
+        var r = await Import(Entry(1, "Il padrino", 1972));
+        Assert.Equal([2, 3], r.Missing.Select(m => m.Id));
+
+        // 2 è mancante, 1 000 000 è un arrivo dall'app (mai toccato), 999 non esiste; 2 ripetuto conta una volta.
+        var res = await RemoveMissing(2, 2, 1_000_000, 999);
+        Assert.Equal(1, res.Removed);
+        Assert.Equal([1, 3, 1_000_000], (await Movies()).Select(m => m.Id));
+    }
+
+    [DbFact]
+    public async Task Rimuovi_mancanti_rifiuta_lista_vuota_o_assente()
+    {
+        await Assert.ThrowsAsync<ImportValidationException>(() => RemoveMissing());
+        using var scope = F.Services.CreateScope();
+        var importer = scope.ServiceProvider.GetRequiredService<TellicoImporter>();
+        await Assert.ThrowsAsync<ImportValidationException>(() => importer.RemoveMissingAsync(new RemoveMissingRequest(), default));
+    }
 }

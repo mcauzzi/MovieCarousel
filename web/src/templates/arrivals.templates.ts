@@ -28,10 +28,15 @@ export interface ImportView {
   /** La sessione è scaduta durante l'import: mostra il pulsante ACCEDI. */
   sessionExpired: boolean;
   dragover: boolean;
+  /** "Rimuovi i mancanti" in corso. */
+  removing: boolean;
+  /** Esito dell'ultima rimozione dei mancanti (letto dagli screen reader). */
+  removedStatus: string;
 }
 
 export interface ImportHandlers {
   onFile: (file: File) => void;
+  onRemoveMissing: () => void;
   onDragState: (over: boolean) => void;
   onLogin: () => void;
 }
@@ -52,7 +57,7 @@ function progressText(v: ImportView): string {
   }
 }
 
-function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult {
+function summaryTemplate(v: ImportView, s: NonNullable<ImportView['summary']>, h: ImportHandlers): TemplateResult {
   const rows: [string, number][] = [
     ['Film nel file', s.movieCount],
     ['Inseriti', s.inserted],
@@ -73,9 +78,12 @@ function summaryTemplate(s: NonNullable<ImportView['summary']>): TemplateResult 
       </dl>
       ${s.missing.length ? html`
         <details class="arrivals-missing">
-          <summary>Nel database ma non nel file (${s.missing.length}): non vengono cancellati</summary>
+          <summary>Nel database ma non nel file (${s.missing.length}): restano finché non li rimuovi</summary>
           <ul>${s.missing.map(m => html`<li><span class="arrivals-missing-id">#${m.id}</span> ${m.title || '(senza titolo)'}</li>`)}</ul>
+          <button type="button" class="group-btn arrivals-remove-missing" ?disabled=${v.removing}
+            @click=${h.onRemoveMissing}>${v.removing ? 'RIMOZIONE IN CORSO…' : `RIMUOVI I MANCANTI (${s.missing.length})`}</button>
         </details>` : nothing}
+      <p class="arrivals-note" role="status">${v.removedStatus}</p>
       ${s.warnings?.length ? html`
         <details class="arrivals-missing">
           <summary>Avvisi dell'import (${s.warnings.length})</summary>
@@ -107,7 +115,7 @@ export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): Template
     <section class="arrivals-section" aria-labelledby="arrivalsImportTitle">
       <h3 class="arrivals-section-title" id="arrivalsImportTitle">IMPORTA DA TELLICO</h3>
       <p class="arrivals-lede">${currentCopy().arrivalsLede}
-        I film già presenti vengono aggiornati, quelli nuovi aggiunti; nessun film viene cancellato.</p>
+        I film già presenti vengono aggiornati, quelli nuovi aggiunti; quelli spariti dal file si rimuovono solo su richiesta.</p>
       <label
         class="arrivals-drop ${v.dragover ? 'dragover' : ''} ${isBusy ? 'busy' : ''}"
         @dragover=${onDragOver}
@@ -132,7 +140,7 @@ export function arrivalsBodyTemplate(v: ImportView, h: ImportHandlers): Template
         <span class="arrivals-progress-text">${progressText(v)}</span>
       </div>
       ${errorTemplate(v, h.onLogin)}
-      ${v.summary ? summaryTemplate(v.summary) : nothing}
+      ${v.summary ? summaryTemplate(v, v.summary, h) : nothing}
     </section>`;
 }
 

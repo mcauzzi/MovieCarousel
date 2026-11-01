@@ -32,6 +32,7 @@ Contratto degli endpoint implementati (fasi 1 e 3 di [`scanner-dvd.md`](scanner-
 | POST | `/api/state/migrate` | user | `{ status: {id: s\|null}, rating: {id: r\|null} }` → `{ imported }` |
 | POST | `/api/import/tellico/images` | admin | `{ images: { "<id immagine>": "<base64>" } }` → `{ written, skipped }` |
 | POST | `/api/import/tellico` | admin | `{ fields, movies }` → riepilogo |
+| POST | `/api/import/tellico/remove-missing` | admin | `{ ids: [1, 2] }` → `{ removed }` |
 | POST | `/api/pairing` | user | nuovo codice di abbinamento → `{ code, expiresAt, qrSvg }` |
 | GET | `/api/app-download-qr.svg` | user | `image/svg+xml`: QR di `PublicBaseUrl` + `/app/cinemanager.apk` |
 | GET | `/api/devices` | user | propri dispositivi; `?all=true` (admin) quelli di tutti → `[Device]` |
@@ -102,10 +103,19 @@ Risposta: `{ inserted, updated, linked, unchanged, missing: [{ id, title }], fie
 - EAN: il `.tc` decide. Se l'EAN di un'entry è tenuto da un altro film (EAN spostato), quel film lo perde (colonna `ean` e `data.<campo codice a barre>`); un'entry senza EAN lascia al film quello che aveva, purché il `.tc` non lo dia a un'altra entry. Colonna `ean` e `data.<Tellico__BarcodeField>` sono sempre coerenti (valore normalizzato, o entrambi assenti).
 - Aggiornamento: `data` sostituito da quello del `.tc` (senza `id`), tranne `cover` se l'entry non ne ha; valori dei campi `local` assenti dal `.tc` conservati; `source` → `tellico`.
 - `linked` = film collegati a un id Tellico diverso da prima; `updated` = già collegati e modificati; `unchanged` = nulla di diverso.
-- `missing` = film `source = tellico` non presenti nel `.tc` (compresi quelli scollegati da un id riusato o in conflitto); non vengono cancellati.
+- `missing` = film `source = tellico` non presenti nel `.tc` (compresi quelli scollegati da un id riusato o in conflitto); l'import non li cancella (vedi `remove-missing`).
 - `collection_fields`: titolo, tipo, `multiple`, `allowed` e `origin = tellico` aggiornati; `groupable`, `group_min_size`, `in_form`, `ordinal` impostati solo alla creazione (`group_min_size`: genre 3, director 3, nationality 4, language 5, studio 5, altri 3; `in_form` falso per image, dependent, flag "non modificabile" `0x10`, `cdate`/`mdate`). I campi `tellico` assenti dal `.tc` vengono rimossi; il campo `id` è ignorato. `fieldsUpdated` = campi creati, modificati o rimossi.
 - Tutto in una transazione con il lock esclusivo sulla collezione (import serializzati tra loro e con arrivi, correzioni ed eliminazioni). Alla fine la sequenza `movies_app_id_seq` viene portata oltre l'id massimo, così un id Tellico ≥ 1 000 000 non si scontra con gli arrivi successivi (che comunque, se trovano l'id occupato, ne prendono un altro).
 - 400 per id mancanti, non interi o duplicati, per chiavi duplicate in un'entry e per il carattere NUL in qualunque valore o chiave (anche nei campi: `name`, `title`, `type`, `allowed`). Niente viene modificato.
+
+### `POST /api/import/tellico/remove-missing`
+
+`{ "ids": [2, 3] }` → `{ "removed": 2 }`. "Rimuovi i mancanti": il sito invia gli id del `missing` dell'ultimo import, dopo una conferma.
+
+- Elimina solo i film indicati che sono ancora `source = tellico`: arrivi dall'app e id inesistenti vengono ignorati (`removed` può essere minore del numero di id; i duplicati contano una volta).
+- Lo stato visto/voto di tutti gli utenti per quei film sparisce con loro (FK in cascata). Le immagini restano, perché i nomi possono essere condivisi tra entry.
+- Transazione con il lock esclusivo sulla collezione, come l'import.
+- 400 se `ids` manca, è vuoto o ha più di 10 000 elementi.
 
 ### Abbinamento del telefono (§4.2)
 

@@ -2712,6 +2712,7 @@ main{
 .arrivals-missing summary:focus-visible{outline:2px solid var(--hot);outline-offset:3px}
 .arrivals-missing ul{margin:0.6rem 0 0;padding-left:1.1rem;max-height:14rem;overflow:auto;font-size:0.9rem;line-height:1.5}
 .arrivals-missing-id{font-family:var(--f-mono);font-size:0.78rem;color:var(--ink-dim)}
+.arrivals-remove-missing{margin-top:0.8rem}
 
 /* Dialog di conferma (migrazione delle scelte locali) */
 .cm-confirm{align-items:center;z-index:1300}

@@ -217,6 +217,33 @@ public sealed class TellicoImporter(
         return new TellicoImportResult(inserted, updated, linked, unchanged, missing, fieldsUpdated, warnings);
     }
 
+    /// <summary>Al massimo tanti id per richiesta di "rimuovi i mancanti".</summary>
+    public const int MaxRemoveIds = 10_000;
+
+    /// <summary>
+    /// "Rimuovi i mancanti" (§16): elimina i film indicati, scelti dal sito tra i <c>missing</c>
+    /// del riepilogo, ma solo se sono ancora <c>source = tellico</c>: gli arrivi dall'app non si
+    /// toccano mai da qui. Lo stato visto/voto collegato sparisce con il film (FK in cascata).
+    /// Le immagini restano: i nomi possono essere condivisi tra entry.
+    /// </summary>
+    public async Task<RemoveMissingResult> RemoveMissingAsync(RemoveMissingRequest req, CancellationToken ct)
+    {
+        var ids = req.Ids ?? throw new ImportValidationException("'ids' mancante.");
+        if (ids.Count == 0) throw new ImportValidationException("'ids' è vuoto.");
+        if (ids.Count > MaxRemoveIds) throw new ImportValidationException($"Al massimo {MaxRemoveIds} id per richiesta.");
+        var distinct = ids.Distinct().ToList();
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Esclusivo come l'import: nessun import, arrivo o correzione in parallelo.
+        await CollectionLock.ExclusiveAsync(db, ct);
+        var removed = await db.Movies
+            .Where(m => distinct.Contains(m.Id) && m.Source == MovieSources.Tellico)
+            .ExecuteDeleteAsync(ct);
+        await tx.CommitAsync(ct);
+        log.LogInformation("Rimossi {Removed} film mancanti da Tellico (richiesti {Requested})", removed, distinct.Count);
+        return new RemoveMissingResult(removed);
+    }
+
     /// <summary>
     /// EAN di ogni entry: normalizzato e validato come negli arrivi (8–14 cifre); un valore non
     /// valido o già usato da un'entry precedente del .tc viene ignorato con un avviso.

@@ -184,6 +184,10 @@ export const uploadTellicoImages = (images: Record<string, string>): Promise<{ w
 export const importTellico = (fields: TellicoField[], movies: Movie[]): Promise<ImportResponse> =>
   request('POST', 'import/tellico', { fields, movies });
 
+/** "Rimuovi i mancanti": elimina i film indicati (dal `missing` dell'import) se sono ancora `source = tellico`. */
+export const removeMissing = (ids: number[]): Promise<{ removed: number }> =>
+  request('POST', 'import/tellico/remove-missing', { ids });
+
 // --- Fase 3: abbinamento, dispositivi, arrivi, export, campi (§6.2) ---
 
 /** URL assoluto di un endpoint (per <img src>, es. il QR di download). */
