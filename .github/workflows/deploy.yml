@@ -84,7 +84,9 @@ jobs:
           certs=$("$apksigner" verify --print-certs "$apk")
           echo "$certs"
           # Una keystore diversa produce un APK che non si installa sopra quello esistente.
-          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$certs" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          # Il prefisso cambia con lo schema di firma ("Signer #1 certificate …" o "V3.0 Signer: certificate …").
+          actual=$(sed -n 's/^.*Signer.* certificate SHA-256 digest: //p' <<< "$certs" | head -n 1 | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          test -n "$actual" || { echo "::error::impronta SHA-256 non trovata nell'output di apksigner"; exit 1; }
           expected=$(printf '%s' "${ANDROID_CERT_SHA256:-}" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
           if [ -z "$expected" ]; then
             echo "::warning::ANDROID_CERT_SHA256 non impostata: impronta del certificato non verificata (attuale: $actual)."
