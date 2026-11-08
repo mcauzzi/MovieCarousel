@@ -1,0 +1,22 @@
+# Solo Postgres per lo sviluppo locale dell'API (docs/api.md):
+#   docker compose -f deploy/compose.dev.yml up -d db
+# Credenziali di sviluppo, porta pubblicata solo su localhost. Non usare in produzione.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: cinemanager-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cinema
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - cinemanager-dev-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema"]
+      interval: 10s
+
+volumes:
+  cinemanager-dev-db:

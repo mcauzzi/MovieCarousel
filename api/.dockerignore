@@ -1,0 +1,10 @@
+**/bin
+**/obj
+**/TestResults
+**/*.user
+CineManager.Api.Tests
+Dockerfile
+.dockerignore
+.gitignore
+.env
+*.env

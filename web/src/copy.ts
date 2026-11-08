@@ -1,0 +1,282 @@
+/* Testi "di colore" dipendenti dal tema: ogni tema parla il gergo del suo gioco
+   (P5 i Ladri Fantasma, P3 la Velvet Room e la S.E.E.S., P4 l'Investigation
+   Team e il Midnight Channel, TOLUCA la nebbia, i memo e la radio di SH2). Restano invece fissi i nomi funzionali dei
+   controlli (FILTRI, RANDOM, INTEL, VISTA, SEEN/WATCHLIST) e i messaggi
+   d'errore, così l'app si usa allo stesso modo in ogni tema.
+   Foglia senza import: i template la leggono al render con currentCopy();
+   al cambio tema main.ts ri-renderizza la vista e aggiorna i testi statici. */
+
+export type ThemeId = 'p5' | 'p3' | 'p4' | 'sh2';
+
+export interface ThemeCopy {
+  /** Unità del contatore film (masthead, card INTEL, messaggio di caricamento). */
+  unit: string;
+  /** Etichetta sopra il numero di riga. */
+  rowEyebrow: string;
+  /** Numero di riga (1-based) come va mostrato. */
+  rowNumber: (n: number) => string;
+  /** Timbro sui film visti / tag sui film in watchlist. */
+  seenBadge: string;
+  watchBadge: string;
+  /** Etichetta del segnaposto quando manca la copertina (card / scheda). */
+  noCover: string;
+  noVisual: string;
+  /** Intestazione della scheda film. */
+  fileEyebrow: (id: number) => string;
+  /** Toast della scheda. */
+  toastSeen: string;
+  toastWatchlist: string;
+  toastCleared: string;
+  toastRating: string;
+  /** Parola accentata nel titolo del popup RANDOM. */
+  randomAccent: string;
+  /** All-Out Attack e biglietto. */
+  attack: string;
+  ccGreeting: string;
+  ccStolen: (minutes: number | null) => string;
+  ccClosing: string;
+  ccSignature: string;
+  /** Vista INTEL. */
+  intelEyebrow: string;
+  intelTitle: string;
+  intelSubtitle: string;
+  statSeen: string;
+  statWatchlist: string;
+  statProgress: string;
+  /** Loader e toolbar (testi statici di index.html). */
+  loaderIssue: string;
+  loaderLede: string;
+  loaderStamp: string;
+  loaderStep1: string;
+  loaderStep2: string;
+  searchPlaceholder: string;
+  /** Messaggi di stato del caricamento. */
+  statusReading: string;
+  statusExtracting: string;
+  statusParsing: string;
+  statusLoaded: (n: number) => string;
+  /** Pannello ARRIVI (modalità DB): parola accentata del titolo; frase e
+   *  riepilogo di IMPORTA DA TELLICO; frase di COLLEGA UN TELEFONO e lista
+   *  senza dispositivi; frase e lista vuota della scheda ARRIVI; frase e
+   *  riepilogo di ESPORTA CSV. */
+  arrivalsAccent: string;
+  arrivalsLede: string;
+  arrivalsDone: string;
+  arrivalsPhoneLede: string;
+  devicesEmpty: string;
+  arrivalsListLede: string;
+  arrivalsEmpty: string;
+  arrivalsExportLede: string;
+  arrivalsExportDone: string;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function roman(n: number): string {
+  const table: [number, string][] = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+    [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let out = '';
+  for (const [v, s] of table) while (n >= v) { out += s; n -= v; }
+  return out;
+}
+
+export const COPY: Record<ThemeId, ThemeCopy> = {
+  // PHANTOM — Persona 5: i Ladri Fantasma, bersagli, colpi, biglietti da visita.
+  p5: {
+    unit: 'targets',
+    rowEyebrow: 'MISSION',
+    rowNumber: pad2,
+    seenBadge: 'STOLEN',
+    watchBadge: 'TARGET',
+    noCover: '▰ No cover',
+    noVisual: '▰ NO VISUAL ▰',
+    fileEyebrow: id => `▰ TARGET FILE Nº ${String(id).padStart(3, '0')} ▰`,
+    toastSeen: 'TARGET NEUTRALIZED',
+    toastWatchlist: 'ADDED TO WATCHLIST',
+    toastCleared: 'TARGET CLEARED',
+    toastRating: 'INTEL UPDATED',
+    randomAccent: 'TARGET',
+    attack: 'All-out attack!',
+    ccGreeting: 'Gentile spettatore,',
+    ccStolen: min => min ? `stasera ti ruberemo ${min} minuti di vita con` : 'stasera ti ruberemo il tempo con',
+    ccClosing: 'Non potrai opporti.',
+    ccSignature: '— I LADRI DI PELLICOLE',
+    intelEyebrow: '▰ PHANTOM INTEL ▰',
+    intelTitle: "Thieves' Den",
+    intelSubtitle: 'ARCHIVE REPORT',
+    statSeen: 'NEUTRALIZED',
+    statWatchlist: 'ON RADAR',
+    statProgress: 'PROGRESS',
+    loaderIssue: '▰ MISSION 01 ▰ COLLECTION DATA',
+    loaderLede: 'Take your films back.',
+    loaderStamp: '★ ALL OUT ATTACK',
+    loaderStep1: '▶ STEP 01 ▶ TARGET',
+    loaderStep2: '▶ STEP 02 ▶ COPERTINE',
+    searchPlaceholder: 'search target...',
+    statusReading: '▶ READING TARGET...',
+    statusExtracting: '▶ EXTRACTING DATA...',
+    statusParsing: '▶ PARSING DIRECT XML...',
+    statusLoaded: n => `✓ ${n} TARGETS ACQUIRED`,
+    arrivalsAccent: 'NEW LOOT',
+    arrivalsLede: 'Porta nel covo il bottino catalogato in Tellico.',
+    arrivalsDone: 'COLPO RIUSCITO',
+    arrivalsPhoneLede: 'Recluta un telefono: inquadra il codice a barre di un DVD e il bottino entra nel covo.',
+    devicesEmpty: 'Nessun complice abbinato.',
+    arrivalsListLede: 'Il bottino portato dai telefoni, in attesa di finire in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo bottino: il covo è in ordine.',
+    arrivalsExportLede: 'Prepara il bottino per Tellico.',
+    arrivalsExportDone: 'BOTTINO CONSEGNATO',
+  },
+  // MEMENTO — Persona 3: Velvet Room, Arcani, compendio, Ora Buia, memento mori.
+  p3: {
+    unit: 'memories',
+    rowEyebrow: 'ARCANA',
+    rowNumber: roman,
+    seenBadge: 'CLEARED',
+    watchBadge: 'REQUEST',
+    noCover: '◇ No image',
+    noVisual: '◇ NO IMAGE ◇',
+    fileEyebrow: id => `◇ COMPENDIUM Nº ${String(id).padStart(3, '0')} ◇`,
+    toastSeen: 'MEMORY RECORDED',
+    toastWatchlist: 'REQUEST ACCEPTED',
+    toastCleared: 'MEMORY RELEASED',
+    toastRating: 'COMPENDIUM UPDATED',
+    randomAccent: 'ARCANA',
+    attack: 'All-out attack!',
+    ccGreeting: 'Benvenuto nella Velvet Room.',
+    ccStolen: min => min ? `Le carte hanno scelto per te ${min} minuti con` : 'Le carte hanno scelto per te',
+    ccClosing: 'Ricorda: memento mori.',
+    ccSignature: '— LA VELVET ROOM',
+    intelEyebrow: '◇ S.E.E.S. REPORT ◇',
+    intelTitle: 'Velvet Room',
+    intelSubtitle: 'COMPENDIUM',
+    statSeen: 'CLEARED',
+    statWatchlist: 'REQUESTS',
+    statProgress: 'COMPLETION',
+    loaderIssue: '◇ FULL MOON ◇ COLLECTION DATA',
+    loaderLede: 'Memento mori.',
+    loaderStamp: '☾ DARK HOUR',
+    loaderStep1: '◇ STEP 01 ◇ COMPENDIUM',
+    loaderStep2: '◇ STEP 02 ◇ COPERTINE',
+    searchPlaceholder: 'search compendium...',
+    statusReading: '◇ OPENING COMPENDIUM...',
+    statusExtracting: '◇ RECALLING MEMORIES...',
+    statusParsing: '◇ READING THE CARDS...',
+    statusLoaded: n => `✓ ${n} MEMORIES RECORDED`,
+    arrivalsAccent: 'COMPENDIUM',
+    arrivalsLede: 'Registra nel compendio le memorie catalogate in Tellico.',
+    arrivalsDone: 'MEMORIE REGISTRATE',
+    arrivalsPhoneLede: 'Stringi un patto con un telefono: ogni DVD inquadrato diventa una nuova memoria.',
+    devicesEmpty: 'Nessun patto stretto.',
+    arrivalsListLede: 'Memorie raccolte dai telefoni, non ancora trascritte in Tellico.',
+    arrivalsEmpty: 'Nessuna nuova memoria da registrare.',
+    arrivalsExportLede: 'Trascrivi le memorie per Tellico.',
+    arrivalsExportDone: 'MEMORIE TRASCRITTE',
+  },
+  // MAYONAKA — Persona 4: Investigation Team, Midnight Channel, casi, nebbia.
+  p4: {
+    unit: 'channels',
+    rowEyebrow: 'CHANNEL',
+    rowNumber: pad2,
+    seenBadge: 'CASE CLOSED',
+    watchBadge: 'ON AIR',
+    noCover: '▣ No signal',
+    noVisual: '▣ NO SIGNAL ▣',
+    fileEyebrow: id => `▣ CASE FILE Nº ${String(id).padStart(3, '0')} ▣`,
+    toastSeen: 'CASE CLOSED!',
+    toastWatchlist: 'NOW ON AIR!',
+    toastCleared: 'SIGNAL LOST',
+    toastRating: 'CASE NOTES UPDATED',
+    randomAccent: 'CHANNEL',
+    attack: 'All-out attack!',
+    ccGreeting: 'Attenzione, Inaba!',
+    ccStolen: min => min ? `Stanotte sul Midnight Channel: ${min} minuti di` : 'Stanotte sul Midnight Channel:',
+    ccClosing: 'Restate sintonizzati.',
+    ccSignature: '— INVESTIGATION TEAM',
+    intelEyebrow: '▣ INVESTIGATION TEAM ▣',
+    intelTitle: 'Special HQ',
+    intelSubtitle: 'CASE BOARD',
+    statSeen: 'SOLVED',
+    statWatchlist: 'ON AIR',
+    statProgress: 'CASES SOLVED',
+    loaderIssue: '▣ MIDNIGHT CHANNEL ▣ COLLECTION DATA',
+    loaderLede: 'Reach out to the truth.',
+    loaderStamp: '☂ TUNE IN',
+    loaderStep1: '▣ STEP 01 ▣ CHANNEL',
+    loaderStep2: '▣ STEP 02 ▣ COPERTINE',
+    searchPlaceholder: 'search channel...',
+    statusReading: '▣ TUNING IN...',
+    statusExtracting: '▣ CLEARING THE FOG...',
+    statusParsing: '▣ DECODING SIGNAL...',
+    statusLoaded: n => `✓ ${n} CHANNELS FOUND`,
+    arrivalsAccent: 'NEW CASES',
+    arrivalsLede: 'Sintonizza i casi catalogati in Tellico.',
+    arrivalsDone: 'CASI ARCHIVIATI!',
+    arrivalsPhoneLede: 'Sintonizza un telefono: ogni DVD inquadrato apre un nuovo caso.',
+    devicesEmpty: 'Nessun membro del team collegato.',
+    arrivalsListLede: 'Casi segnalati dai telefoni, ancora da archiviare in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo caso in onda.',
+    arrivalsExportLede: 'Manda in onda i casi per Tellico.',
+    arrivalsExportDone: 'CASI TRASMESSI!',
+  },
+  // TOLUCA — Silent Hill 2: nebbia, stanze d'albergo, memo battuti a macchina,
+  // la radio che gracchia, una lettera, la mappa della città. Testi originali.
+  sh2: {
+    unit: 'memories',
+    rowEyebrow: 'ROOM',
+    rowNumber: n => String(300 + n),
+    seenBadge: 'REMEMBERED',
+    watchBadge: 'SAVE',
+    noCover: 'Lost in the fog',
+    noVisual: 'LOST IN THE FOG',
+    fileEyebrow: id => `MEMO Nº ${String(id).padStart(3, '0')}`,
+    toastSeen: 'MEMORIA RECUPERATA',
+    toastWatchlist: 'PROGRESSI SALVATI',
+    toastCleared: 'DIMENTICATO',
+    toastRating: 'MEMO AGGIORNATO',
+    randomAccent: 'RADIO',
+    attack: 'Qualcosa si avvicina',
+    ccGreeting: 'Ti scrivo dalla nebbia.',
+    ccStolen: min => min ? `Stasera ti aspetto per ${min} minuti con` : 'Stasera ti aspetto con',
+    ccClosing: 'Ti aspetterò in riva al lago.',
+    ccSignature: '— M.',
+    intelEyebrow: 'MAPPA · ARCHIVIO',
+    intelTitle: 'South Vale',
+    intelSubtitle: 'TOWN MAP',
+    statSeen: 'REMEMBERED',
+    statWatchlist: 'SAVED',
+    statProgress: 'EXPLORED',
+    loaderIssue: 'LETTERA Nº 01 · COLLECTION DATA',
+    loaderLede: "C'è qualcosa che hai dimenticato.",
+    loaderStamp: '■ SAVE POINT',
+    loaderStep1: 'STEP 01 · LA LETTERA',
+    loaderStep2: 'STEP 02 · COPERTINE',
+    searchPlaceholder: 'cerca nella nebbia...',
+    statusReading: 'APRO LA LETTERA...',
+    statusExtracting: 'LA NEBBIA SI DIRADA...',
+    statusParsing: 'DECIFRO LA CALLIGRAFIA...',
+    statusLoaded: n => `✓ ${n} MEMORIES RECOVERED`,
+    arrivalsAccent: 'NUOVI MEMO',
+    arrivalsLede: 'Altre lettere sono arrivate da Tellico.',
+    arrivalsDone: 'I RICORDI SONO TORNATI',
+    arrivalsPhoneLede: 'Una radio tascabile che riconosce i DVD: inquadra il codice e un nuovo ricordo arriva qui.',
+    devicesEmpty: 'Nessuna radio sintonizzata.',
+    arrivalsListLede: 'Ricordi riportati dai telefoni, non ancora scritti in Tellico.',
+    arrivalsEmpty: 'Nessun nuovo ricordo nella nebbia.',
+    arrivalsExportLede: 'Batti a macchina i ricordi per Tellico.',
+    arrivalsExportDone: 'MEMO SPEDITO',
+  },
+};
+
+export function themeCopy(id: string | undefined): ThemeCopy {
+  return COPY[(id ?? 'p5') as ThemeId] ?? COPY.p5;
+}
+
+/** Testi del tema attivo (letto da data-theme su <html>; assente = PHANTOM). */
+export function currentCopy(): ThemeCopy {
+  return themeCopy(document.documentElement.dataset.theme);
+}

@@ -1,14 +1,71 @@
-# Stack Komodo "cinemalometti".
-# Variabili da impostare nell'Environment dello stack in Komodo:
-#   WEB_ROOT  cartella del NAS con config.json e assets/ (collezione .tc, covers/, bgm/)
-#   PORT      porta sull'host del NAS (default 8091), quella a cui punta Caddy
+# Stack Komodo del sito: nginx, API CineManager, Postgres, backup notturno.
+# I container prendono il nome dello stack (<stack>-web-1, <stack>-api-1, ...).
+# Guida operativa: deploy/README.md. Design: docs/scanner-dvd.md §12.
+#
+# SEGRETI: due modi, anche insieme (a parità di nome vince il file in SECRETS_DIR).
+#   1. Komodo: nell'Environment dello stack, di solito come Secret interpolati, es.
+#        POSTGRES_PASSWORD = [[CINEMA_DB_PASSWORD]]
+#      Komodo scrive l'Environment in .env nella run directory (che deve essere deploy/) e i
+#      servizi qui sotto lo caricano con env_file.
+#   2. File env sul NAS, nella cartella SECRETS_DIR (fuori dal repo, chmod 600): db.env e api.env.
+#   Entrambe le sorgenti sono facoltative (env_file con required: false, Compose >= 2.24); la
+#   password del DB non passa dalla connection string. Vedi deploy/README.md.
+#   ATTENZIONE a "$": Compose lo interpola anche nei file env_file, tranne nei valori tra apici
+#   singoli. Nei segreti scelti a mano evita "$", oppure scrivi VAR='valore' nei file env
+#   (nell'Environment di Komodo un "$" letterale si scrive "$$").
+#
+#   POSTGRES_PASSWORD                     password del ruolo "cinema" (db, backup, api)  → db.env
+#   Oidc__ClientSecret                    segreto in chiaro del client OIDC in Authelia   → api.env
+#   DataProtection__CertificateBase64     PFX in base64 che cifra le chiavi Data Protection
+#   DataProtection__CertificatePassword   password del PFX
+#   Tmdb__ApiToken                        token "API Read Access" di TMDb
+#   Lookup__UpcItemDbKey                  (facoltativo) chiave del piano a pagamento di UPCitemdb
+#
+# Variabili da impostare nell'Environment dello stack in Komodo (nessun segreto):
+#
+#   Obbligatorie
+#     WEB_ROOT            cartella del NAS con config.json e i dati del sito (collezione .tc, copertine, bgm)
+#     COVERS_DIR          cartella delle copertine, relativa a WEB_ROOT: la stessa di imgDir in config.json
+#                         (es. imgDir "./assets/copertine/" → COVERS_DIR=assets/copertine)
+#     DB_DIR              cartella dei dati di Postgres (disco locale del NAS, non NFS/SMB)
+#     BACKUP_DIR          cartella dei dump notturni
+#     PUBLIC_BASE_URL     indirizzo pubblico del sito, es. https://<host-sito> (redirect_uri OIDC, QR)
+#     PROXY_IP            IP da cui Caddy raggiunge il NAS (proxy fidato per l'IP reale)
+#     OIDC_AUTHORITY      issuer di Authelia, es. https://<host-auth>
+#     OIDC_CLIENT_ID      client OIDC creato in Authelia
+#     OIDC_ADMIN_GROUP    gruppo Authelia degli amministratori
+#     PORT                porta sull'host, quella a cui punta il reverse proxy
+#
+#   Facoltative (default)
+#     BIND_ADDR                      indirizzo dell'host su cui pubblicare PORT (0.0.0.0 = tutte le
+#                                    interfacce: dalla LAN si arriva a nginx senza passare da Authelia;
+#                                    meglio una regola del firewall del NAS che accetti PORT solo da PROXY_IP)
+#     SECRETS_DIR                    cartella con db.env e api.env, se non usi i Secret di Komodo
+#     STACK_SUBNET                   subnet fissa della rete dello stack (172.31.91.0/24)
+#     OIDC_USER_GROUP                gruppo degli utenti; vuoto = ogni utente autenticato ("")
+#     DEVICE_MAX_OWNER_INACTIVE_DAYS giorni dopo cui i telefoni di un utente inattivo smettono di funzionare (90)
+#     LOOKUP_PROVIDERS               catena dei provider EAN (upcitemdb)
+#     TELLICO_BARCODE_FIELD          nome del campo codice a barre in Tellico (ean)
+#     BACKUP_KEEP                    quanti dump tenere (14)
+#     BACKUP_AT                      ora del dump, HH:MM (03:30)
+#     BACKUP_NOW                     1 = un dump anche a ogni avvio del container (0)
+#     TZ                             fuso orario del container di backup (UTC)
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fissa: l'API la considera proxy fidato (Proxy__KnownNetworks). Deve essere libera sul NAS.
+        - subnet: "${STACK_SUBNET:-172.31.91.0/24}"
+
 services:
-  cinemalometti:
+  # "web" è anche l'hostname con cui l'API legge version.json (App__VersionUrl).
+  web:
     image: ghcr.io/mcauzzi/moviecarousel:latest
-    container_name: cinemalometti
     restart: unless-stopped
     ports:
-      - "${PORT:-8091}:80"
+      # BIND_ADDR facoltativo (default tutte le interfacce), vedi in testa e deploy/README.md
+      - "${BIND_ADDR:-0.0.0.0}:${PORT:?imposta PORT (porta sull'host)}:80"
     volumes:
       - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}:/srv/data:ro"
     read_only: true
@@ -16,3 +73,104 @@ services:
       - /var/cache/nginx
       - /var/run
       - /tmp
+    # Nessun depends_on: nginx risolve "api" a ogni richiesta (resolver), il sito statico parte comunque.
+
+  api:
+    image: ghcr.io/mcauzzi/moviecarousel-api:latest
+    restart: unless-stopped
+    # Segreti: POSTGRES_PASSWORD (usata dall'API come password del DB, fuori dalla connection string)
+    # e quelli dell'API. Vedi in testa.
+    env_file:
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/api.env"
+        required: false
+    environment:
+      ConnectionStrings__Cinema: "Host=db;Database=cinema;Username=cinema"
+      PublicBaseUrl: "${PUBLIC_BASE_URL:?imposta PUBLIC_BASE_URL (es. https://host-sito)}"
+      Proxy__KnownNetworks: "${STACK_SUBNET:-172.31.91.0/24}"
+      Proxy__KnownProxies: "${PROXY_IP:?imposta PROXY_IP (IP da cui Caddy raggiunge il NAS)}"
+      Oidc__Authority: "${OIDC_AUTHORITY:?imposta OIDC_AUTHORITY}"
+      Oidc__ClientId: "${OIDC_CLIENT_ID:?imposta OIDC_CLIENT_ID}"
+      Oidc__UserGroup: "${OIDC_USER_GROUP:-}"
+      Oidc__AdminGroup: "${OIDC_ADMIN_GROUP:?imposta OIDC_ADMIN_GROUP}"
+      Devices__MaxOwnerInactiveDays: "${DEVICE_MAX_OWNER_INACTIVE_DAYS:-90}"
+      Lookup__Providers: "${LOOKUP_PROVIDERS:-upcitemdb}"
+      Tellico__BarcodeField: "${TELLICO_BARCODE_FIELD:-ean}"
+      App__VersionUrl: "http://web/app/version.json"
+      Covers__Path: /data/covers
+      # Telemetria OpenTelemetry (log, tracce, metriche) verso un collector OTLP, es. Alloy:
+      # vuoto = disattivata (vedi README, "Telemetria").
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+    volumes:
+      # Unico mount in scrittura: la cartella delle copertine, la stessa di imgDir in config.json.
+      # Deve essere scrivibile dall'utente dell'immagine .NET (UID 1654, vedi README).
+      - "${WEB_ROOT:?imposta WEB_ROOT nell'Environment dello stack}/${COVERS_DIR:?imposta COVERS_DIR (cartella delle copertine, relativa a WEB_ROOT)}:/data/covers"
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # POSTGRES_PASSWORD
+    env_file:
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
+    environment:
+      POSTGRES_DB: cinema
+      POSTGRES_USER: cinema
+    volumes:
+      - "${DB_DIR:?imposta DB_DIR (disco locale del NAS)}:/var/lib/postgresql/data"
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d cinema"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # POSTGRES_PASSWORD → PGPASSWORD in backup.sh
+    env_file:
+      - path: .env                                   # Environment di Komodo
+        required: false
+      - path: "${SECRETS_DIR:-./.secrets-non-impostata}/db.env"
+        required: false
+    environment:
+      PGHOST: db
+      PGUSER: cinema
+      PGDATABASE: cinema
+      BACKUP_DIR: /backup
+      BACKUP_KEEP: "${BACKUP_KEEP:-14}"
+      BACKUP_AT: "${BACKUP_AT:-03:30}"
+      BACKUP_NOW: "${BACKUP_NOW:-0}"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - "${BACKUP_DIR:?imposta BACKUP_DIR}:/backup"
+      # Lo script è nel repo, accanto a questo file: Komodo esegue il compose dal clone, e i percorsi
+      # relativi partono dalla cartella del compose (deploy/). Se il file manca il deploy fallisce
+      # subito invece di creare una cartella vuota al suo posto.
+      - type: bind
+        source: ./backup.sh
+        target: /usr/local/bin/cinema-backup.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    # Senza entrypoint l'immagine avvierebbe un secondo server Postgres.
+    entrypoint: ["/bin/sh", "/usr/local/bin/cinema-backup.sh"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      db:
+        condition: service_healthy

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Codice a barre stilizzato su sfondo rosso (icona adattiva). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M34,36h4v36h-4z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M41,36h2v36h-2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M46,36h5v36h-5z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,36h2v36h-2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M59,36h3v36h-3z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M65,36h2v36h-2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M70,36h4v36h-4z" />
+</vector>
